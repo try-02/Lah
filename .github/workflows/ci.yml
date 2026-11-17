@@ -2,6 +2,20 @@ name: CI
 
 on:
   workflow_dispatch:
+    inputs:
+      run_ios:
+        description: 'Jalankan job iOS?'
+        required: true
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - always
+          - never
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -22,11 +36,13 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-home-cache-cleanup: true
 
       - name: Build Android & host tests
         run: |
           chmod +x ./gradlew
-          ./gradlew :androidApp:assembleDebug :shared:testAndroidHostTest --no-daemon --stacktrace --console=plain
+          ./gradlew :androidApp:assembleDebug :shared:testAndroidHostTest --stacktrace --console=plain
 
   deteksios:
     name: Deteksi pemicu iOS
@@ -35,7 +51,7 @@ jobs:
       jalankan: ${{ steps.gate.outputs.jalankan }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -44,23 +60,35 @@ jobs:
         shell: bash
         env:
           NAMA_EVENT: ${{ github.event_name }}
-          PESAN_COMMIT: ${{ join(github.event.commits.*.message, ' ') }}
+          INPUT_IOS: ${{ inputs.run_ios || 'auto' }}
+          PESAN_COMMIT: ${{ github.event.head_commit.message }}
           SHA_SEBELUM: ${{ github.event.before }}
           SHA_SEKARANG: ${{ github.sha }}
         run: |
           if [ "$NAMA_EVENT" = "workflow_dispatch" ]; then
-            echo "jalankan=true" >> "$GITHUB_OUTPUT"
-            exit 0
+            if [ "$INPUT_IOS" = "always" ]; then
+              echo "jalankan=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            elif [ "$INPUT_IOS" = "never" ]; then
+              echo "jalankan=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          if [ -z "$PESAN_COMMIT" ]; then
+            PESAN_COMMIT=$(git log -1 --pretty=%B "$SHA_SEKARANG" 2>/dev/null || echo "")
           fi
           if printf '%s\n' "$PESAN_COMMIT" | grep -q '\[ios\]'; then
             echo "jalankan=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
           if [ -z "$SHA_SEBELUM" ] || [ "$SHA_SEBELUM" = "0000000000000000000000000000000000000000" ]; then
             SHA_SEBELUM=$(git rev-parse "$SHA_SEKARANG^" 2>/dev/null || echo "")
           fi
+
           berubah=$(git diff --name-only "$SHA_SEBELUM" "$SHA_SEKARANG" 2>/dev/null || true)
-          if printf '%s\n' "$berubah" | grep -Eq '^(shared/src/(iosMain|appleMain)/|iosApp/|gradle/|(.*/)?[^/]*\.gradle\.kts$|\.github/workflows/ci\.yml$)'; then
+          if printf '%s\n' "$berubah" | grep -Eq '^(shared/src/(iosMain|appleMain|iosTest|nativeMain)/|iosApp/|gradle/|(.*/)?[^/]*\.gradle\.kts$|gradle\.properties$|\.github/workflows/ci\.yml$)'; then
             echo "jalankan=true" >> "$GITHUB_OUTPUT"
           else
             echo "jalankan=false" >> "$GITHUB_OUTPUT"
@@ -83,11 +111,21 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-home-cache-cleanup: true
+
+      - name: Cache Kotlin/Native (.konan)
+        uses: actions/cache@v5
+        with:
+          path: ~/.konan
+          key: ${{ runner.os }}-konan-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-konan-
 
       - name: Jalankan tes simulator iOS
         run: |
           chmod +x ./gradlew
-          ./gradlew :shared:iosSimulatorArm64Test --no-daemon --stacktrace --console=plain
+          ./gradlew :shared:iosSimulatorArm64Test --stacktrace --console=plain
 
       - name: Bangun aplikasi iOS
         run: |
