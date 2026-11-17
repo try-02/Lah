@@ -18,6 +18,22 @@ sealed interface HasilOperasi<out T> {
             Sukses(blok())
         } catch (e: IllegalArgumentException) {
             Gagal(e.message ?: "Input tidak valid", PenyebabGalat.VALIDASI)
+        } catch (e: SecurityException) {
+            Gagal(e.message ?: "Izin ditolak", PenyebabGalat.IZIN_DITOLAK)
+        } catch (e: NoSuchElementException) {
+            Gagal(e.message ?: "Entitas tidak ditemukan", PenyebabGalat.TIDAK_DITEMUKAN)
+        } catch (e: Exception) {
+            Gagal(e.message ?: "Operasi gagal", PenyebabGalat.TIDAK_DIKETAHUI)
+        }
+
+        suspend fun <T> dariSuspend(blok: suspend () -> T): HasilOperasi<T> = try {
+            Sukses(blok())
+        } catch (e: IllegalArgumentException) {
+            Gagal(e.message ?: "Input tidak valid", PenyebabGalat.VALIDASI)
+        } catch (e: SecurityException) {
+            Gagal(e.message ?: "Izin ditolak", PenyebabGalat.IZIN_DITOLAK)
+        } catch (e: NoSuchElementException) {
+            Gagal(e.message ?: "Entitas tidak ditemukan", PenyebabGalat.TIDAK_DITEMUKAN)
         } catch (e: Exception) {
             Gagal(e.message ?: "Operasi gagal", PenyebabGalat.TIDAK_DIKETAHUI)
         }
