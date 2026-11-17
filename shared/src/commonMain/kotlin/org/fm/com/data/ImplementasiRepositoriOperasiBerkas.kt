@@ -1,6 +1,5 @@
 package org.fm.com.data
 
-import org.fm.com.domain.model.DataBerkas
 import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.model.LokasiBerkas
@@ -9,6 +8,7 @@ import org.fm.com.domain.repository.HasilMassal
 import org.fm.com.domain.repository.HasilItemGagal
 import org.fm.com.domain.repository.PermintaanOperasi
 import org.fm.com.domain.repository.RepositoriOperasiBerkas
+import org.fm.com.data.PemetaanDataDomain.keDomain
 
 /**
  * Implementasi RepositoriOperasiBerkas di `commonMain` tanpa asumsi platform.

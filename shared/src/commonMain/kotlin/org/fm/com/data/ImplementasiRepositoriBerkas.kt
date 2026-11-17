@@ -14,6 +14,7 @@ import org.fm.com.domain.model.PlatformPenyimpanan
 import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.MatriksKemampuan
 import org.fm.com.domain.repository.RepositoriBerkas
+import org.fm.com.data.PemetaanDataDomain.keDomain
 
 /**
  * Implementasi RepositoriBerkas di `commonMain` tanpa asumsi platform.
@@ -104,7 +105,7 @@ private class SumberMemoriTulis(
 
     override suspend fun tulis(potongan: PotonganIsi) {
         if (selesai) throw IllegalStateException("Sudah selesai")
-        penampung.add(potongan.data.toTypedArray())
+        penampung.add(potongan.data.copyOf())
     }
 
     override suspend fun selesai() {
