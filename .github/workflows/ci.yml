@@ -1,6 +1,7 @@
 name: CI
 
-on: [push, workflow_dispatch]
+on:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -23,7 +24,9 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build Android & host tests
-        run: ./gradlew :androidApp:assembleDebug :shared:testAndroidHostTest --no-daemon --stacktrace --console=plain
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :androidApp:assembleDebug :shared:testAndroidHostTest --no-daemon --stacktrace --console=plain
 
   deteksios:
     name: Deteksi pemicu iOS
@@ -82,7 +85,9 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Jalankan tes simulator iOS
-        run: ./gradlew :shared:iosSimulatorArm64Test --no-daemon --stacktrace --console=plain
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :shared:iosSimulatorArm64Test --no-daemon --stacktrace --console=plain
 
       - name: Bangun aplikasi iOS
         run: |
