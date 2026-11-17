@@ -1,0 +1,7 @@
+package org.fm.com
+
+interface Platform {
+    val name: String
+}
+
+expect fun getPlatform(): Platform
