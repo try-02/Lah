@@ -11,7 +11,7 @@ class ModelDomainTest {
 
     @Test
     fun `entitas menyimpan metadata dengan benar`() {
-        const val waktu = 1_700_000_000_000L
+        val waktu = 1_700_000_000_000L
         val entitas = EntitasBerkas(
             lokasi = lokasiPosix,
             nama = "catatan.txt",
