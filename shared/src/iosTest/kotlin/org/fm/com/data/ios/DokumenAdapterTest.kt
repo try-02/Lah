@@ -23,7 +23,6 @@ import org.fm.com.domain.repository.PermintaanOperasi
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
-import platform.Foundation.fileURLWithPath
 
 class DokumenAdapterTest {
 
