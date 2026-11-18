@@ -97,15 +97,14 @@ class T8ImplementasiDataTest {
         assertEquals(0, pertama.potongan.data.size)
     }
 
-    @Test
-    fun tulisSetelahTerminalGagal() = runTest {
-        val tulis = assertIs<HasilOperasi.Sukses<SumberTulisBerkas>>(kaset.bukaUntukTulis(lokasi(), timpa = true))
-        tulisSemua(tulis.nilai, "x")
-        val gagal = assertIs<HasilOperasi.Gagal>(tulis.nilai.tulis(PotonganIsi("y".encodeToByteArray())))
-        assertEquals(PenyebabGalat.VALIDASI, gagal.penyebab)
-        assertIs<HasilOperasi.Gagal>(tulis.nilai.batalkan())
-        assertIs<HasilOperasi.Sukses<Unit>>(tulis.nilai.batalkan()) // idempoten pasca-SELESAI
-    }
+@Test
+fun tulisSetelahTerminalGagal() = runTest {
+    val tulis = assertIs<HasilOperasi.Sukses<SumberTulisBerkas>>(kaset.bukaUntukTulis(lokasi(), timpa = true))
+    tulisSemua(tulis.nilai, "x")
+    val gagal = assertIs<HasilOperasi.Gagal>(tulis.nilai.tulis(PotonganIsi("y".encodeToByteArray())))
+    assertEquals(PenyebabGalat.VALIDASI, gagal.penyebab)
+    assertIs<HasilOperasi.Sukses<Unit>>(tulis.nilai.batalkan()) // idempoten pasca-SELESAI
+}
 
     @Test
     fun batalkanTidakMenyimpan() = runTest {
@@ -304,29 +303,27 @@ class T8ImplementasiDataTest {
         assertEquals(50, daftar.nilai.size)
     }
 
-    @Test
-    fun routerMerutekanDanMenolakJujur() = runTest {
-        val posix = SumberMemoriPenyimpanan()
-        val saf = SumberMemoriPenyimpanan()
-        val router = RepositoriRouterBerkas(mapOf(JenisLokasi.POSIX to posix, JenisLokasi.SAF to saf))
-        posix.berkas.simpan(DataBerkas("/p", "p", JenisLokasi.POSIX, adalahFolder = true))
-        posix.berkas.simpan(DataBerkas("/p/a.txt", "a.txt", JenisLokasi.POSIX, adalahFolder = false))
-        saf.berkas.simpan(DataBerkas("content://p", "p", JenisLokasi.SAF, adalahFolder = true))
-        val daftarPosix = assertIs<HasilOperasi.Sukses<List<EntitasBerkas>>>(router.daftarIsi(lokasi("/p")).first())
-        assertEquals(1, daftarPosix.nilai.size)
-        val daftarSaf = assertIs<HasilOperasi.Sukses<List<EntitasBerkas>>>(
-            router.daftarIsi(lokasi("content://p", JenisLokasi.SAF)).first()
-        )
-        assertEquals(0, daftarSaf.nilai.size)
-        val ios = assertIs<HasilOperasi.Gagal>(router.bukaUntukBaca(lokasi("/x", JenisLokasi.IOS)))
-        assertEquals(PenyebabGalat.VALIDASI, ios.penyebab)
-        val lintas = assertIs<HasilOperasi.Gagal>(
-            router.salin(PermintaanOperasi(sumber = lokasi("/p/a.txt"), tujuan = lokasi("content://p", JenisLokasi.SAF)))
-        )
-        assertEquals(PenyebabGalat.VALIDASI, lintas.penyebab)
-        assertEquals(PenyebabGalat.TIDAK_DIDUKUNG, ios.penyebab)
-        assertEquals(PenyebabGalat.TIDAK_DIDUKUNG, lintas.penyebab)
-    }
+@Test
+fun routerMerutekanDanMenolakJujur() = runTest {
+    val posix = SumberMemoriPenyimpanan()
+    val saf = SumberMemoriPenyimpanan()
+    val router = RepositoriRouterBerkas(mapOf(JenisLokasi.POSIX to posix, JenisLokasi.SAF to saf))
+    posix.berkas.simpan(DataBerkas("/p", "p", JenisLokasi.POSIX, adalahFolder = true))
+    posix.berkas.simpan(DataBerkas("/p/a.txt", "a.txt", JenisLokasi.POSIX, adalahFolder = false))
+    saf.berkas.simpan(DataBerkas("content://p", "p", JenisLokasi.SAF, adalahFolder = true))
+    val daftarPosix = assertIs<HasilOperasi.Sukses<List<EntitasBerkas>>>(router.daftarIsi(lokasi("/p")).first())
+    assertEquals(1, daftarPosix.nilai.size)
+    val daftarSaf = assertIs<HasilOperasi.Sukses<List<EntitasBerkas>>>(
+        router.daftarIsi(lokasi("content://p", JenisLokasi.SAF)).first()
+    )
+    assertEquals(0, daftarSaf.nilai.size)
+    val ios = assertIs<HasilOperasi.Gagal>(router.bukaUntukBaca(lokasi("/x", JenisLokasi.IOS)))
+    assertEquals(PenyebabGalat.TIDAK_DIDUKUNG, ios.penyebab)
+    val lintas = assertIs<HasilOperasi.Gagal>(
+        router.salin(PermintaanOperasi(sumber = lokasi("/p/a.txt"), tujuan = lokasi("content://p", JenisLokasi.SAF)))
+    )
+    assertEquals(PenyebabGalat.TIDAK_DIDUKUNG, lintas.penyebab)
+}
 
 @Test
 fun batalkanIdempotenSetelahSelesai() = runTest {
