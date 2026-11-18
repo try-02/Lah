@@ -2,6 +2,7 @@ package org.fm.com.presentation.terbaru
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,12 +19,15 @@ class ViewModelTerbaru(
     private val _state = MutableStateFlow(StateTerbaru(sedangMemuat = true))
     val state: StateFlow<StateTerbaru> = _state.asStateFlow()
 
+    private var pekerjaanMuat: Job? = null
+
     init {
-        amatiDaftarRiwayat()
+        muatRiwayat()
     }
 
     fun prosesIntent(intent: IntentTerbaru) {
         when (intent) {
+            is IntentTerbaru.Segarkan -> muatRiwayat()
             is IntentTerbaru.HapusItem -> hapusItem(intent.lokasi)
             is IntentTerbaru.SetBukaDialogHapusSemua -> _state.update { it.copy(dialogHapusSemuaTerbuka = intent.buka) }
             is IntentTerbaru.KonfirmasiHapusSemua -> hapusSemua()
@@ -31,8 +35,10 @@ class ViewModelTerbaru(
         }
     }
 
-    private fun amatiDaftarRiwayat() {
-        viewModelScope.launch {
+    private fun muatRiwayat() {
+        pekerjaanMuat?.cancel()
+        pekerjaanMuat = viewModelScope.launch {
+            _state.update { it.copy(sedangMemuat = true) }
             riwayatLokasiUseCase.ambilRiwayat().collect { list ->
                 val uiList = list.map { it.keUi() }
                 _state.update {
@@ -48,7 +54,11 @@ class ViewModelTerbaru(
     private fun hapusItem(lokasi: LokasiBerkas) {
         viewModelScope.launch {
             when (val hasil = riwayatLokasiUseCase.hapusRiwayat(lokasi)) {
-                is HasilOperasi.Sukses -> {}
+                is HasilOperasi.Sukses -> {
+                    _state.update { st ->
+                        st.copy(daftarItem = st.daftarItem.filterNot { it.lokasi == lokasi })
+                    }
+                }
                 is HasilOperasi.Gagal -> _state.update { it.copy(pesanGalat = hasil.pesan) }
             }
         }
@@ -58,7 +68,9 @@ class ViewModelTerbaru(
         viewModelScope.launch {
             _state.update { it.copy(dialogHapusSemuaTerbuka = false) }
             when (val hasil = riwayatLokasiUseCase.bersihkanSemuaRiwayat()) {
-                is HasilOperasi.Sukses -> {}
+                is HasilOperasi.Sukses -> {
+                    _state.update { it.copy(daftarItem = emptyList()) }
+                }
                 is HasilOperasi.Gagal -> _state.update { it.copy(pesanGalat = hasil.pesan) }
             }
         }

@@ -24,6 +24,7 @@ data class StateTerbaru(
 }
 
 sealed interface IntentTerbaru {
+    data object Segarkan : IntentTerbaru
     data class HapusItem(val lokasi: LokasiBerkas) : IntentTerbaru
     data class SetBukaDialogHapusSemua(val buka: Boolean) : IntentTerbaru
     data object KonfirmasiHapusSemua : IntentTerbaru

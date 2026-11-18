@@ -1,13 +1,10 @@
 package org.fm.com.data.persistensi
 
-import app.cash.sqldelight.coroutines.asFlow
-import app.cash.sqldelight.coroutines.mapToList
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -56,13 +53,12 @@ class SqlDelightRepositoriRiwayatLokasi(
         }
     }
 
-    override fun daftarRiwayat(batas: Long): Flow<List<EntitasRiwayatLokasi>> {
-        return database.riwayatLokasiEntityQueries
-            .semuaRiwayat(batas)
-            .asFlow()
-            .mapToList(ioDispatcher)
-            .map { list ->
-                list.mapNotNull { row ->
+    override fun daftarRiwayat(batas: Long): Flow<List<EntitasRiwayatLokasi>> = flow {
+        val list = withContext(ioDispatcher) {
+            database.riwayatLokasiEntityQueries
+                .semuaRiwayat(batas)
+                .executeAsList()
+                .mapNotNull { row ->
                     try {
                         val jenis = JenisLokasi.valueOf(row.jenis_lokasi)
                         EntitasRiwayatLokasi(
@@ -74,7 +70,8 @@ class SqlDelightRepositoriRiwayatLokasi(
                         null
                     }
                 }
-            }
+        }
+        emit(list)
     }
 
     override suspend fun hapus(lokasi: LokasiBerkas): HasilOperasi<Unit> = withContext(ioDispatcher) {
@@ -110,7 +107,7 @@ class MemoriRepositoriRiwayatLokasi : RepositoriRiwayatLokasi {
         HasilOperasi.Sukses(Unit)
     }
 
-    override fun daftarRiwayat(batas: Long): Flow<List<EntitasRiwayatLokasi>> = kotlinx.coroutines.flow.flow {
+    override fun daftarRiwayat(batas: Long): Flow<List<EntitasRiwayatLokasi>> = flow {
         val hasil = mutex.withLock {
             kaset.values
                 .sortedByDescending { it.waktuTerakhirDibukaEpochMs }
