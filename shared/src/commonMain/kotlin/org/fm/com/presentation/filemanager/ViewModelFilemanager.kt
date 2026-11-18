@@ -28,6 +28,7 @@ import org.fm.com.presentation.filemanager.PemetaanDomainUi.keUi
 class ViewModelFilemanager(
     private val repositoriBerkas: RepositoriBerkas,
     repositoriOperasi: RepositoriOperasiBerkas? = repositoriBerkas as? RepositoriOperasiBerkas,
+    private val riwayatLokasiUseCase: org.fm.com.domain.usecase.RiwayatLokasiUseCase? = null,
     private val daftarFolderUseCase: DaftarFolderUseCase = DaftarFolderUseCase(repositoriBerkas),
     private val urutkanBerkasUseCase: UrutkanBerkasUseCase = UrutkanBerkasUseCase(),
     private val filterBerkasUseCase: FilterBerkasUseCase = FilterBerkasUseCase(),
@@ -122,6 +123,9 @@ class ViewModelFilemanager(
         }
 
         pekerjaanMuatFolder = viewModelScope.launch {
+            // Catat ke riwayat lokasi terbaru (T19)
+            riwayatLokasiUseCase?.catatKunjungan(lokasi, adalahFolder = true)
+
             daftarFolderUseCase(lokasi, tampilkanTersembunyi = true).collect { hasil ->
                 when (hasil) {
                     is HasilOperasi.Sukses -> {

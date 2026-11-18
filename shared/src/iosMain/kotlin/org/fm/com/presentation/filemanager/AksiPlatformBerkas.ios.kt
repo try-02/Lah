@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
 package org.fm.com.presentation.filemanager
 
 import org.fm.com.domain.model.LokasiBerkas
