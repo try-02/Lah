@@ -6,14 +6,13 @@ import org.fm.com.domain.model.KemampuanPenyimpanan
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.usecase.ArahUrutan
 import org.fm.com.domain.usecase.KriteriaUrutan
+import org.fm.com.domain.usecase.SegmenLokasi
 
-/** Mode tampilan daftar berkas di layar. */
 enum class ModeTampilan {
     DAFTAR,
     KISI
 }
 
-/** Model item berkas untuk layer presentasi/UI (bebas dari I/O di Composable). */
 data class ItemBerkasUi(
     val lokasi: LokasiBerkas,
     val nama: String,
@@ -26,9 +25,9 @@ data class ItemBerkasUi(
     val dapatDitulis: Boolean
 )
 
-/** State UDF immutable untuk layar file manager. */
 data class StateFilemanager(
     val lokasiSaatIni: LokasiBerkas? = null,
+    val segmenBreadcrumb: List<SegmenLokasi> = emptyList(),
     val daftarItem: List<ItemBerkasUi> = emptyList(),
     val sedangMemuat: Boolean = false,
     val pesanGalat: String? = null,
@@ -37,17 +36,22 @@ data class StateFilemanager(
     val folderDiAtas: Boolean = true,
     val tampilkanTersembunyi: Boolean = false,
     val modeTampilan: ModeTampilan = ModeTampilan.DAFTAR,
+    val kataKunciSaring: String = "",
     val itemTerpilih: Set<LokasiBerkas> = emptySet(),
-    val kemampuanLokasi: KemampuanPenyimpanan? = null
+    val kemampuanLokasi: KemampuanPenyimpanan? = null,
+    val dialogUrutkanTerbuka: Boolean = false,
+    val dapatNavigasiKembali: Boolean = false
 ) {
     val jumlahItem: Int get() = daftarItem.size
     val sedangMultiSelect: Boolean get() = itemTerpilih.isNotEmpty()
 }
 
-/** Intent / Aksi pengguna untuk menggerakkan StateFilemanager. */
 sealed interface IntentFilemanager {
     data class BukaLokasi(val lokasi: LokasiBerkas) : IntentFilemanager
+    data class NavigasiKeSegmen(val segmen: SegmenLokasi) : IntentFilemanager
+    data object NavigasiKembali : IntentFilemanager
     data object Segarkan : IntentFilemanager
+    data class UbahKataKunciSaring(val kataKunci: String) : IntentFilemanager
     data class UbahPengurutan(val kriteria: KriteriaUrutan, val arah: ArahUrutan? = null) : IntentFilemanager
     data object ToggleFolderDiAtas : IntentFilemanager
     data object ToggleFileTersembunyi : IntentFilemanager
@@ -55,10 +59,10 @@ sealed interface IntentFilemanager {
     data class TogglePilihItem(val lokasi: LokasiBerkas) : IntentFilemanager
     data object PilihSemua : IntentFilemanager
     data object BersihkanPilihan : IntentFilemanager
+    data class SetBukaDialogUrutkan(val buka: Boolean) : IntentFilemanager
     data object HapusPesanGalat : IntentFilemanager
 }
 
-/** Mapper Domain -> UI Model. */
 object PemetaanDomainUi {
 
     fun EntitasBerkas.keUi(): ItemBerkasUi = ItemBerkasUi(
@@ -121,7 +125,6 @@ object PemetaanDomainUi {
             }
         }
         val hari = sisaHari.toInt() + 1
-
         val detikSisaHari = totalDetik % detikPerHari
         val jam = (detikSisaHari / 3600).toInt()
         val menit = ((detikSisaHari % 3600) / 60).toInt()
