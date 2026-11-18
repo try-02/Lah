@@ -43,6 +43,34 @@ jobs:
         run: |
           chmod +x ./gradlew
           ./gradlew :androidApp:assembleDebug :shared:testAndroidHostTest --stacktrace --console=plain
+          
+      - name: Sign APK
+        uses: r0adkll/sign-android-release@v1
+        id: sign_app
+        env:
+          BUILD_TOOLS_VERSION: "34.0.0"
+        with:
+          releaseDirectory: androidApp/build/outputs/apk/debug
+          signingKeyBase64: ${{ secrets.KEYSTORE_BASE64 }}
+          alias: ${{ secrets.KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pos-offline-release-signed-apk
+          path: |
+            ${{ steps.sign_app.outputs.signedReleaseFile }}
+            shared/schemas/**/*.json
+            androidApp/build/reports/
+            androidApp/build/stability/
+            androidApp/build/compose_compiler/
+            shared/build/reports/
+            shared/build/compose_compiler/
+            iosApp/build/
+          retention-days: 1
+          if-no-files-found: error
 
   deteksios:
     name: Deteksi pemicu iOS

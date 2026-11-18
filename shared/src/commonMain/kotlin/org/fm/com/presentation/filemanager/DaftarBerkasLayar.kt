@@ -27,21 +27,27 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DaftarBerkasLayar(
     viewModel: ViewModelFilemanager,
+    viewModelOperasiMassal: ViewModelOperasiMassal? = null,
     onBukaBerkas: (ItemBerkasUi) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.state.collectAsState()
-    val clipboardManager = LocalClipboardManager.current
+    val stateMassal by viewModelOperasiMassal?.state?.collectAsState() ?: remember { mutableStateOf(StateOperasiMassal()) }
+
+    // Menggunakan LocalClipboard modern bebas deprecation
+    val clipboard = LocalClipboard.current
+    val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
     var menuKonteksItem by remember { mutableStateOf<ItemBerkasUi?>(null) }
@@ -65,8 +71,12 @@ fun DaftarBerkasLayar(
                     onAksiHapus = {
                         viewModel.prosesIntent(IntentFilemanager.BukaDialogHapus(state.itemTerpilih.toList()))
                     },
-                    onAksiSalin = { /* Menuju T22 */ },
-                    onAksiPindah = { /* Menuju T22 */ }
+                    onAksiSalin = {
+                        viewModelOperasiMassal?.inisiasiSalin(state.itemTerpilih.toList())
+                    },
+                    onAksiPindah = {
+                        viewModelOperasiMassal?.inisiasiPindah(state.itemTerpilih.toList())
+                    }
                 )
             } else {
                 TopAppBar(
@@ -287,12 +297,16 @@ fun DaftarBerkasLayar(
     DialogPropertiBerkas(
         item = state.dialogPropertiItem,
         onSalinNama = { nama ->
-            clipboardManager.setText(AnnotatedString(nama))
-            viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Nama disalin: $nama"))
+            coroutineScope.launch {
+                clipboard.salinTeks(nama)
+                viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Nama disalin: $nama"))
+            }
         },
         onSalinPath = { path ->
-            clipboardManager.setText(AnnotatedString(path))
-            viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Lokasi disalin: $path"))
+            coroutineScope.launch {
+                clipboard.salinTeks(path)
+                viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Lokasi disalin: $path"))
+            }
         },
         onTutup = { viewModel.prosesIntent(IntentFilemanager.BukaDialogProperti(null)) }
     )
@@ -311,5 +325,27 @@ fun DaftarBerkasLayar(
         daftarHapus = state.dialogHapusItems,
         onKonfirmasiHapus = { viewModel.prosesIntent(IntentFilemanager.EksekusiHapusTerpilih) },
         onTutup = { viewModel.prosesIntent(IntentFilemanager.BukaDialogHapus(null)) }
+    )
+
+    DialogPindahSalin(
+        terbuka = stateMassal.dialogPilihTujuanTerbuka,
+        apakahPindah = stateMassal.apakahPindah,
+        jumlahItem = stateMassal.daftarSumber.size,
+        lokasiTujuan = state.lokasiSaatIni,
+        onKonfirmasi = {
+            state.lokasiSaatIni?.let { tujuan ->
+                viewModelOperasiMassal?.eksekusiKeTujuan(tujuan) {
+                    viewModel.prosesIntent(IntentFilemanager.BersihkanPilihan)
+                    viewModel.prosesIntent(IntentFilemanager.Segarkan)
+                    viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Operasi massal selesai"))
+                }
+            }
+        },
+        onTutup = { viewModelOperasiMassal?.tutupDialogTujuan() }
+    )
+
+    IndikatorProgresMassal(
+        state = stateMassal,
+        onBatal = { viewModelOperasiMassal?.batalkanOperasi() }
     )
 }
