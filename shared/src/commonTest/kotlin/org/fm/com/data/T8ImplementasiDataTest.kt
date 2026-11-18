@@ -104,6 +104,7 @@ class T8ImplementasiDataTest {
         val gagal = assertIs<HasilOperasi.Gagal>(tulis.nilai.tulis(PotonganIsi("y".encodeToByteArray())))
         assertEquals(PenyebabGalat.VALIDASI, gagal.penyebab)
         assertIs<HasilOperasi.Gagal>(tulis.nilai.batalkan())
+        assertIs<HasilOperasi.Sukses<Unit>>(tulis.nilai.batalkan()) // idempoten pasca-SELESAI
     }
 
     @Test
@@ -323,5 +324,104 @@ class T8ImplementasiDataTest {
             router.salin(PermintaanOperasi(sumber = lokasi("/p/a.txt"), tujuan = lokasi("content://p", JenisLokasi.SAF)))
         )
         assertEquals(PenyebabGalat.VALIDASI, lintas.penyebab)
+        assertEquals(PenyebabGalat.TIDAK_DIDUKUNG, ios.penyebab)
+        assertEquals(PenyebabGalat.TIDAK_DIDUKUNG, lintas.penyebab)
     }
+
+@Test
+fun batalkanIdempotenSetelahSelesai() = runTest {
+    val tulis = assertIs<HasilOperasi.Sukses<SumberTulisBerkas>>(kaset.bukaUntukTulis(lokasi(), timpa = true))
+    tulisSemua(tulis.nilai, "x")
+    assertIs<HasilOperasi.Sukses<Unit>>(tulis.nilai.batalkan())
+    assertIs<HasilOperasi.Sukses<Unit>>(tulis.nilai.batalkan())
+    assertNotNull(kaset.data(lokasi().pengenal), "batalkan tidak boleh mengubah hasil SELESAI")
+    assertIs<HasilOperasi.Gagal>(tulis.nilai.tulis(PotonganIsi("y".encodeToByteArray())))
+}
+
+@Test
+fun tulisGagalMidStreamTerminalDanBersih() = runTest {
+    val repo = ImplementasiRepositoriBerkas(gagalTulisSetelahPotongan = 1)
+    val tulis = assertIs<HasilOperasi.Sukses<SumberTulisBerkas>>(repo.bukaUntukTulis(lokasi(), timpa = false))
+    assertIs<HasilOperasi.Sukses<Unit>>(tulis.nilai.tulis(PotonganIsi("x".encodeToByteArray())))
+    assertIs<HasilOperasi.Gagal>(tulis.nilai.tulis(PotonganIsi("y".encodeToByteArray())))
+    assertIs<HasilOperasi.Gagal>(tulis.nilai.selesai())
+    assertIs<HasilOperasi.Sukses<Unit>>(tulis.nilai.batalkan())
+    assertNull(repo.data(lokasi().pengenal), "gagal tulis tidak meninggalkan entitas")
+}
+
+@Test
+fun roundTripChunkKecilMultiPotongan() = runTest {
+    val repo = ImplementasiRepositoriBerkas(ukuranPotongan = 4)
+    repo.simpan(DataBerkas("/m", "m", JenisLokasi.POSIX, adalahFolder = true))
+    val tulis = assertIs<HasilOperasi.Sukses<SumberTulisBerkas>>(
+        repo.bukaUntukTulisDi(lokasi("/m"), "a.txt", timpa = false)
+    )
+    tulisSemua(tulis.nilai, "halo ", "dunia")
+    val baca = assertIs<HasilOperasi.Sukses<SumberIsiBerkas>>(repo.bukaUntukBaca(lokasi("/m/a.txt")))
+    var jumlah = 0
+    var gabungan = ByteArray(0)
+    while (true) {
+        val isi = assertIs<SumberIsiBerkas.HasilPotongan.Isi>(baca.nilai.potongan())
+        if (isi.potongan.data.isNotEmpty()) jumlah++
+        gabungan += isi.potongan.data
+        if (isi.potongan.selesai) break
+    }
+    assertEquals(3, jumlah, "10 byte dengan potongan 4 byte = 3 potongan")
+    assertEquals("halo dunia", gabungan.decodeToString())
+}
+
+@Test
+fun gagalBacaMidStreamTerminal() = runTest {
+    val repo = ImplementasiRepositoriBerkas(ukuranPotongan = 4, gagalBacaSetelahPotongan = 2)
+    repo.simpan(
+        DataBerkas("/m/a.txt", "a.txt", JenisLokasi.POSIX, adalahFolder = false, ukuranByte = 10L),
+        "halo dunia".encodeToByteArray()
+    )
+    val baca = assertIs<HasilOperasi.Sukses<SumberIsiBerkas>>(repo.bukaUntukBaca(lokasi("/m/a.txt")))
+    assertIs<SumberIsiBerkas.HasilPotongan.Isi>(baca.nilai.potongan())
+    assertIs<SumberIsiBerkas.HasilPotongan.Isi>(baca.nilai.potongan())
+    assertIs<SumberIsiBerkas.HasilPotongan.Gagal>(baca.nilai.potongan())
+    assertIs<SumberIsiBerkas.HasilPotongan.Gagal>(baca.nilai.potongan())
+    baca.nilai.tutup()
+}
+
+@Test
+fun tulisDiBerkasBaruDanBatalkanBersih() = runTest {
+    seedFolder("/sdcard/Dokumen")
+    val tulis = assertIs<HasilOperasi.Sukses<SumberTulisBerkas>>(
+        kaset.bukaUntukTulisDi(lokasi("/sdcard/Dokumen"), "baru.txt", timpa = false)
+    )
+    assertIs<HasilOperasi.Sukses<Unit>>(tulis.nilai.tulis(PotonganIsi("isi".encodeToByteArray())))
+    assertIs<HasilOperasi.Sukses<Unit>>(tulis.nilai.batalkan())
+    assertNull(kaset.data("/sdcard/Dokumen/baru.txt"), "batalkan tidak meninggalkan entitas kosong")
+    val tulis2 = assertIs<HasilOperasi.Sukses<SumberTulisBerkas>>(
+        kaset.bukaUntukTulisDi(lokasi("/sdcard/Dokumen"), "baru.txt", timpa = false)
+    )
+    tulisSemua(tulis2.nilai, "isi")
+    assertEquals("isi", kaset.isiDari("/sdcard/Dokumen/baru.txt")?.decodeToString())
+    assertEquals("baru.txt", kaset.data("/sdcard/Dokumen/baru.txt")?.nama)
+}
+
+@Test
+fun tulisDiValidasiDanKonflik() = runTest {
+    seedFolder("/sdcard/Dokumen")
+    seedBerkas("/sdcard/Dokumen/ada.txt")
+    val konflik = assertIs<HasilOperasi.Gagal>(kaset.bukaUntukTulisDi(lokasi("/sdcard/Dokumen"), "ada.txt", timpa = false))
+    assertEquals(PenyebabGalat.KONFLIK, konflik.penyebab)
+    val traversal = assertIs<HasilOperasi.Gagal>(kaset.bukaUntukTulisDi(lokasi("/sdcard/Dokumen"), "../x", timpa = false))
+    assertEquals(PenyebabGalat.VALIDASI, traversal.penyebab)
+    val nul = assertIs<HasilOperasi.Gagal>(kaset.bukaUntukTulisDi(lokasi("/sdcard/Dokumen"), "a\u0000b", timpa = false))
+    assertEquals(PenyebabGalat.VALIDASI, nul.penyebab)
+    val indukHilang = assertIs<HasilOperasi.Gagal>(kaset.bukaUntukTulisDi(lokasi("/tdk"), "x.txt", timpa = false))
+    assertEquals(PenyebabGalat.TIDAK_DITEMUKAN, indukHilang.penyebab)
+}
+
+@Test
+fun buatMenolakNamaNullChar() = runTest {
+    seedFolder("/sdcard/Dokumen")
+    val hasil = assertIs<HasilOperasi.Gagal>(
+        operasi.buatFolder(PermintaanOperasi(sumber = lokasi("/sdcard/Dokumen"), namaBaru = "a\u0000b"))
+    )
+    assertEquals(PenyebabGalat.VALIDASI, hasil.penyebab)
+}
 }

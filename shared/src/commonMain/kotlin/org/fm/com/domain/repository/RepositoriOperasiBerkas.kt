@@ -35,6 +35,8 @@ data class PermintaanOperasi(
  * Aturan konfirmasi: [buatFolder], [buatBerkasKosong], [gantiNama], [salin], dan
  * [pindah] memerlukan konfirmasi bila TUJUANNYA sudah ada (timpa);
  * [hapus] selalu memerlukan `konfirmasi = true`.
+  * Nama satu segmen ([PermintaanOperasi.namaBaru]) divalidasi via
+ * [org.fm.com.domain.model.ValidasiNama] (tolak blank, ".", "..", "/", "\", NUL).
  */
 interface RepositoriOperasiBerkas {
     suspend fun buatFolder(permintaan: PermintaanOperasi): HasilOperasi<EntitasBerkas>
@@ -48,6 +50,8 @@ interface RepositoriOperasiBerkas {
 /**
  * Hasil agregasi satu operasi massal — dipakai use case T22/T42.
  * Item gagal dilaporkan satu per satu; sukses item lain tidak menutupi kegagalan.
+ * Tipe agregasi ini MILIK layer use case (T22/T42), bukan kontrak repositori;
+ * saat T22 dimulai, pindahkan ke domain/usecase (atau domain/model).
  */
 data class HasilMassal(
     val berhasil: List<EntitasBerkas> = emptyList(),

@@ -14,10 +14,10 @@ interface RepositoriBerkas {
     fun kapabilitas(lokasi: LokasiBerkas): KemampuanPenyimpanan?
 
     /**
-     * Daftar isi folder. Kontrak emisi: setiap emisi adalah SNAPSHOT PENUH terbaru
-     * isi folder (bukan batch inkremental). Pemakai mengganti state, bukan menggabung.
-     * Adapter boleh emit sekali (statis) atau berulang saat isi berubah
-     * (mis. ContentObserver SAF / refresh manual iOS).
+     * Daftar isi folder. Setiap emisi adalah SNAPSHOT PENUH terbaru (bukan batch
+     * inkremental); pemakai mengganti state, bukan menggabung. Flow boleh selesai
+     * setelah satu emisi (cold single-shot) atau tetap terbuka dan emit ulang saat
+     * isi berubah (mis. ContentObserver SAF / refresh manual iOS).
      *
      * Hasil: folder tidak ada → Gagal(TIDAK_DITEMUKAN); bukan folder → Gagal(VALIDASI);
      * folder kosong → Sukses(emptyList()). Hanya anak langsung, tanpa isi berkas.
@@ -28,9 +28,23 @@ interface RepositoriBerkas {
     suspend fun bukaUntukBaca(lokasi: LokasiBerkas): HasilOperasi<SumberIsiBerkas>
 
     /**
-     * Buat sumber tulis streaming; [timpa] butuh konfirmasi pemanggil bila target ada.
-     * Implementasi wajib memeriksa ulang konflik saat `selesai()` (bukan hanya saat buka).
-     * Siklus hidup & aturan error: lihat [SumberTulisBerkas].
+     * Buka tulis untuk entitas yang SUDAH ADA / pengenalnya diketahui
+     * (mis. simpan editor T32). Untuk berkas BARU gunakan [bukaUntukTulisDi].
+     * Konflik diperiksa ulang secara atomik saat `selesai()`.
      */
     suspend fun bukaUntukTulis(lokasi: LokasiBerkas, timpa: Boolean): HasilOperasi<SumberTulisBerkas>
+
+    /**
+     * Buka tulis untuk berkas di dalam [induk] dengan [nama] satu segmen
+     * (divalidasi via ValidasiNama). WAJIB dipakai bila pengenal target tidak bisa
+     * ditebak sebelum dokumen dibuat — kasus SAF (T22 salin lintas lokasi, T44 ekstraksi).
+     *
+     * Kewajiban adapter:
+     * - SAF: periksa eksistensi anak bernama sama SEBELUM createDocument (provider
+     *   diam-diam membuat "berkas (1).txt"); tanpa [timpa] → Gagal(KONFLIK).
+     *   Bila dokumen baru dibuat lalu [SumberTulisBerkas.batalkan] dipanggil,
+     *   dokumen itu wajib dihapus — tidak meninggalkan entitas kosong.
+     * - POSIX/iOS: tulis ke temp di induk lalu verifikasi (K6).
+     */
+    suspend fun bukaUntukTulisDi(induk: LokasiBerkas, nama: String, timpa: Boolean): HasilOperasi<SumberTulisBerkas>
 }

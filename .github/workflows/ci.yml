@@ -42,7 +42,7 @@ jobs:
       - name: Build Android & host tests
         run: |
           chmod +x ./gradlew
-          ./gradlew :androidApp:assembleDebug :shared:testAndroidHostTest --stacktrace --console=plain
+          ./gradlew :androidApp:assembleDebug :shared:testAndroidHostTest :shared:testDebugUnitTest --stacktrace --console=plain
 
   deteksios:
     name: Deteksi pemicu iOS
@@ -125,7 +125,7 @@ jobs:
       - name: Jalankan tes simulator iOS
         run: |
           chmod +x ./gradlew
-          ./gradlew :shared:iosSimulatorArm64Test --stacktrace --console=plain
+          ./gradlew :shared:testDebugUnitTest :shared:iosSimulatorArm64Test --stacktrace --console=plain
 
       - name: Bangun aplikasi iOS
         run: |

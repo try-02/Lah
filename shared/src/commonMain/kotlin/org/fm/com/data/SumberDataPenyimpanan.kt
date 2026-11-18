@@ -36,7 +36,7 @@ class RepositoriRouterBerkas(
     private fun backend(lokasi: LokasiBerkas): SumberDataPenyimpanan? = sumber[lokasi.jenis]
 
     private fun tidakTerdaftar(lokasi: LokasiBerkas): HasilOperasi.Gagal =
-        HasilOperasi.Gagal("Jenis lokasi tidak terdaftar: ${lokasi.jenis}", PenyebabGalat.VALIDASI)
+        HasilOperasi.Gagal("Jenis lokasi tidak terdaftar: ${lokasi.jenis}", PenyebabGalat.TIDAK_DIDUKUNG)
 
     override fun kapabilitas(lokasi: LokasiBerkas): KemampuanPenyimpanan? =
         backend(lokasi)?.kapabilitas(lokasi)
@@ -49,6 +49,11 @@ class RepositoriRouterBerkas(
 
     override suspend fun bukaUntukTulis(lokasi: LokasiBerkas, timpa: Boolean): HasilOperasi<SumberTulisBerkas> =
         backend(lokasi)?.bukaUntukTulis(lokasi, timpa) ?: tidakTerdaftar(lokasi)
+
+    override suspend fun bukaUntukTulisDi(
+        induk: LokasiBerkas, nama: String, timpa: Boolean
+    ): HasilOperasi<SumberTulisBerkas> =
+        backend(induk)?.bukaUntukTulisDi(induk, nama, timpa) ?: tidakTerdaftar(induk)
 
     override suspend fun buatFolder(permintaan: PermintaanOperasi): HasilOperasi<EntitasBerkas> =
         rute(permintaan) { it.buatFolder(permintaan) }
@@ -77,7 +82,7 @@ class RepositoriRouterBerkas(
         if (tujuan != null && tujuan.jenis != permintaan.sumber.jenis) {
             return HasilOperasi.Gagal(
                 "Salin/pindah lintas jenis lokasi ditangani use case T22, bukan router",
-                PenyebabGalat.VALIDASI
+                PenyebabGalat.TIDAK_DIDUKUNG
             )
         }
         return aksi(b)

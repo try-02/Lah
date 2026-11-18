@@ -16,9 +16,10 @@ import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.MatriksKemampuan
 import org.fm.com.domain.model.PenyebabGalat
 import org.fm.com.domain.model.PlatformPenyimpanan
+import org.fm.com.domain.model.ValidasiNama
 import org.fm.com.domain.repository.RepositoriBerkas
 
-private const val UKURAN_POTONGAN = 8 * 1024
+private const val UKURAN_POTONGAN_BAWAAN = 8 * 1024
 
 private fun awalanAnak(pengenal: String): String =
     if (pengenal.endsWith("/")) pengenal else "$pengenal/"
@@ -32,14 +33,23 @@ private fun gabung(induk: String, nama: String): String =
     if (induk.endsWith("/")) induk + nama else "$induk/$nama"
 
 /**
- * Fake in-memory [RepositoriBerkas] untuk commonTest/pratinjau — BUKAN adapter nyata.
- * Semua akses peta dilindungi [Mutex]. Isi berkas disimpan terpisah dari metadata;
- * operasi folder (rename/salin/pindah/hapus) rekursif atas subpohon dan mempertahankan
- * seluruh flag (termasuk [DataBerkas.adalahTautan]). Pengenal diperlakukan sebagai
- * kunci opaque bersekat '/' — adapter SAF/iOS nyata (T9–T12) memakai API platform,
- * bukan matematika path ini. Kegagalan via [HasilOperasi.Gagal], tanpa exception.
+ * Fake in-memory [RepositoriBerkas] untuk commonTest & pratinjau UI pra-DI —
+ * BUKAN adapter nyata; tetap di commonMain (lihat K10). Semua akses peta dilindungi
+ * [Mutex]; operasi folder rekursif mempertahankan flag (termasuk tautan).
+ * Pengenal = kunci opaque bersekat '/' — adapter SAF/iOS memakai API platform,
+ * bukan matematika path ini.
+ *
+ * Parameter khusus uji: [ukuranPotongan] kecil memaksa loop multi-potongan;
+ * [gagalBacaSetelahPotongan]/[gagalTulisSetelahPotongan] menyuntik kegagalan I/O
+ * mid-stream (untuk uji T22/T35/T44). Produksi memakai bawaan (tanpa hook).
  */
-class ImplementasiRepositoriBerkas : RepositoriBerkas {
+class ImplementasiRepositoriBerkas(
+    private val ukuranPotongan: Int = UKURAN_POTONGAN_BAWAAN,
+    private val gagalBacaSetelahPotongan: Int? = null,
+    private val gagalTulisSetelahPotongan: Int? = null
+) : RepositoriBerkas {
+    init { require(ukuranPotongan > 0) { "ukuranPotongan harus > 0" } }
+
     private val mutex = Mutex()
     private val kaset: MutableMap<String, DataBerkas> = mutableMapOf()
     private val isiBerkas: MutableMap<String, ByteArray> = mutableMapOf()
@@ -63,7 +73,7 @@ class ImplementasiRepositoriBerkas : RepositoriBerkas {
                         kaset.values
                             .filter {
                                 it.pengenal.startsWith(awalan) &&
-                                    it.pengenal.length > awalan.length &&
+                                    it.pengenal.length > awalan.length && // sisa kosong = folder itu sendiri (root "/")
                                     '/' !in it.pengenal.substring(awalan.length)
                             }
                             .sortedBy { it.nama }
@@ -86,7 +96,10 @@ class ImplementasiRepositoriBerkas : RepositoriBerkas {
                     "Tidak bisa membaca folder sebagai berkas", PenyebabGalat.VALIDASI
                 )
                 else -> HasilOperasi.Sukses(
-                    SumberMemoriBaca(isiBerkas[lokasi.pengenal]?.copyOf() ?: ByteArray(0))
+                    SumberMemoriBaca(
+                        isiBerkas[lokasi.pengenal]?.copyOf() ?: ByteArray(0),
+                        ukuranPotongan, gagalBacaSetelahPotongan
+                    )
                 )
             }
         }
@@ -101,9 +114,39 @@ class ImplementasiRepositoriBerkas : RepositoriBerkas {
                 lama != null && !timpa -> HasilOperasi.Gagal(
                     "Berkas sudah ada, perlu konfirmasi timpa", PenyebabGalat.KONFLIK
                 )
-                else -> HasilOperasi.Sukses(SumberMemoriTulis(this, lokasi, timpa))
+                else -> HasilOperasi.Sukses(SumberMemoriTulis(this, lokasi, timpa, gagalTulisSetelahPotongan))
             }
         }
+
+    override suspend fun bukaUntukTulisDi(
+        induk: LokasiBerkas, nama: String, timpa: Boolean
+    ): HasilOperasi<SumberTulisBerkas> {
+        if (!ValidasiNama.sah(nama)) {
+            return HasilOperasi.Gagal("Nama tidak sah: $nama", PenyebabGalat.VALIDASI)
+        }
+        return mutex.withLock {
+            val dataInduk = kaset[induk.pengenal]
+                ?: return@withLock HasilOperasi.Gagal(
+                    "Folder induk tidak ditemukan: ${induk.pengenal}", PenyebabGalat.TIDAK_DITEMUKAN
+                )
+            if (!dataInduk.adalahFolder) {
+                return@withLock HasilOperasi.Gagal("Induk bukan folder: ${induk.pengenal}", PenyebabGalat.VALIDASI)
+            }
+            val id = gabung(induk.pengenal, nama)
+            val lama = kaset[id]
+            when {
+                lama != null && lama.adalahFolder -> HasilOperasi.Gagal(
+                    "Tidak bisa menulis isi ke folder", PenyebabGalat.VALIDASI
+                )
+                lama != null && !timpa -> HasilOperasi.Gagal(
+                    "Berkas sudah ada, perlu konfirmasi timpa", PenyebabGalat.KONFLIK
+                )
+                else -> HasilOperasi.Sukses(
+                    SumberMemoriTulis(this, LokasiBerkas(id, induk.jenis, nama), timpa, gagalTulisSetelahPotongan)
+                )
+            }
+        }
+    }
 
     private fun jenisKePlatform(jenis: JenisLokasi): PlatformPenyimpanan = when (jenis) {
         JenisLokasi.POSIX, JenisLokasi.SAF -> PlatformPenyimpanan.ANDROID
@@ -257,19 +300,29 @@ class ImplementasiRepositoriBerkas : RepositoriBerkas {
     }
 }
 
-/** Sumber baca chunked atas snapshot isi; EOF idempoten (KOSONG berulang). */
-private class SumberMemoriBaca(private val isi: ByteArray) : SumberIsiBerkas {
+/** Sumber baca chunked; EOF idempoten; kegagalan mid-stream bersifat terminal. */
+private class SumberMemoriBaca(
+    private val isi: ByteArray,
+    private val ukuranPotongan: Int,
+    private val gagalSetelahPotongan: Int?
+) : SumberIsiBerkas {
     private var posisi = 0
     private var tertutup = false
+    private var potonganBerhasil = 0
 
     override val ukuranByte: Long = isi.size.toLong()
 
     override suspend fun potongan(): SumberIsiBerkas.HasilPotongan {
         if (tertutup) return SumberIsiBerkas.HasilPotongan.Gagal("Sumber baca sudah ditutup")
         if (posisi >= isi.size) return SumberIsiBerkas.HasilPotongan.Isi(PotonganIsi.KOSONG)
-        val akhir = minOf(posisi + UKURAN_POTONGAN, isi.size)
+        if (gagalSetelahPotongan != null && potonganBerhasil >= gagalSetelahPotongan) {
+            tertutup = true
+            return SumberIsiBerkas.HasilPotongan.Gagal("Simulasi kegagalan I/O saat baca")
+        }
+        val akhir = minOf(posisi + ukuranPotongan, isi.size)
         val data = isi.copyOfRange(posisi, akhir)
         posisi = akhir
+        potonganBerhasil++
         return SumberIsiBerkas.HasilPotongan.Isi(PotonganIsi(data, selesai = posisi >= isi.size))
     }
 
@@ -278,12 +331,14 @@ private class SumberMemoriBaca(private val isi: ByteArray) : SumberIsiBerkas {
 
 /**
  * Sumber tulis fake: menampung potongan di memori (adapter nyata WAJIB streaming ke temp).
- * Konflik diperiksa ulang secara atomik saat [selesai]; kegagalan tidak menyentuh kaset.
+ * Konflik diperiksa ulang atomik saat [selesai]. Gagal tulis → BATAL + bersih (terminal).
+ * [batalkan] idempoten; tidak pernah mengubah hasil SELESAI.
  */
 private class SumberMemoriTulis(
     private val repo: ImplementasiRepositoriBerkas,
     private val lokasi: LokasiBerkas,
-    private val timpa: Boolean
+    private val timpa: Boolean,
+    private val gagalSetelahPotongan: Int?
 ) : SumberTulisBerkas {
     private enum class Status { AKTIF, SELESAI, BATAL }
 
@@ -293,6 +348,11 @@ private class SumberMemoriTulis(
     override suspend fun tulis(potongan: PotonganIsi): HasilOperasi<Unit> {
         if (status != Status.AKTIF) {
             return HasilOperasi.Gagal("Sumber tulis sudah tidak aktif", PenyebabGalat.VALIDASI)
+        }
+        if (gagalSetelahPotongan != null && penampung.size >= gagalSetelahPotongan) {
+            penampung.clear()
+            status = Status.BATAL
+            return HasilOperasi.Gagal("Simulasi kegagalan I/O saat tulis", PenyebabGalat.TIDAK_DIKETAHUI)
         }
         penampung.add(potongan.data.copyOf())
         return HasilOperasi.Sukses(Unit)
@@ -304,7 +364,7 @@ private class SumberMemoriTulis(
         }
         val gabungan = ByteArray(penampung.sumOf { it.size })
         var posisi = 0
-        for (b in penampung) { b.copyInto(gabungan, posisi); posisi += b.size }
+        for (b in penampung) { b.copyInto(gabung, posisi); posisi += b.size }
         val hasil = repo.simpanIsi(lokasi, gabungan, timpa)
         status = if (hasil is HasilOperasi.Sukses) Status.SELESAI else Status.BATAL
         penampung.clear()
@@ -312,11 +372,8 @@ private class SumberMemoriTulis(
     }
 
     override suspend fun batalkan(): HasilOperasi<Unit> {
-        if (status != Status.AKTIF) {
-            return HasilOperasi.Gagal("Sumber tulis sudah tidak aktif", PenyebabGalat.VALIDASI)
-        }
+        if (status == Status.AKTIF) status = Status.BATAL
         penampung.clear()
-        status = Status.BATAL
         return HasilOperasi.Sukses(Unit)
     }
 }
