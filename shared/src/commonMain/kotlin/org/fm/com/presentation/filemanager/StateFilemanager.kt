@@ -31,6 +31,7 @@ data class StateFilemanager(
     val daftarItem: List<ItemBerkasUi> = emptyList(),
     val sedangMemuat: Boolean = false,
     val pesanGalat: String? = null,
+    val pesanInfo: String? = null,
     val kriteriaUrutan: KriteriaUrutan = KriteriaUrutan.NAMA,
     val arahUrutan: ArahUrutan = ArahUrutan.NAIK,
     val folderDiAtas: Boolean = true,
@@ -40,6 +41,10 @@ data class StateFilemanager(
     val itemTerpilih: Set<LokasiBerkas> = emptySet(),
     val kemampuanLokasi: KemampuanPenyimpanan? = null,
     val dialogUrutkanTerbuka: Boolean = false,
+    val dialogBuatTerbuka: Boolean = false,
+    val dialogPropertiItem: ItemBerkasUi? = null,
+    val dialogRenameItem: ItemBerkasUi? = null,
+    val dialogHapusItems: List<LokasiBerkas>? = null,
     val dapatNavigasiKembali: Boolean = false
 ) {
     val jumlahItem: Int get() = daftarItem.size
@@ -60,6 +65,15 @@ sealed interface IntentFilemanager {
     data object PilihSemua : IntentFilemanager
     data object BersihkanPilihan : IntentFilemanager
     data class SetBukaDialogUrutkan(val buka: Boolean) : IntentFilemanager
+    data class SetBukaDialogBuat(val buka: Boolean) : IntentFilemanager
+    data class BuatFolderBaru(val nama: String) : IntentFilemanager
+    data class BuatBerkasBaru(val nama: String) : IntentFilemanager
+    data class BukaDialogProperti(val item: ItemBerkasUi?) : IntentFilemanager
+    data class BukaDialogRename(val item: ItemBerkasUi?) : IntentFilemanager
+    data class EksekusiRename(val sumber: LokasiBerkas, val namaBaru: String) : IntentFilemanager
+    data class BukaDialogHapus(val items: List<LokasiBerkas>?) : IntentFilemanager
+    data object EksekusiHapusTerpilih : IntentFilemanager
+    data class SetPesanInfo(val pesan: String?) : IntentFilemanager
     data object HapusPesanGalat : IntentFilemanager
 }
 

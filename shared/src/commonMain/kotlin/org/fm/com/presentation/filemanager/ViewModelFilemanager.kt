@@ -11,10 +11,15 @@ import kotlinx.coroutines.launch
 import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.model.LokasiBerkas
+import org.fm.com.domain.model.PenyebabGalat
 import org.fm.com.domain.repository.RepositoriBerkas
+import org.fm.com.domain.repository.RepositoriOperasiBerkas
 import org.fm.com.domain.usecase.ArahUrutan
+import org.fm.com.domain.usecase.BuatBerkasUseCase
 import org.fm.com.domain.usecase.DaftarFolderUseCase
 import org.fm.com.domain.usecase.FilterBerkasUseCase
+import org.fm.com.domain.usecase.GantiNamaBerkasUseCase
+import org.fm.com.domain.usecase.HapusBerkasUseCase
 import org.fm.com.domain.usecase.KriteriaUrutan
 import org.fm.com.domain.usecase.SegmenLokasi
 import org.fm.com.domain.usecase.TelusuriLokasiUseCase
@@ -23,10 +28,14 @@ import org.fm.com.presentation.filemanager.PemetaanDomainUi.keUi
 
 class ViewModelFilemanager(
     private val repositoriBerkas: RepositoriBerkas,
+    repositoriOperasi: RepositoriOperasiBerkas? = repositoriBerkas as? RepositoriOperasiBerkas,
     private val daftarFolderUseCase: DaftarFolderUseCase = DaftarFolderUseCase(repositoriBerkas),
     private val urutkanBerkasUseCase: UrutkanBerkasUseCase = UrutkanBerkasUseCase(),
     private val filterBerkasUseCase: FilterBerkasUseCase = FilterBerkasUseCase(),
-    private val telusuriLokasiUseCase: TelusuriLokasiUseCase = TelusuriLokasiUseCase()
+    private val telusuriLokasiUseCase: TelusuriLokasiUseCase = TelusuriLokasiUseCase(),
+    private val buatBerkasUseCase: BuatBerkasUseCase? = repositoriOperasi?.let { BuatBerkasUseCase(it) },
+    private val gantiNamaBerkasUseCase: GantiNamaBerkasUseCase? = repositoriOperasi?.let { GantiNamaBerkasUseCase(it) },
+    private val hapusBerkasUseCase: HapusBerkasUseCase? = repositoriOperasi?.let { HapusBerkasUseCase(it) }
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(StateFilemanager())
@@ -51,6 +60,15 @@ class ViewModelFilemanager(
             is IntentFilemanager.PilihSemua -> pilihSemua()
             is IntentFilemanager.BersihkanPilihan -> bersihkanPilihan()
             is IntentFilemanager.SetBukaDialogUrutkan -> _state.update { it.copy(dialogUrutkanTerbuka = intent.buka) }
+            is IntentFilemanager.SetBukaDialogBuat -> _state.update { it.copy(dialogBuatTerbuka = intent.buka) }
+            is IntentFilemanager.BuatFolderBaru -> buatFolder(intent.nama)
+            is IntentFilemanager.BuatBerkasBaru -> buatBerkas(intent.nama)
+            is IntentFilemanager.BukaDialogProperti -> _state.update { it.copy(dialogPropertiItem = intent.item) }
+            is IntentFilemanager.BukaDialogRename -> _state.update { it.copy(dialogRenameItem = intent.item) }
+            is IntentFilemanager.EksekusiRename -> eksekusiRename(intent.sumber, intent.namaBaru)
+            is IntentFilemanager.BukaDialogHapus -> _state.update { it.copy(dialogHapusItems = intent.items) }
+            is IntentFilemanager.EksekusiHapusTerpilih -> eksekusiHapus()
+            is IntentFilemanager.SetPesanInfo -> _state.update { it.copy(pesanInfo = intent.pesan) }
             is IntentFilemanager.HapusPesanGalat -> _state.update { it.copy(pesanGalat = null) }
         }
     }
@@ -125,6 +143,84 @@ class ViewModelFilemanager(
     private fun segarkan() {
         val lokasi = _state.value.lokasiSaatIni ?: return
         muatFolderInternal(lokasi)
+    }
+
+    private fun buatFolder(nama: String) {
+        val induk = _state.value.lokasiSaatIni ?: return
+        val uc = buatBerkasUseCase ?: return laporkanOperasiTakDidukung()
+        viewModelScope.launch {
+            _state.update { it.copy(dialogBuatTerbuka = false, sedangMemuat = true) }
+            when (val hasil = uc.buatFolder(induk, nama)) {
+                is HasilOperasi.Sukses -> {
+                    _state.update { it.copy(pesanInfo = "Folder '${hasil.nilai.nama}' berhasil dibuat") }
+                    segarkan()
+                }
+                is HasilOperasi.Gagal -> {
+                    _state.update { it.copy(sedangMemuat = false, pesanGalat = hasil.pesan) }
+                }
+            }
+        }
+    }
+
+    private fun buatBerkas(nama: String) {
+        val induk = _state.value.lokasiSaatIni ?: return
+        val uc = buatBerkasUseCase ?: return laporkanOperasiTakDidukung()
+        viewModelScope.launch {
+            _state.update { it.copy(dialogBuatTerbuka = false, sedangMemuat = true) }
+            when (val hasil = uc.buatBerkasKosong(induk, nama)) {
+                is HasilOperasi.Sukses -> {
+                    _state.update { it.copy(pesanInfo = "Berkas '${hasil.nilai.nama}' berhasil dibuat") }
+                    segarkan()
+                }
+                is HasilOperasi.Gagal -> {
+                    _state.update { it.copy(sedangMemuat = false, pesanGalat = hasil.pesan) }
+                }
+            }
+        }
+    }
+
+    private fun eksekusiRename(sumber: LokasiBerkas, namaBaru: String) {
+        val uc = gantiNamaBerkasUseCase ?: return laporkanOperasiTakDidukung()
+        viewModelScope.launch {
+            _state.update { it.copy(dialogRenameItem = null, sedangMemuat = true) }
+            when (val hasil = uc(sumber, namaBaru)) {
+                is HasilOperasi.Sukses -> {
+                    _state.update { it.copy(pesanInfo = "Nama berhasil diubah menjadi '${hasil.nilai.nama}'") }
+                    segarkan()
+                }
+                is HasilOperasi.Gagal -> {
+                    _state.update { it.copy(sedangMemuat = false, pesanGalat = hasil.pesan) }
+                }
+            }
+        }
+    }
+
+    private fun eksekusiHapus() {
+        val targets = _state.value.dialogHapusItems ?: return
+        val uc = hapusBerkasUseCase ?: return laporkanOperasiTakDidukung()
+        viewModelScope.launch {
+            _state.update { it.copy(dialogHapusItems = null, sedangMemuat = true) }
+            var gagal: String? = null
+            for (lokasi in targets) {
+                val hasil = uc(lokasi, konfirmasi = true)
+                if (hasil is HasilOperasi.Gagal) {
+                    gagal = hasil.pesan
+                    break
+                }
+            }
+            if (gagal != null) {
+                _state.update { it.copy(sedangMemuat = false, pesanGalat = gagal) }
+            } else {
+                _state.update { it.copy(itemTerpilih = emptySet(), pesanInfo = "Berhasil menghapus ${targets.size} item") }
+                segarkan()
+            }
+        }
+    }
+
+    private fun laporkanOperasiTakDidukung() {
+        _state.update {
+            it.copy(pesanGalat = "Operasi pengubahan berkas tidak didukung pada repositori ini")
+        }
     }
 
     private fun ubahKataKunciSaring(kataKunci: String) {
