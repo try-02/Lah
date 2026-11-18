@@ -364,7 +364,7 @@ private class SumberMemoriTulis(
         }
         val gabungan = ByteArray(penampung.sumOf { it.size })
         var posisi = 0
-        for (b in penampung) { b.copyInto(gabung, posisi); posisi += b.size }
+        for (b in penampung) { b.copyInto(gabungan, posisi); posisi += b.size }
         val hasil = repo.simpanIsi(lokasi, gabungan, timpa)
         status = if (hasil is HasilOperasi.Sukses) Status.SELESAI else Status.BATAL
         penampung.clear()
