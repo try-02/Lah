@@ -1,16 +1,11 @@
 package org.fm.com.data
 
-import org.fm.com.domain.model.EntitasBerkas
-import org.fm.com.domain.model.JenisBerkas
 import org.fm.com.domain.model.JenisLokasi
-import org.fm.com.domain.model.LokasiBerkas
 
 /**
  * Model Data untuk satu entitas hasil pembacaan penyimpanan.
- *
- * Berbeda dari [EntitasBerkas] domain: field di sini diturunkan mentah dari
- * penyedia penyimpanan (URI, timestamp ms, flag platform) dan boleh kosong.
- * Konversi ke domain dilakukan lewat [PemetaanDataDomain.keDomain].
+ * Field mentah dari penyedia (URI, timestamp ms, flag platform), boleh kosong.
+ * Konversi ke domain lewat [PemetaanDataDomain.keDomain].
  */
 data class DataBerkas(
     val pengenal: String,

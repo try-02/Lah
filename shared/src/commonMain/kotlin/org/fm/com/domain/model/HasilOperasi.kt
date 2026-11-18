@@ -1,11 +1,16 @@
 package org.fm.com.domain.model
 
-/**
- * Hasil operasi tanpa exception lintas layer. `Galat` memuat alasan yang siap
- * ditampilkan; kegagalan tidak pernah dilaporkan sebagai sukses.
- */
-sealed interface HasilOperasi<out T> {
+import kotlin.coroutines.cancellation.CancellationException
 
+/**
+Hasil operasi tanpa exception lintas layer. `Gagal` memuat alasan yang siap
+ditampilkan; kegagalan tidak pernah dilaporkan sebagai sukses.
+
+Catatan: SecurityException (Android) / NSError permission (iOS) dipetakan ke
+[PenyebabGalat.IZIN_DITOLAK] oleh adapter platform (androidMain/iosMain, T9–T12),
+bukan di sini.
+*/
+sealed interface HasilOperasi<out T> {
     data class Sukses<out T>(val nilai: T) : HasilOperasi<T>
 
     data class Gagal(
@@ -18,8 +23,6 @@ sealed interface HasilOperasi<out T> {
             Sukses(blok())
         } catch (e: IllegalArgumentException) {
             Gagal(e.message ?: "Input tidak valid", PenyebabGalat.VALIDASI)
-        } catch (e: SecurityException) {
-            Gagal(e.message ?: "Izin ditolak", PenyebabGalat.IZIN_DITOLAK)
         } catch (e: NoSuchElementException) {
             Gagal(e.message ?: "Entitas tidak ditemukan", PenyebabGalat.TIDAK_DITEMUKAN)
         } catch (e: Exception) {
@@ -28,10 +31,10 @@ sealed interface HasilOperasi<out T> {
 
         suspend fun <T> dariSuspend(blok: suspend () -> T): HasilOperasi<T> = try {
             Sukses(blok())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: IllegalArgumentException) {
             Gagal(e.message ?: "Input tidak valid", PenyebabGalat.VALIDASI)
-        } catch (e: SecurityException) {
-            Gagal(e.message ?: "Izin ditolak", PenyebabGalat.IZIN_DITOLAK)
         } catch (e: NoSuchElementException) {
             Gagal(e.message ?: "Entitas tidak ditemukan", PenyebabGalat.TIDAK_DITEMUKAN)
         } catch (e: Exception) {
