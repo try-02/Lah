@@ -21,11 +21,10 @@ import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.PenyebabGalat
 import platform.Foundation.NSDirectoryEnumerationSkipsSubdirectoryDescendants
 import platform.Foundation.NSError
-import platform.Foundation.NSFileHandle
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSNumber
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLIsDirectoryKey
-import platform.Foundation.resourceValuesForKeys
 
 /**
  * Pembaca daftar isi direktori sandbox iOS dalam SATU pemanggilan batch pre-fetch
@@ -60,7 +59,7 @@ class DokumenDaftarIsi(
                 memScoped {
                     val errorPtr = alloc<ObjCObjectVar<NSError?>>()
                     val checkDir = url.resourceValuesForKeys(listOf(NSURLIsDirectoryKey), errorPtr.ptr)
-                    val isDir = (checkDir?.objectForKey(NSURLIsDirectoryKey) as? platform.Foundation.NSNumber)?.boolValue ?: false
+                    val isDir = (checkDir?.get(NSURLIsDirectoryKey) as? NSNumber)?.boolValue ?: false
                     if (!isDir) {
                         return@denganAksesKeamananSuspend HasilOperasi.Gagal(
                             "Lokasi bukan direktori: ${lokasi.pengenal}",

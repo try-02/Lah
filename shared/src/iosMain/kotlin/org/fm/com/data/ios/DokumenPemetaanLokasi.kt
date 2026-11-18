@@ -16,7 +16,6 @@ import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.PenyebabGalat
 import platform.Foundation.NSDate
-import platform.Foundation.NSDictionary
 import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSNumber
@@ -27,7 +26,6 @@ import platform.Foundation.NSURLIsDirectoryKey
 import platform.Foundation.NSURLIsHiddenKey
 import platform.Foundation.NSURLIsSymbolicLinkKey
 import platform.Foundation.NSURLNameKey
-import platform.Foundation.fileURLWithPath
 import platform.Foundation.timeIntervalSince1970
 
 /**
@@ -89,34 +87,34 @@ object DokumenPemetaanLokasi {
     /**
      * Memetakan [NSURL] beserta atribut hasil query ke [EntitasBerkas].
      */
-    fun keEntitasBerkas(url: NSURL, atribut: NSDictionary? = null): EntitasBerkas {
+    fun keEntitasBerkas(url: NSURL, atribut: Map<Any?, *>? = null): EntitasBerkas {
         val lokasi = keLokasi(url)
         val fileManager = NSFileManager.defaultManager
 
-        val nama = (atribut?.objectForKey(NSURLNameKey) as? String)
+        val nama = (atribut?.get(NSURLNameKey) as? String)
             ?: url.lastPathComponent
             ?: "berkas"
 
-        val isDir = (atribut?.objectForKey(NSURLIsDirectoryKey) as? NSNumber)?.boolValue
+        val isDir = (atribut?.get(NSURLIsDirectoryKey) as? NSNumber)?.boolValue
             ?: run {
                 memScoped {
                     val errorPtr = alloc<ObjCObjectVar<NSError?>>()
                     val values = url.resourceValuesForKeys(listOf(NSURLIsDirectoryKey), errorPtr.ptr)
-                    (values?.objectForKey(NSURLIsDirectoryKey) as? NSNumber)?.boolValue ?: false
+                    (values?.get(NSURLIsDirectoryKey) as? NSNumber)?.boolValue ?: false
                 }
             }
 
-        val isSymlink = (atribut?.objectForKey(NSURLIsSymbolicLinkKey) as? NSNumber)?.boolValue ?: false
+        val isSymlink = (atribut?.get(NSURLIsSymbolicLinkKey) as? NSNumber)?.boolValue ?: false
 
         val ukuran = if (isDir) null else {
-            (atribut?.objectForKey(NSURLFileSizeKey) as? NSNumber)?.longLongValue
+            (atribut?.get(NSURLFileSizeKey) as? NSNumber)?.longLongValue
         }
 
-        val waktuUbahMs = (atribut?.objectForKey(NSURLContentModificationDateKey) as? NSDate)?.let {
+        val waktuUbahMs = (atribut?.get(NSURLContentModificationDateKey) as? NSDate)?.let {
             (it.timeIntervalSince1970 * 1000.0).toLong()
         }
 
-        val isHidden = (atribut?.objectForKey(NSURLIsHiddenKey) as? NSNumber)?.boolValue
+        val isHidden = (atribut?.get(NSURLIsHiddenKey) as? NSNumber)?.boolValue
             ?: nama.startsWith(".")
 
         val path = url.path

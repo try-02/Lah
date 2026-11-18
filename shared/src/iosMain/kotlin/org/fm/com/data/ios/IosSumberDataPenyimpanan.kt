@@ -31,8 +31,6 @@ import platform.Foundation.NSFileManager
 import platform.Foundation.NSNumber
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLFileSizeKey
-import platform.Foundation.NSURLIsDirectoryKey
-import platform.Foundation.resourceValuesForKeys
 
 /**
  * Adapter [SumberDataPenyimpanan] untuk penyimpanan sandbox [JenisLokasi.IOS] (PRD §5.1, K9, K10, T11, T12).
@@ -137,7 +135,7 @@ class IosSumberDataPenyimpanan internal constructor(
     private fun bacaUkuran(url: NSURL): Long? = memScoped {
         val errorPtr = alloc<ObjCObjectVar<NSError?>>()
         val vals = url.resourceValuesForKeys(listOf(NSURLFileSizeKey), errorPtr.ptr)
-        (vals?.objectForKey(NSURLFileSizeKey) as? NSNumber)?.longLongValue
+        (vals?.get(NSURLFileSizeKey) as? NSNumber)?.longLongValue
     }
 
     internal companion object {

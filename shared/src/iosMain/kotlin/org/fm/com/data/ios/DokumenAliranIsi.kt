@@ -71,9 +71,19 @@ class DokumenAliranIsi(
                 }
             }
 
-            val nsData = handle.readDataOfLength(ukuranBuffer.toULong())
-            val panjang = nsData.length.toInt()
+            val nsData = memScoped {
+                val errorPtr = alloc<ObjCObjectVar<NSError?>>()
+                val data = handle.readDataUpToLength(ukuranBuffer.toULong(), errorPtr.ptr)
+                if (data == null) {
+                    val err = errorPtr.value
+                    return@withContext SumberIsiBerkas.HasilPotongan.Gagal(
+                        err?.localizedDescription ?: "Gagal membaca berkas iOS"
+                    )
+                }
+                data
+            }
 
+            val panjang = nsData.length.toInt()
             if (panjang == 0) {
                 sudahEof = true
                 tutupInternal()

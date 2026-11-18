@@ -30,15 +30,10 @@ import platform.Foundation.NSUUID
 import platform.Foundation.closeFile
 import platform.Foundation.create
 import platform.Foundation.fileHandleForWritingToURL
-import platform.Foundation.fileURLWithPath
 import platform.Foundation.writeData
 
 /**
- * Sumber tulis streaming iOS dengan strategi Simpan Aman (K6) dan siklus hidup K10:
- * 1. Data dialirkan ke berkas temp di [NSTemporaryDirectory].
- * 2. Pada [selesai], verifikasi ukuran, lalu ganti berkas target secara atomik ([NSFileManager.replaceItemAtURL]).
- * 3. Jika dokumen baru dibuat dan dibatalkan via [batalkan], dokumen target dibersihkan.
- * 4. [batalkan] bersifat idempoten (K10).
+ * Sumber tulis streaming iOS dengan strategi Simpan Aman (K6) dan siklus hidup K10.
  */
 class DokumenAliranTulis(
     private val targetUrl: NSURL,
@@ -111,7 +106,7 @@ class DokumenAliranTulis(
                 memScoped {
                     val errorPtr = alloc<ObjCObjectVar<NSError?>>()
                     val attrs = fileManager.attributesOfItemAtPath(tempPath, errorPtr.ptr)
-                    val ukuranTemp = (attrs?.objectForKey(platform.Foundation.NSFileSize) as? platform.Foundation.NSNumber)?.longLongValue ?: 0L
+                    val ukuranTemp = (attrs?.get(platform.Foundation.NSFileSize) as? platform.Foundation.NSNumber)?.longLongValue ?: 0L
                     if (ukuranTemp != totalByteDitulis) {
                         bersihkanTemp()
                         status = Status.BATAL
@@ -124,7 +119,6 @@ class DokumenAliranTulis(
                 }
             }
 
-            // Simpan aman atomik ke target
             PenyimpanBookmarkKeamanan.denganAksesKeamananSuspend(targetUrl) {
                 memScoped {
                     val errorPtr = alloc<ObjCObjectVar<NSError?>>()
@@ -137,7 +131,7 @@ class DokumenAliranTulis(
                             withItemAtURL = temp,
                             backupItemName = null,
                             options = 0uL,
-                            resultingURL = null,
+                            resultingItemURL = null,
                             error = errorPtr.ptr
                         )
                     } else if (temp != null) {
