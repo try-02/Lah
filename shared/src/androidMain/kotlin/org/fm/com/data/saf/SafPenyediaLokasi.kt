@@ -46,7 +46,7 @@ class SafPenyediaLokasi(
                     Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
             )
             if (lokasiAwal != null) {
-                val uriAwal = (SafPemetaanLokasi.keUriDokumen(appContext, lokasiAwal) as? HasilOperasi.Sukses)?.nilai
+                val uriAwal = SafPemetaanLokasi.keUriDokumen(appContext, lokasiAwal).nilaiAtauNull()
                 if (uriAwal != null) {
                     putExtra(DocumentsContract.EXTRA_INITIAL_URI, uriAwal)
                 }
@@ -124,21 +124,22 @@ class SafPenyediaLokasi(
     suspend fun daftarTreeTersimpan(): HasilOperasi<List<LokasiBerkas>> =
         withContext(ioDispatcher) {
             try {
-                val daftar = contentResolver.persistedUriPermissions
-                    .asSequence()
-                    .filter { it.isReadPermission && DocumentsContract.isTreeUri(it.uri) }
-                    .mapNotNull { perm ->
+                val daftar = buildList {
+                    for (perm in contentResolver.persistedUriPermissions) {
+                        if (!perm.isReadPermission || !DocumentsContract.isTreeUri(perm.uri)) continue
                         currentCoroutineContext().ensureActive()
-                        val docUri = (SafPemetaanLokasi.keUriDokumen(appContext, perm.uri.toString())
-                            as? HasilOperasi.Sukses)?.nilai ?: return@mapNotNull null
-                        val nama = (bacaMetadataFolder(docUri) as? HasilOperasi.Sukses)?.nilai
-                        if (nama != null) {
+                        val docUri = SafPemetaanLokasi
+                            .keUriDokumen(appContext, perm.uri.toString())
+                            .nilaiAtauNull() ?: continue
+                        val nama = bacaMetadataFolder(docUri).nilaiAtauNull()
+                        val lokasi = if (nama != null) {
                             DataFolder(docUri.toString(), nama, JenisLokasi.SAF).keDomain()
                         } else {
                             LokasiBerkas(docUri.toString(), JenisLokasi.SAF, label = null)
                         }
+                        add(lokasi)
                     }
-                    .toList()
+                }
                 HasilOperasi.Sukses(daftar)
             } catch (e: CancellationException) {
                 throw e
@@ -158,8 +159,8 @@ class SafPenyediaLokasi(
     /** Mengecek apakah tree untuk [lokasi] masih memiliki izin baca persisten. */
     suspend fun punyaIzinPersisten(lokasi: LokasiBerkas): Boolean =
         withContext(ioDispatcher) {
-            val docUri = (SafPemetaanLokasi.keUriDokumen(appContext, lokasi) as? HasilOperasi.Sukses)
-                ?.nilai ?: return@withContext false
+            val docUri = SafPemetaanLokasi.keUriDokumen(appContext, lokasi).nilaiAtauNull()
+                ?: return@withContext false
             val uriPohon = SafPemetaanLokasi.keUriPohon(docUri) ?: return@withContext false
             contentResolver.persistedUriPermissions.any { it.uri == uriPohon && it.isReadPermission }
         }
@@ -269,26 +270,28 @@ class SafPenyediaLokasi(
             )
             cursor.use { c ->
                 if (!c.moveToFirst()) {
-                    return HasilOperasi.Gagal(
+                    HasilOperasi.Gagal(
                         "Folder SAF tidak ditemukan: $docUri",
                         PenyebabGalat.TIDAK_DITEMUKAN
                     )
-                }
-                val idxMime = c.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
-                val idxNama = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-                val mime = if (idxMime >= 0 && !c.isNull(idxMime)) c.getString(idxMime) else null
-                if (mime != DocumentsContract.Document.MIME_TYPE_DIR) {
-                    return HasilOperasi.Gagal(
-                        "Lokasi SAF terpilih bukan folder",
-                        PenyebabGalat.VALIDASI
-                    )
-                }
-                val nama = if (idxNama >= 0 && !c.isNull(idxNama)) {
-                    c.getString(idxNama)?.takeIf { it.isNotBlank() }
                 } else {
-                    null
+                    val idxMime = c.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                    val idxNama = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                    val mime = if (idxMime >= 0 && !c.isNull(idxMime)) c.getString(idxMime) else null
+                    if (mime != DocumentsContract.Document.MIME_TYPE_DIR) {
+                        HasilOperasi.Gagal(
+                            "Lokasi SAF terpilih bukan folder",
+                            PenyebabGalat.VALIDASI
+                        )
+                    } else {
+                        val nama = if (idxNama >= 0 && !c.isNull(idxNama)) {
+                            c.getString(idxNama)?.takeIf { it.isNotBlank() }
+                        } else {
+                            null
+                        }
+                        HasilOperasi.Sukses(nama)
+                    }
                 }
-                HasilOperasi.Sukses(nama)
             }
         } catch (e: CancellationException) {
             throw e
@@ -318,6 +321,11 @@ class SafPenyediaLokasi(
         } finally {
             pegangan?.dispose()
         }
+    }
+
+    private fun <T> HasilOperasi<T>.nilaiAtauNull(): T? = when (this) {
+        is HasilOperasi.Sukses -> nilai
+        is HasilOperasi.Gagal -> null
     }
 
     private companion object {
