@@ -1,0 +1,44 @@
+import kotlin.Boolean;
+
+CREATE TABLE bookmarkEntity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    pengenal TEXT NOT NULL,
+    jenis_lokasi TEXT NOT NULL,
+    label TEXT,
+    adalah_folder INTEGER AS Boolean NOT NULL DEFAULT 0,
+    waktu_dibuat INTEGER NOT NULL,
+    CONSTRAINT unik_lokasi_bookmark UNIQUE (pengenal, jenis_lokasi)
+);
+
+semuaBookmark:
+SELECT *
+FROM bookmarkEntity
+ORDER BY waktu_dibuat DESC;
+
+cariBerdasarkanPengenal:
+SELECT *
+FROM bookmarkEntity
+WHERE pengenal = :pengenal AND jenis_lokasi = :jenisLokasi
+LIMIT 1;
+
+tambahBookmark:
+INSERT OR REPLACE INTO bookmarkEntity (
+    pengenal,
+    jenis_lokasi,
+    label,
+    adalah_folder,
+    waktu_dibuat
+) VALUES (
+    ?, ?, ?, ?, ?
+);
+
+hapusBookmark:
+DELETE FROM bookmarkEntity
+WHERE pengenal = :pengenal AND jenis_lokasi = :jenisLokasi;
+
+hapusBookmarkBerdasarkanId:
+DELETE FROM bookmarkEntity
+WHERE id = :id;
+
+hapusSemuaBookmark:
+DELETE FROM bookmarkEntity;

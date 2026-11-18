@@ -1,0 +1,31 @@
+CREATE TABLE preferensiEntity (
+    kunci TEXT PRIMARY KEY NOT NULL,
+    nilai TEXT NOT NULL,
+    waktu_diubah INTEGER NOT NULL DEFAULT 0
+);
+
+ambilNilai:
+SELECT nilai
+FROM preferensiEntity
+WHERE kunci = :kunci
+LIMIT 1;
+
+semuaPreferensi:
+SELECT *
+FROM preferensiEntity;
+
+simpanNilai:
+INSERT OR REPLACE INTO preferensiEntity (
+    kunci,
+    nilai,
+    waktu_diubah
+) VALUES (
+    ?, ?, ?
+);
+
+hapusKunci:
+DELETE FROM preferensiEntity
+WHERE kunci = :kunci;
+
+hapusSemua:
+DELETE FROM preferensiEntity;

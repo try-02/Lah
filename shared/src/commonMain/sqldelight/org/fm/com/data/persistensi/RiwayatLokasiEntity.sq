@@ -1,0 +1,35 @@
+import kotlin.Boolean;
+
+CREATE TABLE riwayatLokasiEntity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    pengenal TEXT NOT NULL,
+    jenis_lokasi TEXT NOT NULL,
+    label TEXT,
+    adalah_folder INTEGER AS Boolean NOT NULL DEFAULT 1,
+    waktu_terakhir_dibuka INTEGER NOT NULL,
+    CONSTRAINT unik_lokasi_riwayat UNIQUE (pengenal, jenis_lokasi)
+);
+
+semuaRiwayat:
+SELECT *
+FROM riwayatLokasiEntity
+ORDER BY waktu_terakhir_dibuka DESC
+LIMIT :batas;
+
+tambahAtauPerbaruiRiwayat:
+INSERT OR REPLACE INTO riwayatLokasiEntity (
+    pengenal,
+    jenis_lokasi,
+    label,
+    adalah_folder,
+    waktu_terakhir_dibuka
+) VALUES (
+    ?, ?, ?, ?, ?
+);
+
+hapusRiwayat:
+DELETE FROM riwayatLokasiEntity
+WHERE pengenal = :pengenal AND jenis_lokasi = :jenisLokasi;
+
+hapusSemuaRiwayat:
+DELETE FROM riwayatLokasiEntity;
