@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 fun DaftarBerkasLayar(
     viewModel: ViewModelFilemanager,
     viewModelOperasiMassal: ViewModelOperasiMassal? = null,
+    aksiPlatform: AksiPlatformBerkas = remember { AksiPlatformBerkasBawaan() },
     onBukaBerkas: (ItemBerkasUi) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -67,13 +68,25 @@ fun DaftarBerkasLayar(
                     onPilihSemua = { viewModel.prosesIntent(IntentFilemanager.PilihSemua) },
                     onBersihkanPilihan = { viewModel.prosesIntent(IntentFilemanager.BersihkanPilihan) },
                     onAksiHapus = {
-                        viewModel.prosesIntent(IntentFilemanager.BukaDialogHapus(state.itemTerpilih.toList()))
+                        if (state.kemampuanUi.dapatHapus) {
+                            viewModel.prosesIntent(IntentFilemanager.BukaDialogHapus(state.itemTerpilih.toList()))
+                        } else {
+                            viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Hapus tidak didukung pada penyimpanan ini"))
+                        }
                     },
                     onAksiSalin = {
-                        viewModelOperasiMassal?.inisiasiSalin(state.itemTerpilih.toList())
+                        if (state.kemampuanUi.dapatSalin) {
+                            viewModelOperasiMassal?.inisiasiSalin(state.itemTerpilih.toList())
+                        } else {
+                            viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Salin tidak didukung pada penyimpanan ini"))
+                        }
                     },
                     onAksiPindah = {
-                        viewModelOperasiMassal?.inisiasiPindah(state.itemTerpilih.toList())
+                        if (state.kemampuanUi.dapatPindah) {
+                            viewModelOperasiMassal?.inisiasiPindah(state.itemTerpilih.toList())
+                        } else {
+                            viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Pindah tidak didukung pada penyimpanan ini"))
+                        }
                     }
                 )
             } else {
@@ -101,7 +114,8 @@ fun DaftarBerkasLayar(
             }
         },
         floatingActionButton = {
-            if (!state.sedangMultiSelect) {
+            // T24: Sembunyikan FAB jika lokasi tidak mendukung penambahan berkas
+            if (!state.sedangMultiSelect && state.kemampuanUi.dapatMembuat) {
                 FloatingActionButton(onClick = {
                     viewModel.prosesIntent(IntentFilemanager.SetBukaDialogBuat(true))
                 }) {
@@ -167,39 +181,18 @@ fun DaftarBerkasLayar(
                                             menuKonteksItem = item
                                         }
                                     )
-                                    DropdownMenu(
-                                        expanded = menuKonteksItem == item,
-                                        onDismissRequest = { menuKonteksItem = null }
-                                    ) {
-                                        DropdownMenuItem(
-                                            text = { Text("Pilih") },
-                                            onClick = {
-                                                menuKonteksItem = null
-                                                viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi))
-                                            }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Ganti Nama") },
-                                            onClick = {
-                                                menuKonteksItem = null
-                                                viewModel.prosesIntent(IntentFilemanager.BukaDialogRename(item))
-                                            }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Properti") },
-                                            onClick = {
-                                                menuKonteksItem = null
-                                                viewModel.prosesIntent(IntentFilemanager.BukaDialogProperti(item))
-                                            }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Hapus") },
-                                            onClick = {
-                                                menuKonteksItem = null
-                                                viewModel.prosesIntent(IntentFilemanager.BukaDialogHapus(listOf(item.lokasi)))
-                                            }
-                                        )
-                                    }
+                                    MenuKonteksItemBerkas(
+                                        item = item,
+                                        terbuka = menuKonteksItem == item,
+                                        kemampuan = state.kemampuanUi,
+                                        onTutup = { menuKonteksItem = null },
+                                        onPilih = { viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi)) },
+                                        onBukaDengan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBukaDengan(item)) },
+                                        onBagikan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBagikan(item)) },
+                                        onGantiNama = { viewModel.prosesIntent(IntentFilemanager.BukaDialogRename(item)) },
+                                        onProperti = { viewModel.prosesIntent(IntentFilemanager.BukaDialogProperti(item)) },
+                                        onHapus = { viewModel.prosesIntent(IntentFilemanager.BukaDialogHapus(listOf(item.lokasi))) }
+                                    )
                                 }
                             }
                         }
@@ -230,39 +223,18 @@ fun DaftarBerkasLayar(
                                             menuKonteksItem = item
                                         }
                                     )
-                                    DropdownMenu(
-                                        expanded = menuKonteksItem == item,
-                                        onDismissRequest = { menuKonteksItem = null }
-                                    ) {
-                                        DropdownMenuItem(
-                                            text = { Text("Pilih") },
-                                            onClick = {
-                                                menuKonteksItem = null
-                                                viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi))
-                                            }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Ganti Nama") },
-                                            onClick = {
-                                                menuKonteksItem = null
-                                                viewModel.prosesIntent(IntentFilemanager.BukaDialogRename(item))
-                                            }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Properti") },
-                                            onClick = {
-                                                menuKonteksItem = null
-                                                viewModel.prosesIntent(IntentFilemanager.BukaDialogProperti(item))
-                                            }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Hapus") },
-                                            onClick = {
-                                                menuKonteksItem = null
-                                                viewModel.prosesIntent(IntentFilemanager.BukaDialogHapus(listOf(item.lokasi)))
-                                            }
-                                        )
-                                    }
+                                    MenuKonteksItemBerkas(
+                                        item = item,
+                                        terbuka = menuKonteksItem == item,
+                                        kemampuan = state.kemampuanUi,
+                                        onTutup = { menuKonteksItem = null },
+                                        onPilih = { viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi)) },
+                                        onBukaDengan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBukaDengan(item)) },
+                                        onBagikan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBagikan(item)) },
+                                        onGantiNama = { viewModel.prosesIntent(IntentFilemanager.BukaDialogRename(item)) },
+                                        onProperti = { viewModel.prosesIntent(IntentFilemanager.BukaDialogProperti(item)) },
+                                        onHapus = { viewModel.prosesIntent(IntentFilemanager.BukaDialogHapus(listOf(item.lokasi))) }
+                                    )
                                 }
                             }
                         }
@@ -321,6 +293,19 @@ fun DaftarBerkasLayar(
         onTutup = { viewModel.prosesIntent(IntentFilemanager.BukaDialogHapus(null)) }
     )
 
+    DialogBukaDengan(
+        item = state.dialogBukaDenganItem,
+        onBukaEditorInternal = { onBukaBerkas(it) },
+        onBukaAplikasiEksternal = { aksiPlatform.bukaDengan(it.lokasi, it.nama) },
+        onTutup = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBukaDengan(null)) }
+    )
+
+    DialogBagikan(
+        item = state.dialogBagikanItem,
+        onKonfirmasiBagikan = { aksiPlatform.bagikanBerkas(it.lokasi, it.nama) },
+        onTutup = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBagikan(null)) }
+    )
+
     DialogPindahSalin(
         terbuka = stateMassal.dialogPilihTujuanTerbuka,
         apakahPindah = stateMassal.apakahPindah,
@@ -342,4 +327,54 @@ fun DaftarBerkasLayar(
         state = stateMassal,
         onBatal = { viewModelOperasiMassal?.batalkanOperasi() }
     )
+}
+
+@Composable
+private fun MenuKonteksItemBerkas(
+    item: ItemBerkasUi,
+    terbuka: Boolean,
+    kemampuan: ModelKemampuanUi,
+    onTutup: () -> Unit,
+    onPilih: () -> Unit,
+    onBukaDengan: () -> Unit,
+    onBagikan: () -> Unit,
+    onGantiNama: () -> Unit,
+    onProperti: () -> Unit,
+    onHapus: () -> Unit
+) {
+    DropdownMenu(
+        expanded = terbuka,
+        onDismissRequest = onTutup
+    ) {
+        DropdownMenuItem(
+            text = { Text("Pilih") },
+            onClick = { onTutup(); onPilih() }
+        )
+        if (!item.adalahFolder) {
+            DropdownMenuItem(
+                text = { Text("Buka Dengan...") },
+                enabled = kemampuan.dapatBukaDengan,
+                onClick = { onTutup(); onBukaDengan() }
+            )
+            DropdownMenuItem(
+                text = { Text("Bagikan") },
+                enabled = kemampuan.dapatBagikan,
+                onClick = { onTutup(); onBagikan() }
+            )
+        }
+        DropdownMenuItem(
+            text = { Text("Ganti Nama") },
+            enabled = kemampuan.dapatGantiNama,
+            onClick = { onTutup(); onGantiNama() }
+        )
+        DropdownMenuItem(
+            text = { Text("Properti") },
+            onClick = { onTutup(); onProperti() }
+        )
+        DropdownMenuItem(
+            text = { Text("Hapus") },
+            enabled = kemampuan.dapatHapus,
+            onClick = { onTutup(); onHapus() }
+        )
+    }
 }

@@ -11,7 +11,6 @@ import kotlinx.coroutines.launch
 import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.model.LokasiBerkas
-import org.fm.com.domain.model.PenyebabGalat
 import org.fm.com.domain.repository.RepositoriBerkas
 import org.fm.com.domain.repository.RepositoriOperasiBerkas
 import org.fm.com.domain.usecase.ArahUrutan
@@ -68,6 +67,8 @@ class ViewModelFilemanager(
             is IntentFilemanager.EksekusiRename -> eksekusiRename(intent.sumber, intent.namaBaru)
             is IntentFilemanager.BukaDialogHapus -> _state.update { it.copy(dialogHapusItems = intent.items) }
             is IntentFilemanager.EksekusiHapusTerpilih -> eksekusiHapus()
+            is IntentFilemanager.BukaDialogBukaDengan -> _state.update { it.copy(dialogBukaDenganItem = intent.item) }
+            is IntentFilemanager.BukaDialogBagikan -> _state.update { it.copy(dialogBagikanItem = intent.item) }
             is IntentFilemanager.SetPesanInfo -> _state.update { it.copy(pesanInfo = intent.pesan) }
             is IntentFilemanager.HapusPesanGalat -> _state.update { it.copy(pesanGalat = null) }
         }
@@ -104,6 +105,7 @@ class ViewModelFilemanager(
     private fun muatFolderInternal(lokasi: LokasiBerkas) {
         pekerjaanMuatFolder?.cancel()
         val kemampuan = repositoriBerkas.kapabilitas(lokasi)
+        val kemampuanUi = ModelKemampuanUi.dari(kemampuan)
         val breadcrumb = telusuriLokasiUseCase.buatSegmenBreadcrumb(lokasi, riwayatNavigasi)
 
         _state.update {
@@ -114,6 +116,7 @@ class ViewModelFilemanager(
                 pesanGalat = null,
                 itemTerpilih = emptySet(),
                 kemampuanLokasi = kemampuan,
+                kemampuanUi = kemampuanUi,
                 dapatNavigasiKembali = riwayatNavigasi.size > 1
             )
         }

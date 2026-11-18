@@ -40,11 +40,14 @@ data class StateFilemanager(
     val kataKunciSaring: String = "",
     val itemTerpilih: Set<LokasiBerkas> = emptySet(),
     val kemampuanLokasi: KemampuanPenyimpanan? = null,
+    val kemampuanUi: ModelKemampuanUi = ModelKemampuanUi.DEFAULT,
     val dialogUrutkanTerbuka: Boolean = false,
     val dialogBuatTerbuka: Boolean = false,
     val dialogPropertiItem: ItemBerkasUi? = null,
     val dialogRenameItem: ItemBerkasUi? = null,
     val dialogHapusItems: List<LokasiBerkas>? = null,
+    val dialogBukaDenganItem: ItemBerkasUi? = null,
+    val dialogBagikanItem: ItemBerkasUi? = null,
     val dapatNavigasiKembali: Boolean = false
 ) {
     val jumlahItem: Int get() = daftarItem.size
@@ -73,6 +76,8 @@ sealed interface IntentFilemanager {
     data class EksekusiRename(val sumber: LokasiBerkas, val namaBaru: String) : IntentFilemanager
     data class BukaDialogHapus(val items: List<LokasiBerkas>?) : IntentFilemanager
     data object EksekusiHapusTerpilih : IntentFilemanager
+    data class BukaDialogBukaDengan(val item: ItemBerkasUi?) : IntentFilemanager
+    data class BukaDialogBagikan(val item: ItemBerkasUi?) : IntentFilemanager
     data class SetPesanInfo(val pesan: String?) : IntentFilemanager
     data object HapusPesanGalat : IntentFilemanager
 }
