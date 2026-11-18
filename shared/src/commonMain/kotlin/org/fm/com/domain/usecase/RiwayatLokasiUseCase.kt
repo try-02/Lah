@@ -1,19 +1,22 @@
+@file:OptIn(kotlin.time.ExperimentalTime::class)
+
 package org.fm.com.domain.usecase
 
+import kotlin.time.Clock
 import kotlinx.coroutines.flow.Flow
-import kotlinx.datetime.Clock
 import org.fm.com.data.persistensi.EntitasRiwayatLokasi
 import org.fm.com.data.persistensi.RepositoriRiwayatLokasi
 import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.model.LokasiBerkas
 
 class RiwayatLokasiUseCase(
-    private val repositoriRiwayat: RepositoriRiwayatLokasi
+    private val repositoriRiwayat: RepositoriRiwayatLokasi,
+    private val clock: Clock = Clock.System
 ) {
     suspend fun catatKunjungan(
         lokasi: LokasiBerkas,
         adalahFolder: Boolean = true,
-        waktuEpochMs: Long = Clock.System.now().toEpochMilliseconds()
+        waktuEpochMs: Long = clock.now().toEpochMilliseconds()
     ): HasilOperasi<Unit> {
         return repositoriRiwayat.catatLokasi(lokasi, adalahFolder, waktuEpochMs)
     }
