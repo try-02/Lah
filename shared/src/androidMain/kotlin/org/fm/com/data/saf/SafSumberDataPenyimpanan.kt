@@ -20,14 +20,15 @@ import org.fm.com.domain.model.PenyebabGalat
 import org.fm.com.domain.model.PlatformPenyimpanan
 import org.fm.com.domain.model.ValidasiNama
 import org.fm.com.domain.repository.PermintaanOperasi
+import org.fm.com.domain.repository.RepositoriOperasiBerkas
 
 /**
  * Adapter [SumberDataPenyimpanan] penuh untuk [JenisLokasi.SAF] (keputusan K9, K10, T9, T10).
  */
 class SafSumberDataPenyimpanan internal constructor(
-    private val appContext: Context,
-    private val daftarIsiSaf: SafDaftarIsi,
-    private val operasiSaf: SafOperasiBerkas,
+    private val appContext: Context?,
+    private val daftarIsiPenyedia: (LokasiBerkas) -> Flow<HasilOperasi<List<EntitasBerkas>>>,
+    private val operasiPenyedia: RepositoriOperasiBerkas?,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : SumberDataPenyimpanan {
 
@@ -36,8 +37,8 @@ class SafSumberDataPenyimpanan internal constructor(
         ioDispatcher: CoroutineDispatcher = Dispatchers.IO
     ) : this(
         appContext = context.applicationContext,
-        daftarIsiSaf = SafDaftarIsi(context, ioDispatcher),
-        operasiSaf = SafOperasiBerkas(context, ioDispatcher),
+        daftarIsiPenyedia = { SafDaftarIsi(context, ioDispatcher).daftarIsi(it) },
+        operasiPenyedia = SafOperasiBerkas(context, ioDispatcher),
         ioDispatcher = ioDispatcher
     )
 
@@ -49,19 +50,21 @@ class SafSumberDataPenyimpanan internal constructor(
         }
 
     override fun daftarIsi(lokasi: LokasiBerkas): Flow<HasilOperasi<List<EntitasBerkas>>> =
-        daftarIsiSaf.daftarIsi(lokasi)
+        daftarIsiPenyedia(lokasi)
 
     override suspend fun bukaUntukBaca(lokasi: LokasiBerkas): HasilOperasi<SumberIsiBerkas> {
-        val uri = when (val hasil = SafPemetaanLokasi.keUriDokumen(appContext, lokasi)) {
+        val context = appContext ?: return tidakDidukungTanpaKonteks()
+        val uri = when (val hasil = SafPemetaanLokasi.keUriDokumen(context, lokasi)) {
             is HasilOperasi.Sukses -> hasil.nilai
             is HasilOperasi.Gagal -> return hasil
         }
-        val ukuran = bacaUkuran(uri)
-        return HasilOperasi.Sukses(SafAliranIsi.buka(appContext, uri, ukuran, ioDispatcher))
+        val ukuran = bacaUkuran(context, uri)
+        return HasilOperasi.Sukses(SafAliranIsi.buka(context, uri, ukuran, ioDispatcher))
     }
 
     override suspend fun bukaUntukTulis(lokasi: LokasiBerkas, timpa: Boolean): HasilOperasi<SumberTulisBerkas> {
-        val uri = when (val hasil = SafPemetaanLokasi.keUriDokumen(appContext, lokasi)) {
+        val context = appContext ?: return tidakDidukungTanpaKonteks()
+        val uri = when (val hasil = SafPemetaanLokasi.keUriDokumen(context, lokasi)) {
             is HasilOperasi.Sukses -> hasil.nilai
             is HasilOperasi.Gagal -> return hasil
         }
@@ -73,7 +76,7 @@ class SafSumberDataPenyimpanan internal constructor(
         }
         return HasilOperasi.Sukses(
             SafAliranTulis(
-                appContext = appContext,
+                appContext = context,
                 targetDocUri = uri,
                 apakahDokumenBaru = false,
                 ioDispatcher = ioDispatcher
@@ -89,13 +92,14 @@ class SafSumberDataPenyimpanan internal constructor(
         if (!ValidasiNama.sah(nama)) {
             return HasilOperasi.Gagal("Nama tidak sah: $nama", PenyebabGalat.VALIDASI)
         }
-        val parentUri = when (val hasil = SafPemetaanLokasi.keUriDokumen(appContext, induk)) {
+        val context = appContext ?: return tidakDidukungTanpaKonteks()
+        val parentUri = when (val hasil = SafPemetaanLokasi.keUriDokumen(context, induk)) {
             is HasilOperasi.Sukses -> hasil.nilai
             is HasilOperasi.Gagal -> return hasil
         }
 
-        // Cek tabrakan nama sebelum membuat dokumen
-        val existingDocUri = operasiSaf.cariAnakBernama(parentUri, nama)
+        val opSaf = operasiPenyedia as? SafOperasiBerkas
+        val existingDocUri = opSaf?.cariAnakBernama(parentUri, nama)
         if (existingDocUri != null) {
             if (!timpa) {
                 return HasilOperasi.Gagal(
@@ -105,7 +109,7 @@ class SafSumberDataPenyimpanan internal constructor(
             }
             return HasilOperasi.Sukses(
                 SafAliranTulis(
-                    appContext = appContext,
+                    appContext = context,
                     targetDocUri = existingDocUri,
                     apakahDokumenBaru = false,
                     ioDispatcher = ioDispatcher
@@ -113,10 +117,9 @@ class SafSumberDataPenyimpanan internal constructor(
             )
         }
 
-        // Dokumen baru: buat di SAF lalu kembalikan writer yang siap menghapusnya jika dibatalkan
         val createdUri = try {
             val mime = "application/octet-stream"
-            DocumentsContract.createDocument(appContext.contentResolver, parentUri, mime, nama)
+            DocumentsContract.createDocument(context.contentResolver, parentUri, mime, nama)
                 ?: return HasilOperasi.Gagal("Penyedia SAF gagal membuat dokumen baru", PenyebabGalat.TIDAK_DIKETAHUI)
         } catch (e: Exception) {
             return HasilOperasi.Gagal(e.message ?: "Gagal membuat dokumen baru di SAF", PenyebabGalat.TIDAK_DIKETAHUI)
@@ -124,7 +127,7 @@ class SafSumberDataPenyimpanan internal constructor(
 
         return HasilOperasi.Sukses(
             SafAliranTulis(
-                appContext = appContext,
+                appContext = context,
                 targetDocUri = createdUri,
                 apakahDokumenBaru = true,
                 ioDispatcher = ioDispatcher
@@ -133,26 +136,29 @@ class SafSumberDataPenyimpanan internal constructor(
     }
 
     override suspend fun buatFolder(permintaan: PermintaanOperasi): HasilOperasi<EntitasBerkas> =
-        operasiSaf.buatFolder(permintaan)
+        operasiPenyedia?.buatFolder(permintaan) ?: tidakDidukungTanpaKonteks()
 
     override suspend fun buatBerkasKosong(permintaan: PermintaanOperasi): HasilOperasi<EntitasBerkas> =
-        operasiSaf.buatBerkasKosong(permintaan)
+        operasiPenyedia?.buatBerkasKosong(permintaan) ?: tidakDidukungTanpaKonteks()
 
     override suspend fun gantiNama(permintaan: PermintaanOperasi): HasilOperasi<EntitasBerkas> =
-        operasiSaf.gantiNama(permintaan)
+        operasiPenyedia?.gantiNama(permintaan) ?: tidakDidukungTanpaKonteks()
 
     override suspend fun hapus(permintaan: PermintaanOperasi): HasilOperasi<Unit> =
-        operasiSaf.hapus(permintaan)
+        operasiPenyedia?.hapus(permintaan) ?: tidakDidukungTanpaKonteks()
 
     override suspend fun salin(permintaan: PermintaanOperasi): HasilOperasi<EntitasBerkas> =
-        operasiSaf.salin(permintaan)
+        operasiPenyedia?.salin(permintaan) ?: tidakDidukungTanpaKonteks()
 
     override suspend fun pindah(permintaan: PermintaanOperasi): HasilOperasi<EntitasBerkas> =
-        operasiSaf.pindah(permintaan)
+        operasiPenyedia?.pindah(permintaan) ?: tidakDidukungTanpaKonteks()
 
-    private fun bacaUkuran(docUri: Uri): Long? {
+    private fun tidakDidukungTanpaKonteks(): HasilOperasi.Gagal =
+        HasilOperasi.Gagal("Operasi tidak didukung pada instance uji tanpa Context", PenyebabGalat.TIDAK_DIDUKUNG)
+
+    private fun bacaUkuran(context: Context, docUri: Uri): Long? {
         return try {
-            appContext.contentResolver.query(
+            context.contentResolver.query(
                 docUri,
                 arrayOf(DocumentsContract.Document.COLUMN_SIZE),
                 null,
@@ -164,6 +170,16 @@ class SafSumberDataPenyimpanan internal constructor(
         } catch (_: Exception) {
             null
         }
+    }
+
+    internal companion object {
+        fun untukUji(
+            pemuatDaftarIsi: (LokasiBerkas) -> Flow<HasilOperasi<List<EntitasBerkas>>>
+        ): SafSumberDataPenyimpanan = SafSumberDataPenyimpanan(
+            appContext = null,
+            daftarIsiPenyedia = pemuatDaftarIsi,
+            operasiPenyedia = null
+        )
     }
 }
 
