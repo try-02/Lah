@@ -32,10 +32,21 @@ class T8ImplementasiDataTest {
         pengenal: String = "/sdcard/Dokumen/berkas.txt",
         jenis: JenisLokasi = JenisLokasi.POSIX
     ): LokasiBerkas =
-        LokasiBerkas(pengenal = pengenal, jenis = jenis, label = pengenal.substringAfterLast("/"))
+        LokasiBerkas(
+            pengenal = pengenal,
+            jenis = jenis,
+            label = pengenal.substringAfterLast("/").ifBlank { null }
+        )
 
     private suspend fun seedFolder(pengenal: String, jenis: JenisLokasi = JenisLokasi.POSIX) {
-        kaset.simpan(DataBerkas(pengenal, pengenal.substringAfterLast("/"), jenis, adalahFolder = true))
+        kaset.simpan(
+            DataBerkas(
+                pengenal = pengenal,
+                nama = pengenal.substringAfterLast("/").ifBlank { pengenal }, // root "/" bernama "/", bukan ""
+                jenisLokasi = jenis,
+                adalahFolder = true
+            )
+        )
     }
 
     private suspend fun seedBerkas(pengenal: String, isi: String = "halo", tautan: Boolean = false) {

@@ -61,7 +61,11 @@ class ImplementasiRepositoriBerkas : RepositoriBerkas {
                     val awalan = awalanAnak(lokasi.pengenal)
                     HasilOperasi.Sukses(
                         kaset.values
-                            .filter { it.pengenal.startsWith(awalan) && '/' !in it.pengenal.substring(awalan.length) }
+                            .filter {
+                                it.pengenal.startsWith(awalan) &&
+                                    it.pengenal.length > awalan.length &&
+                                    '/' !in it.pengenal.substring(awalan.length)
+                            }
                             .sortedBy { it.nama }
                             .map { it.keDomain() }
                     )
@@ -173,6 +177,9 @@ class ImplementasiRepositoriBerkas : RepositoriBerkas {
     ): HasilOperasi<EntitasBerkas> = mutex.withLock {
         val asal = kaset[sumber.pengenal]
             ?: return@withLock HasilOperasi.Gagal("Sumber tidak ditemukan", PenyebabGalat.TIDAK_DITEMUKAN)
+        if (sumber.pengenal == "/") {
+            return@withLock HasilOperasi.Gagal("Root tidak bisa diganti nama", PenyebabGalat.VALIDASI)
+        }
         val idTujuan = gabung(indukDari(sumber.pengenal), namaBaru)
         if (idTujuan == sumber.pengenal) return@withLock HasilOperasi.Sukses(asal.keDomain())
         if (kaset.containsKey(idTujuan)) {
@@ -226,7 +233,7 @@ class ImplementasiRepositoriBerkas : RepositoriBerkas {
             pengenal = idTujuan, nama = idTujuan.substringAfterLast('/'), jenisLokasi = jenisTujuan
         ) to isiBerkas[idAsal]?.copyOf()
         for ((id, ent) in kaset.toMap()) {
-            if (id.startsWith(awalan)) {
+            if (id != idAsal && id.startsWith(awalan)) {
                 val idBaru = idTujuan + id.substring(idAsal.length)
                 pasangan += ent.copy(pengenal = idBaru, jenisLokasi = jenisTujuan) to isiBerkas[id]?.copyOf()
             }
