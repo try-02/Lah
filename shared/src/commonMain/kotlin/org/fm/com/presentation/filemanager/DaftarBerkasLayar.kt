@@ -27,12 +27,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,9 +44,8 @@ fun DaftarBerkasLayar(
     val state by viewModel.state.collectAsState()
     val stateMassal by viewModelOperasiMassal?.state?.collectAsState() ?: remember { mutableStateOf(StateOperasiMassal()) }
 
-    // Menggunakan LocalClipboard modern bebas deprecation
-    val clipboard = LocalClipboard.current
-    val coroutineScope = rememberCoroutineScope()
+    @Suppress("DEPRECATION")
+    val clipboardManager = LocalClipboardManager.current
     val snackbarHostState = remember { SnackbarHostState() }
 
     var menuKonteksItem by remember { mutableStateOf<ItemBerkasUi?>(null) }
@@ -297,16 +295,12 @@ fun DaftarBerkasLayar(
     DialogPropertiBerkas(
         item = state.dialogPropertiItem,
         onSalinNama = { nama ->
-            coroutineScope.launch {
-                clipboard.salinTeks(nama)
-                viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Nama disalin: $nama"))
-            }
+            clipboardManager.setText(AnnotatedString(nama))
+            viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Nama disalin: $nama"))
         },
         onSalinPath = { path ->
-            coroutineScope.launch {
-                clipboard.salinTeks(path)
-                viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Lokasi disalin: $path"))
-            }
+            clipboardManager.setText(AnnotatedString(path))
+            viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Lokasi disalin: $path"))
         },
         onTutup = { viewModel.prosesIntent(IntentFilemanager.BukaDialogProperti(null)) }
     )
