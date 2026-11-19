@@ -134,11 +134,14 @@ object PemetaanDomainUi {
         return if (str.endsWith(".0")) str.substringBefore(".0") else str
     }
 
+    private const val BATAS_MAKS_EPOCH_MS = 253_402_300_799_999L // 9999-12-31T23:59:59.999Z
+
     fun formatTanggal(epochMs: Long?): String {
-        if (epochMs == null || epochMs <= 0L) return "-"
+        if (epochMs == null || epochMs <= 0L || epochMs > BATAS_MAKS_EPOCH_MS) return "-"
         return runCatching {
             val dt = Instant.fromEpochMilliseconds(epochMs)
                 .toLocalDateTime(TimeZone.currentSystemDefault())
+            if (dt.year !in 1970..9999) return "-"
             "${dt.year}-${duaDigit(dt.month.number)}-${duaDigit(dt.day)} " +
                 "${duaDigit(dt.hour)}:${duaDigit(dt.minute)}"
         }.getOrElse { "-" }
