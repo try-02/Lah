@@ -28,6 +28,7 @@ class SalinPindahkanBerkasUseCase(
         daftarSumber: List<LokasiBerkas>,
         tujuanInduk: LokasiBerkas,
         apakahPindah: Boolean,
+        timpaKonflik: Boolean = false,
         onProgres: (indeks: Int, total: Int, itemSaatIni: LokasiBerkas) -> Unit = { _, _, _ -> }
     ): HasilMassal {
         if (daftarSumber.isEmpty()) return HasilMassal.KOSONG
@@ -38,19 +39,23 @@ class SalinPindahkanBerkasUseCase(
             currentCoroutineContext().ensureActive()
             onProgres(indeks + 1, total, sumber)
             val hasil = if (sumber.jenis == tujuanInduk.jenis) {
-                val permintaan = PermintaanOperasi(sumber = sumber, tujuan = tujuanInduk, konfirmasi = false)
+                val permintaan = PermintaanOperasi(
+                    sumber = sumber,
+                    tujuan = tujuanInduk,
+                    konfirmasi = timpaKonflik
+                )
                 val hasilNative = if (apakahPindah) {
                     repositoriOperasi.pindah(permintaan)
                 } else {
                     repositoriOperasi.salin(permintaan)
                 }
                 if (hasilNative is HasilOperasi.Gagal && hasilNative.penyebab == PenyebabGalat.TIDAK_DIDUKUNG) {
-                    salinViaStreaming(sumber, tujuanInduk, apakahPindah)
+                    salinViaStreaming(sumber, tujuanInduk, apakahPindah, timpaKonflik)
                 } else {
                     hasilNative
                 }
             } else {
-                salinViaStreaming(sumber, tujuanInduk, apakahPindah)
+                salinViaStreaming(sumber, tujuanInduk, apakahPindah, timpaKonflik)
             }
             when (hasil) {
                 is HasilOperasi.Sukses -> berhasil.add(hasil.nilai)
@@ -66,6 +71,7 @@ class SalinPindahkanBerkasUseCase(
         sumber: LokasiBerkas,
         tujuanInduk: LokasiBerkas,
         apakahPindah: Boolean,
+        timpaKonflik: Boolean,
         namaEksplisit: String? = null,
         folderTerbuatBaru: MutableSet<String> = mutableSetOf(),
         dikunjungi: MutableSet<String> = mutableSetOf()
@@ -90,6 +96,7 @@ class SalinPindahkanBerkasUseCase(
                     namaFolder = namaTarget,
                     tujuanInduk = tujuanInduk,
                     apakahPindah = apakahPindah,
+                    timpaKonflik = timpaKonflik,
                     folderTerbuatBaru = folderTerbuatBaru,
                     dikunjungi = dikunjungi
                 )
@@ -98,12 +105,34 @@ class SalinPindahkanBerkasUseCase(
         }
 
         val reader = (readerHasil as HasilOperasi.Sukses).nilai
-        val writerHasil = repositoriBerkas.bukaUntukTulisDi(tujuanInduk, namaTarget, timpa = false)
+        val writerHasil = repositoriBerkas.bukaUntukTulisDi(tujuanInduk, namaTarget, timpa = timpaKonflik)
         val writer = when (writerHasil) {
             is HasilOperasi.Sukses -> writerHasil.nilai
             is HasilOperasi.Gagal -> {
                 withContext(NonCancellable) { reader.tutup() }
                 return writerHasil
+            }
+        }
+
+        val targetPraTulis = writer.lokasiTarget
+        if (targetPraTulis != null && targetPraTulis.jenis == sumber.jenis && targetPraTulis.pengenal == sumber.pengenal) {
+            withContext(NonCancellable) {
+                reader.tutup()
+                writer.batalkan()
+            }
+            return if (apakahPindah) {
+                HasilOperasi.Sukses(
+                    EntitasBerkas(
+                        lokasi = targetPraTulis,
+                        nama = targetPraTulis.label ?: namaTarget,
+                        jenis = JenisBerkas.LAIN
+                    )
+                )
+            } else {
+                HasilOperasi.Gagal(
+                    "Berkas sudah berada di folder yang sama: $namaTarget",
+                    PenyebabGalat.VALIDASI
+                )
             }
         }
 
@@ -161,7 +190,7 @@ class SalinPindahkanBerkasUseCase(
                 PenyebabGalat.TIDAK_DIKETAHUI
             )
 
-        if (apakahPindah) {
+        if (apakahPindah && !(lokasiHasil.jenis == sumber.jenis && lokasiHasil.pengenal == sumber.pengenal)) {
             val hapusHasil = repositoriOperasi.hapus(PermintaanOperasi(sumber = sumber, konfirmasi = true))
             if (hapusHasil is HasilOperasi.Gagal) {
                 return HasilOperasi.Gagal(
@@ -186,6 +215,7 @@ class SalinPindahkanBerkasUseCase(
         namaFolder: String,
         tujuanInduk: LokasiBerkas,
         apakahPindah: Boolean,
+        timpaKonflik: Boolean,
         folderTerbuatBaru: MutableSet<String>,
         dikunjungi: MutableSet<String>
     ): HasilOperasi<EntitasBerkas> {
@@ -224,13 +254,43 @@ class SalinPindahkanBerkasUseCase(
             }
         }
 
-        val buatFolderHasil = repositoriOperasi.buatFolder(
-            PermintaanOperasi(sumber = tujuanInduk, namaBaru = namaFolder, konfirmasi = false)
-        )
-        val entitasFolderTujuan = when (buatFolderHasil) {
-            is HasilOperasi.Sukses -> buatFolderHasil.nilai
-            is HasilOperasi.Gagal -> return buatFolderHasil
+        val folderTujuanSudahAda = if (timpaKonflik) {
+            val isiTujuan = repositoriBerkas.daftarIsi(tujuanInduk).first()
+            (isiTujuan as? HasilOperasi.Sukses)?.nilai?.firstOrNull {
+                it.nama.equals(namaFolder, ignoreCase = true)
+            }
+        } else {
+            null
         }
+
+        val entitasFolderTujuan = if (folderTujuanSudahAda != null) {
+            if (folderTujuanSudahAda.jenis != JenisBerkas.FOLDER) {
+                return HasilOperasi.Gagal(
+                    "Tidak dapat menimpa berkas '$namaFolder' dengan folder",
+                    PenyebabGalat.VALIDASI
+                )
+            }
+            if (folderTujuanSudahAda.lokasi == sumberFolder) {
+                return if (apakahPindah) {
+                    HasilOperasi.Sukses(folderTujuanSudahAda)
+                } else {
+                    HasilOperasi.Gagal(
+                        "Folder sudah berada di lokasi yang sama: $namaFolder",
+                        PenyebabGalat.VALIDASI
+                    )
+                }
+            }
+            folderTujuanSudahAda
+        } else {
+            val buatFolderHasil = repositoriOperasi.buatFolder(
+                PermintaanOperasi(sumber = tujuanInduk, namaBaru = namaFolder, konfirmasi = false)
+            )
+            when (buatFolderHasil) {
+                is HasilOperasi.Sukses -> buatFolderHasil.nilai
+                is HasilOperasi.Gagal -> return buatFolderHasil
+            }
+        }
+
         folderTerbuatBaru.add("${entitasFolderTujuan.lokasi.jenis.name}:${entitasFolderTujuan.lokasi.pengenal}")
 
         for (anak in daftarAnak) {
@@ -251,6 +311,7 @@ class SalinPindahkanBerkasUseCase(
                     namaFolder = anak.nama,
                     tujuanInduk = entitasFolderTujuan.lokasi,
                     apakahPindah = false,
+                    timpaKonflik = timpaKonflik,
                     folderTerbuatBaru = folderTerbuatBaru,
                     dikunjungi = dikunjungi
                 )
@@ -259,6 +320,7 @@ class SalinPindahkanBerkasUseCase(
                     sumber = anak.lokasi,
                     tujuanInduk = entitasFolderTujuan.lokasi,
                     apakahPindah = false,
+                    timpaKonflik = timpaKonflik,
                     namaEksplisit = anak.nama,
                     folderTerbuatBaru = folderTerbuatBaru,
                     dikunjungi = dikunjungi
@@ -269,7 +331,7 @@ class SalinPindahkanBerkasUseCase(
             }
         }
 
-        if (apakahPindah) {
+        if (apakahPindah && entitasFolderTujuan.lokasi != sumberFolder) {
             val hapusSumber = repositoriOperasi.hapus(
                 PermintaanOperasi(sumber = sumberFolder, konfirmasi = true)
             )

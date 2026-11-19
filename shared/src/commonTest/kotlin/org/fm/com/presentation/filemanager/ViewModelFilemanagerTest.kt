@@ -143,4 +143,50 @@ class ViewModelFilemanagerTest {
             "Format tanggal tidak sesuai: $format"
         )
     }
+
+    @Test
+    fun konflikMassalMenawarkanTimpaDanLewatiSecaraTerpisah() = runTest {
+        val repo = ImplementasiRepositoriBerkas()
+        val op = ImplementasiRepositoriOperasiBerkas(repo)
+        repo.simpan(DataBerkas("/root", "root", JenisLokasi.POSIX, adalahFolder = true))
+        repo.simpan(DataBerkas("/root/asal", "asal", JenisLokasi.POSIX, adalahFolder = true))
+        repo.simpan(DataBerkas("/root/tujuan", "tujuan", JenisLokasi.POSIX, adalahFolder = true))
+        repo.simpan(
+            DataBerkas("/root/asal/sama.txt", "sama.txt", JenisLokasi.POSIX, adalahFolder = false),
+            "baru".encodeToByteArray()
+        )
+        repo.simpan(
+            DataBerkas("/root/asal/baru.txt", "baru.txt", JenisLokasi.POSIX, adalahFolder = false),
+            "isi baru".encodeToByteArray()
+        )
+        repo.simpan(
+            DataBerkas("/root/tujuan/sama.txt", "sama.txt", JenisLokasi.POSIX, adalahFolder = false),
+            "lama".encodeToByteArray()
+        )
+
+        val vmMassal = ViewModelOperasiMassal(repo, op)
+        val sumber = listOf(
+            LokasiBerkas("/root/asal/sama.txt", JenisLokasi.POSIX, "sama.txt"),
+            LokasiBerkas("/root/asal/baru.txt", JenisLokasi.POSIX, "baru.txt")
+        )
+        val tujuan = LokasiBerkas("/root/tujuan", JenisLokasi.POSIX, "tujuan")
+
+        vmMassal.inisiasiSalin(sumber)
+        vmMassal.bukaKonfirmasiTempel()
+        vmMassal.eksekusiKeTujuan(tujuan) {}
+
+        val stateKonflik = vmMassal.state.first { !it.sedangBerjalan && it.tampilkanDialogKonflikTimpa }
+        assertEquals(1, stateKonflik.daftarKonflik.size)
+        assertEquals("isi baru", repo.isiDari("/root/tujuan/baru.txt")?.decodeToString())
+        assertEquals("lama", repo.isiDari("/root/tujuan/sama.txt")?.decodeToString())
+
+        var hasilAkhir: HasilMassal? = null
+        vmMassal.eksekusiTimpaKonflik { hasilAkhir = it }
+        vmMassal.state.first { !it.sedangBerjalan && !it.tampilkanDialogKonflikTimpa }
+
+        val finalHasil = assertNotNull(hasilAkhir)
+        assertFalse(finalHasil.adaGagal)
+        assertEquals(2, finalHasil.berhasil.size)
+        assertEquals("baru", repo.isiDari("/root/tujuan/sama.txt")?.decodeToString())
+    }
 }

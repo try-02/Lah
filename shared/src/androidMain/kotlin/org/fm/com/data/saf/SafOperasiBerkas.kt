@@ -209,39 +209,77 @@ class SafOperasiBerkas(
             }
             val namaSumber = bacaSatuEntitas(sumberUri)?.nama
             val namaAkhir = permintaan.namaBaru ?: namaSumber
+            var konflikSementaraUri: Uri? = null
             if (namaAkhir != null) {
                 val konflik = cariAnakBernama(targetParentUri, namaAkhir, ignoreCase = true)
-                if (konflik != null && !permintaan.konfirmasi) {
-                    return@withContext HasilOperasi.Gagal(
-                        "Berkas dengan nama sama sudah ada di tujuan: $namaAkhir",
-                        PenyebabGalat.KONFLIK
-                    )
+                if (konflik != null) {
+                    if (apakahDokumenSama(konflik, sumberUri)) {
+                        return@withContext HasilOperasi.Gagal(
+                            "Berkas sudah berada di folder yang sama: $namaAkhir",
+                            PenyebabGalat.VALIDASI
+                        )
+                    }
+                    if (!permintaan.konfirmasi) {
+                        return@withContext HasilOperasi.Gagal(
+                            "Berkas dengan nama sama sudah ada di tujuan: $namaAkhir",
+                            PenyebabGalat.KONFLIK
+                        )
+                    }
+                    val namaCadangan = ".tmp_timpa_${System.currentTimeMillis()}_$namaAkhir"
+                    konflikSementaraUri = try {
+                        DocumentsContract.renameDocument(contentResolver, konflik, namaCadangan)
+                            ?: return@withContext HasilOperasi.Gagal(
+                                "Target dengan nama sama tidak dapat disiapkan untuk ditimpa",
+                                PenyebabGalat.KONFLIK
+                            )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        return@withContext HasilOperasi.Gagal(
+                            e.message ?: "Gagal menyiapkan target untuk ditimpa",
+                            PenyebabGalat.IZIN_DITOLAK
+                        )
+                    }
                 }
             }
 
             try {
                 val salinanUri = DocumentsContract.copyDocument(contentResolver, sumberUri, targetParentUri)
-                    ?: return@withContext HasilOperasi.Gagal("Gagal menyalin dokumen SAF", PenyebabGalat.TIDAK_DIKETAHUI)
+                    ?: run {
+                        pulihkanNamaCadangan(konflikSementaraUri, namaAkhir ?: "")
+                        return@withContext HasilOperasi.Gagal("Gagal menyalin dokumen SAF", PenyebabGalat.TIDAK_DIKETAHUI)
+                    }
                 val uriAkhir = if (permintaan.namaBaru != null && permintaan.namaBaru != namaSumber) {
                     DocumentsContract.renameDocument(contentResolver, salinanUri, permintaan.namaBaru) ?: run {
                         runCatching { DocumentsContract.deleteDocument(contentResolver, salinanUri) }
+                        pulihkanNamaCadangan(konflikSementaraUri, namaAkhir ?: "")
                         return@withContext HasilOperasi.Gagal("Gagal menamai ulang hasil salin SAF", PenyebabGalat.TIDAK_DIKETAHUI)
                     }
                 } else {
                     salinanUri
                 }
-                val entitas = bacaSatuEntitas(uriAkhir)
-                    ?: return@withContext HasilOperasi.Gagal("Gagal membaca hasil salin SAF", PenyebabGalat.TIDAK_DITEMUKAN)
+                val entitas = bacaSatuEntitas(uriAkhir) ?: run {
+                    pulihkanNamaCadangan(konflikSementaraUri, namaAkhir ?: "")
+                    return@withContext HasilOperasi.Gagal("Gagal membaca hasil salin SAF", PenyebabGalat.TIDAK_DITEMUKAN)
+                }
+                if (konflikSementaraUri != null) {
+                    runCatching { DocumentsContract.deleteDocument(contentResolver, konflikSementaraUri) }
+                }
                 HasilOperasi.Sukses(entitas)
             } catch (e: CancellationException) {
+                pulihkanNamaCadangan(konflikSementaraUri, namaAkhir ?: "")
                 throw e
             } catch (e: SecurityException) {
+                pulihkanNamaCadangan(konflikSementaraUri, namaAkhir ?: "")
                 HasilOperasi.Gagal(e.message ?: "Izin salin SAF ditolak", PenyebabGalat.IZIN_DITOLAK)
             } catch (e: FileNotFoundException) {
+                pulihkanNamaCadangan(konflikSementaraUri, namaAkhir ?: "")
                 HasilOperasi.Gagal(e.message ?: "Dokumen asal/tujuan tidak ditemukan", PenyebabGalat.TIDAK_DITEMUKAN)
             } catch (e: UnsupportedOperationException) {
+                pulihkanNamaCadangan(konflikSementaraUri, namaAkhir ?: "")
                 HasilOperasi.Gagal("Penyedia SAF tidak mendukung salin dokumen", PenyebabGalat.TIDAK_DIDUKUNG)
             } catch (e: Exception) {
+                pulihkanNamaCadangan(konflikSementaraUri, namaAkhir ?: "")
                 HasilOperasi.Gagal(e.message ?: "Gagal menyalin dokumen SAF", PenyebabGalat.TIDAK_DIKETAHUI)
             }
         }
@@ -275,7 +313,7 @@ class SafOperasiBerkas(
                     "Induk langsung dokumen SAF tidak dapat ditentukan untuk pindah native",
                     PenyebabGalat.TIDAK_DIDUKUNG
                 )
-            if (sourceParentUri == targetParentUri && permintaan.namaBaru == null) {
+            if (apakahDokumenSama(sourceParentUri, targetParentUri) && permintaan.namaBaru == null) {
                 val entitasSekarang = bacaSatuEntitas(sumberUri)
                     ?: return@withContext HasilOperasi.Gagal("Dokumen asal tidak ditemukan", PenyebabGalat.TIDAK_DITEMUKAN)
                 return@withContext HasilOperasi.Sukses(entitasSekarang)
@@ -283,13 +321,31 @@ class SafOperasiBerkas(
 
             val namaSumber = bacaSatuEntitas(sumberUri)?.nama
             val namaAkhir = permintaan.namaBaru ?: namaSumber
+            var konflikSementaraUri: Uri? = null
             if (namaAkhir != null) {
                 val konflik = cariAnakBernama(targetParentUri, namaAkhir, ignoreCase = true)
-                if (konflik != null && konflik != sumberUri && !permintaan.konfirmasi) {
-                    return@withContext HasilOperasi.Gagal(
-                        "Berkas dengan nama sama sudah ada di tujuan: $namaAkhir",
-                        PenyebabGalat.KONFLIK
-                    )
+                if (konflik != null && !apakahDokumenSama(konflik, sumberUri)) {
+                    if (!permintaan.konfirmasi) {
+                        return@withContext HasilOperasi.Gagal(
+                            "Berkas dengan nama sama sudah ada di tujuan: $namaAkhir",
+                            PenyebabGalat.KONFLIK
+                        )
+                    }
+                    val namaCadangan = ".tmp_timpa_${System.currentTimeMillis()}_$namaAkhir"
+                    konflikSementaraUri = try {
+                        DocumentsContract.renameDocument(contentResolver, konflik, namaCadangan)
+                            ?: return@withContext HasilOperasi.Gagal(
+                                "Target dengan nama sama tidak dapat disiapkan untuk ditimpa",
+                                PenyebabGalat.KONFLIK
+                            )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        return@withContext HasilOperasi.Gagal(
+                            e.message ?: "Gagal menyiapkan target untuk ditimpa",
+                            PenyebabGalat.IZIN_DITOLAK
+                        )
+                    }
                 }
             }
 
@@ -299,24 +355,37 @@ class SafOperasiBerkas(
                     sumberUri,
                     sourceParentUri,
                     targetParentUri
-                ) ?: return@withContext HasilOperasi.Gagal("Gagal memindahkan dokumen SAF", PenyebabGalat.TIDAK_DIKETAHUI)
+                ) ?: run {
+                    pulihkanNamaCadangan(konflikSementaraUri, namaAkhir ?: "")
+                    return@withContext HasilOperasi.Gagal("Gagal memindahkan dokumen SAF", PenyebabGalat.TIDAK_DIKETAHUI)
+                }
                 val uriAkhir = if (permintaan.namaBaru != null && permintaan.namaBaru != namaSumber) {
                     DocumentsContract.renameDocument(contentResolver, hasilUri, permintaan.namaBaru) ?: hasilUri
                 } else {
                     hasilUri
                 }
-                val entitas = bacaSatuEntitas(uriAkhir)
-                    ?: return@withContext HasilOperasi.Gagal("Gagal membaca hasil pindah SAF", PenyebabGalat.TIDAK_DITEMUKAN)
+                val entitas = bacaSatuEntitas(uriAkhir) ?: run {
+                    pulihkanNamaCadangan(konflikSementaraUri, namaAkhir ?: "")
+                    return@withContext HasilOperasi.Gagal("Gagal membaca hasil pindah SAF", PenyebabGalat.TIDAK_DITEMUKAN)
+                }
+                if (konflikSementaraUri != null) {
+                    runCatching { DocumentsContract.deleteDocument(contentResolver, konflikSementaraUri) }
+                }
                 HasilOperasi.Sukses(entitas)
             } catch (e: CancellationException) {
+                pulihkanNamaCadangan(konflikSementaraUri, namaAkhir ?: "")
                 throw e
             } catch (e: SecurityException) {
+                pulihkanNamaCadangan(konflikSementaraUri, namaAkhir ?: "")
                 HasilOperasi.Gagal(e.message ?: "Izin pindah SAF ditolak", PenyebabGalat.IZIN_DITOLAK)
             } catch (e: FileNotFoundException) {
+                pulihkanNamaCadangan(konflikSementaraUri, namaAkhir ?: "")
                 HasilOperasi.Gagal(e.message ?: "Dokumen asal/tujuan tidak ditemukan", PenyebabGalat.TIDAK_DITEMUKAN)
             } catch (e: UnsupportedOperationException) {
+                pulihkanNamaCadangan(konflikSementaraUri, namaAkhir ?: "")
                 HasilOperasi.Gagal("Penyedia SAF tidak mendukung pindah native", PenyebabGalat.TIDAK_DIDUKUNG)
             } catch (e: Exception) {
+                pulihkanNamaCadangan(konflikSementaraUri, namaAkhir ?: "")
                 HasilOperasi.Gagal(e.message ?: "Gagal memindahkan dokumen SAF", PenyebabGalat.TIDAK_DIKETAHUI)
             }
         }
@@ -551,5 +620,13 @@ class SafOperasiBerkas(
                 else -> "application/octet-stream"
             }
         }
+    }
+
+    private fun apakahDokumenSama(uriA: Uri, uriB: Uri): Boolean {
+        if (uriA == uriB) return true
+        return runCatching {
+            uriA.authority == uriB.authority &&
+                DocumentsContract.getDocumentId(uriA) == DocumentsContract.getDocumentId(uriB)
+        }.getOrDefault(false)
     }
 }

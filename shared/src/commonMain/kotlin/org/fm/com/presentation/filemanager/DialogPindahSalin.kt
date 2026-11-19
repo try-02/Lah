@@ -109,3 +109,52 @@ fun DialogHasilOperasiMassal(
         }
     )
 }
+
+@Composable
+fun DialogKonfirmasiTimpaMassal(
+    terbuka: Boolean,
+    apakahPindah: Boolean,
+    daftarKonflik: List<LokasiBerkas>,
+    onTimpa: () -> Unit,
+    onLewati: () -> Unit
+) {
+    if (!terbuka || daftarKonflik.isEmpty()) return
+    val aksi = if (apakahPindah) "memindahkan" else "menyalin"
+    val daftarNama = daftarKonflik.take(5).joinToString("\n") {
+        "• ${it.label ?: it.pengenal.substringAfterLast('/')}"
+    }
+    val sisa = (daftarKonflik.size - 5).coerceAtLeast(0)
+    AlertDialog(
+        onDismissRequest = onLewati,
+        title = { Text("Konflik Nama di Tujuan") },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "${daftarKonflik.size} item sudah ada di folder tujuan saat $aksi:",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = if (sisa > 0) "$daftarNama\n...dan $sisa item lainnya" else daftarNama,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Timpa item yang sudah ada di tujuan atau lewati item yang bentrok?",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onTimpa) {
+                Text("Timpa", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onLewati) {
+                Text("Lewati")
+            }
+        }
+    )
+}

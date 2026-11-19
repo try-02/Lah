@@ -134,4 +134,40 @@ class SalinPindahkanBerkasUseCaseTest {
         assertNull(memori.berkas.data("/akar/proyek"))
         assertEquals("fun main() {}", memori.berkas.isiDari("/akar/tujuan/proyek/src/Main.kt")?.decodeToString())
     }
+
+    @Test
+    fun salinDenganTimpaKonflikTrueMenimpaTujuanDanTidakMenghapusDiriSendiri() = runTest {
+        repo.simpan(DataBerkas("/root", "root", JenisLokasi.POSIX, adalahFolder = true))
+        repo.simpan(DataBerkas("/root/asal", "asal", JenisLokasi.POSIX, adalahFolder = true))
+        repo.simpan(DataBerkas("/root/tujuan", "tujuan", JenisLokasi.POSIX, adalahFolder = true))
+        repo.simpan(
+            DataBerkas("/root/asal/sama.txt", "sama.txt", JenisLokasi.POSIX, adalahFolder = false),
+            "isi baru".encodeToByteArray()
+        )
+        repo.simpan(
+            DataBerkas("/root/asal/unik.txt", "unik.txt", JenisLokasi.POSIX, adalahFolder = false),
+            "isi unik".encodeToByteArray()
+        )
+        repo.simpan(
+            DataBerkas("/root/tujuan/sama.txt", "sama.txt", JenisLokasi.POSIX, adalahFolder = false),
+            "isi lama".encodeToByteArray()
+        )
+
+        val sumber = listOf(
+            LokasiBerkas("/root/asal/sama.txt", JenisLokasi.POSIX, "sama.txt"),
+            LokasiBerkas("/root/asal/unik.txt", JenisLokasi.POSIX, "unik.txt")
+        )
+        val tujuan = LokasiBerkas("/root/tujuan", JenisLokasi.POSIX, "tujuan")
+
+        val pass1 = useCase(sumber, tujuan, apakahPindah = false, timpaKonflik = false)
+        assertEquals(1, pass1.berhasil.size)
+        assertEquals(1, pass1.gagal.size)
+        assertEquals(PenyebabGalat.KONFLIK, pass1.gagal.first().penyebab)
+        assertEquals("isi lama", repo.isiDari("/root/tujuan/sama.txt")?.decodeToString())
+
+        val pass2 = useCase(pass1.gagal.map { it.sumber }, tujuan, apakahPindah = false, timpaKonflik = true)
+        assertFalse(pass2.adaGagal)
+        assertEquals(1, pass2.berhasil.size)
+        assertEquals("isi baru", repo.isiDari("/root/tujuan/sama.txt")?.decodeToString())
+    }
 }

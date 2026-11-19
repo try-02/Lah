@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.fm.com.domain.model.LokasiBerkas
+import org.fm.com.domain.model.PenyebabGalat
 import org.fm.com.domain.repository.HasilMassal
 import org.fm.com.domain.repository.RepositoriBerkas
 import org.fm.com.domain.repository.RepositoriOperasiBerkas
@@ -24,6 +25,10 @@ data class StateOperasiMassal(
     val daftarSumber: List<LokasiBerkas> = emptyList(),
     val sedangMemilihTujuan: Boolean = false,
     val dialogPilihTujuanTerbuka: Boolean = false,
+    val daftarKonflik: List<LokasiBerkas> = emptyList(),
+    val tujuanKonflik: LokasiBerkas? = null,
+    val hasilSebelumKonflik: HasilMassal? = null,
+    val tampilkanDialogKonflikTimpa: Boolean = false,
     val hasilTerakhir: HasilMassal? = null,
     val tampilkanDialogHasil: Boolean = false
 ) {
@@ -51,6 +56,10 @@ class ViewModelOperasiMassal(
                 apakahPindah = false,
                 sedangMemilihTujuan = true,
                 dialogPilihTujuanTerbuka = false,
+                daftarKonflik = emptyList(),
+                tujuanKonflik = null,
+                hasilSebelumKonflik = null,
+                tampilkanDialogKonflikTimpa = false,
                 hasilTerakhir = null,
                 tampilkanDialogHasil = false
             )
@@ -65,6 +74,10 @@ class ViewModelOperasiMassal(
                 apakahPindah = true,
                 sedangMemilihTujuan = true,
                 dialogPilihTujuanTerbuka = false,
+                daftarKonflik = emptyList(),
+                tujuanKonflik = null,
+                hasilSebelumKonflik = null,
+                tampilkanDialogKonflikTimpa = false,
                 hasilTerakhir = null,
                 tampilkanDialogHasil = false
             )
@@ -116,6 +129,7 @@ class ViewModelOperasiMassal(
                     daftarSumber = sumber,
                     tujuanInduk = tujuan,
                     apakahPindah = pindah,
+                    timpaKonflik = false,
                     onProgres = { indeks, total, item ->
                         _state.update {
                             it.copy(
@@ -129,17 +143,128 @@ class ViewModelOperasiMassal(
             } catch (e: CancellationException) {
                 throw e
             } finally {
+                val hasil = hasilEksekusi
+                if (hasil == null) {
+                    _state.update {
+                        it.copy(
+                            sedangBerjalan = false,
+                            daftarSumber = emptyList(),
+                            daftarKonflik = emptyList(),
+                            tujuanKonflik = null,
+                            hasilSebelumKonflik = null,
+                            tampilkanDialogKonflikTimpa = false
+                        )
+                    }
+                    onSelesai(null)
+                } else {
+                    val itemKonflik = hasil.gagal.filter { it.penyebab == PenyebabGalat.KONFLIK }
+                    val gagalNonKonflik = hasil.gagal.filter { it.penyebab != PenyebabGalat.KONFLIK }
+                    if (itemKonflik.isNotEmpty()) {
+                        val hasilSementara = HasilMassal(berhasil = hasil.berhasil, gagal = gagalNonKonflik)
+                        _state.update {
+                            it.copy(
+                                sedangBerjalan = false,
+                                daftarSumber = emptyList(),
+                                daftarKonflik = itemKonflik.map { k -> k.sumber },
+                                tujuanKonflik = tujuan,
+                                hasilSebelumKonflik = hasilSementara,
+                                tampilkanDialogKonflikTimpa = true,
+                                hasilTerakhir = hasilSementara,
+                                tampilkanDialogHasil = false
+                            )
+                        }
+                        onSelesai(hasilSementara)
+                    } else {
+                        _state.update {
+                            it.copy(
+                                sedangBerjalan = false,
+                                daftarSumber = emptyList(),
+                                hasilTerakhir = hasil,
+                                tampilkanDialogHasil = hasil.adaGagal
+                            )
+                        }
+                        onSelesai(hasil)
+                    }
+                }
+            }
+        }
+    }
+
+    fun eksekusiTimpaKonflik(onSelesai: (HasilMassal?) -> Unit) {
+        val konflik = _state.value.daftarKonflik
+        val tujuan = _state.value.tujuanKonflik ?: return
+        val pindah = _state.value.apakahPindah
+        val hasilAwal = _state.value.hasilSebelumKonflik ?: HasilMassal.KOSONG
+        if (konflik.isEmpty()) return
+
+        _state.update {
+            it.copy(
+                tampilkanDialogKonflikTimpa = false,
+                sedangBerjalan = true,
+                totalItem = konflik.size,
+                itemDiproses = 0,
+                namaItemSaatIni = ""
+            )
+        }
+        pekerjaanOperasi?.cancel()
+        pekerjaanOperasi = viewModelScope.launch {
+            var hasilTimpa: HasilMassal? = null
+            try {
+                hasilTimpa = salinPindahkanUseCase(
+                    daftarSumber = konflik,
+                    tujuanInduk = tujuan,
+                    apakahPindah = pindah,
+                    timpaKonflik = true,
+                    onProgres = { indeks, total, item ->
+                        _state.update {
+                            it.copy(
+                                itemDiproses = indeks,
+                                totalItem = total,
+                                namaItemSaatIni = item.label ?: item.pengenal.substringAfterLast('/')
+                            )
+                        }
+                    }
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } finally {
+                val gabungan = if (hasilTimpa != null) {
+                    HasilMassal(
+                        berhasil = hasilAwal.berhasil + hasilTimpa.berhasil,
+                        gagal = hasilAwal.gagal + hasilTimpa.gagal
+                    )
+                } else {
+                    null
+                }
                 _state.update {
                     it.copy(
                         sedangBerjalan = false,
-                        hasilTerakhir = hasilEksekusi,
-                        tampilkanDialogHasil = hasilEksekusi?.adaGagal == true,
-                        daftarSumber = emptyList()
+                        daftarKonflik = emptyList(),
+                        tujuanKonflik = null,
+                        hasilSebelumKonflik = null,
+                        tampilkanDialogKonflikTimpa = false,
+                        hasilTerakhir = gabungan,
+                        tampilkanDialogHasil = gabungan?.adaGagal == true
                     )
                 }
-                onSelesai(hasilEksekusi)
+                onSelesai(gabungan)
             }
         }
+    }
+
+    fun lewatiKonflik(onSelesai: (HasilMassal) -> Unit) {
+        val hasilAkhir = _state.value.hasilSebelumKonflik ?: HasilMassal.KOSONG
+        _state.update {
+            it.copy(
+                daftarKonflik = emptyList(),
+                tujuanKonflik = null,
+                hasilSebelumKonflik = null,
+                tampilkanDialogKonflikTimpa = false,
+                hasilTerakhir = hasilAkhir,
+                tampilkanDialogHasil = hasilAkhir.adaGagal
+            )
+        }
+        onSelesai(hasilAkhir)
     }
 
     fun batalkanOperasi() {

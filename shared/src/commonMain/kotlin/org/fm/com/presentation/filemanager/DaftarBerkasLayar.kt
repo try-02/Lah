@@ -377,16 +377,46 @@ fun DaftarBerkasLayar(
                 viewModelOperasiMassal?.eksekusiKeTujuan(tujuan) { hasil ->
                     viewModel.prosesIntent(IntentFilemanager.BersihkanPilihan)
                     viewModel.prosesIntent(IntentFilemanager.Segarkan)
-                    val pesan = when {
-                        hasil == null -> "Operasi dibatalkan"
-                        hasil.adaGagal -> "Selesai dengan ${hasil.berhasil.size} berhasil dan ${hasil.gagal.size} gagal"
-                        else -> "Berhasil memproses ${hasil.berhasil.size} item"
+                    val adaKonflik = viewModelOperasiMassal.state.value.tampilkanDialogKonflikTimpa
+                    if (!adaKonflik) {
+                        val pesan = when {
+                            hasil == null -> "Operasi dibatalkan"
+                            hasil.adaGagal -> "Selesai dengan ${hasil.berhasil.size} berhasil dan ${hasil.gagal.size} gagal"
+                            else -> "Berhasil memproses ${hasil.berhasil.size} item"
+                        }
+                        viewModel.prosesIntent(IntentFilemanager.SetPesanInfo(pesan))
                     }
-                    viewModel.prosesIntent(IntentFilemanager.SetPesanInfo(pesan))
                 }
             }
         },
         onTutup = { viewModelOperasiMassal?.tutupDialogTujuan() }
+    )
+
+    DialogKonfirmasiTimpaMassal(
+        terbuka = stateMassal.tampilkanDialogKonflikTimpa,
+        apakahPindah = stateMassal.apakahPindah,
+        daftarKonflik = stateMassal.daftarKonflik,
+        onTimpa = {
+            viewModelOperasiMassal?.eksekusiTimpaKonflik { hasil ->
+                viewModel.prosesIntent(IntentFilemanager.Segarkan)
+                val pesan = when {
+                    hasil == null -> "Operasi dibatalkan"
+                    hasil.adaGagal -> "Selesai: ${hasil.berhasil.size} berhasil, ${hasil.gagal.size} gagal"
+                    else -> "Berhasil memproses ${hasil.berhasil.size} item"
+                }
+                viewModel.prosesIntent(IntentFilemanager.SetPesanInfo(pesan))
+            }
+        },
+        onLewati = {
+            viewModelOperasiMassal?.lewatiKonflik { hasil ->
+                val pesan = if (hasil.adaGagal) {
+                    "${hasil.berhasil.size} berhasil, konflik dilewati, ${hasil.gagal.size} gagal"
+                } else {
+                    "${hasil.berhasil.size} berhasil, item konflik dilewati"
+                }
+                viewModel.prosesIntent(IntentFilemanager.SetPesanInfo(pesan))
+            }
+        }
     )
 
     DialogHasilOperasiMassal(
