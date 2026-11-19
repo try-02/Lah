@@ -12,61 +12,63 @@ import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.model.PenyebabGalat
 import platform.Foundation.NSData
 import platform.Foundation.NSError
+import platform.Foundation.NSFileCoordinator
+import platform.Foundation.NSFileCoordinatorWritingForDeleting
+import platform.Foundation.NSFileCoordinatorWritingForMoving
+import platform.Foundation.NSFileCoordinatorWritingForReplacing
 import platform.Foundation.NSURL
-import platform.Foundation.NSURLBookmarkCreationWithSecurityScope
-import platform.Foundation.NSURLBookmarkResolutionWithSecurityScope
+import platform.Foundation.NSURLBookmarkCreationMinimalBookmark
+import platform.Foundation.NSURLBookmarkResolutionWithoutUI
 import platform.Foundation.base64EncodedStringWithOptions
 import platform.Foundation.create
 
-/**
- * Pengelola security-scoped bookmark iOS untuk mempertahankan akses izin direktori/berkas
- * di luar sandbox aplikasi (PRD §5.1).
- */
-object PenyimpanBookmarkKeamanan {
+data class HasilBookmarkTerselesaikan(
+    val url: NSURL,
+    val bookmarkBaruBase64: String? = null
+)
 
-    /**
-     * Membuat security-scoped bookmark dari [url] dan mengembalikannya sebagai string Base64.
-     */
-    fun buatBookmarkBase64(url: NSURL): HasilOperasi<String> = memScoped {
-        val errorPtr = alloc<ObjCObjectVar<NSError?>>()
-        val bookmarkData = url.bookmarkDataWithOptions(
-            options = NSURLBookmarkCreationWithSecurityScope,
-            includingResourceValuesForKeys = null,
-            relativeToURL = null,
-            error = errorPtr.ptr
-        )
-        if (bookmarkData == null) {
-            val err = errorPtr.value
-            return HasilOperasi.Gagal(
-                err?.localizedDescription ?: "Gagal membuat bookmark keamanan iOS",
-                PenyebabGalat.IZIN_DITOLAK
+object PenyimpanBookmarkKeamanan {
+    fun buatBookmarkBase64(url: NSURL): HasilOperasi<String> = denganAksesKeamanan(url) {
+        memScoped {
+            val errorPtr = alloc<ObjCObjectVar<NSError?>>()
+            val bookmarkData = url.bookmarkDataWithOptions(
+                options = NSURLBookmarkCreationMinimalBookmark,
+                includingResourceValuesForKeys = null,
+                relativeToURL = null,
+                error = errorPtr.ptr
             )
+            if (bookmarkData == null) {
+                val err = errorPtr.value
+                return@denganAksesKeamanan HasilOperasi.Gagal(
+                    err?.localizedDescription ?: "Gagal membuat bookmark keamanan iOS",
+                    PenyebabGalat.IZIN_DITOLAK
+                )
+            }
+            HasilOperasi.Sukses(bookmarkData.base64EncodedStringWithOptions(0uL))
         }
-        val base64 = bookmarkData.base64EncodedStringWithOptions(0uL)
-        HasilOperasi.Sukses(base64)
     }
 
-    /**
-     * Menyelesaikan string Base64 bookmark menjadi [NSURL] yang siap diakses.
-     */
-    fun selesaikanBookmarkBase64(base64: String): HasilOperasi<NSURL> = memScoped {
+    fun selesaikanBookmarkBase64(base64: String): HasilOperasi<NSURL> =
+        when (val hasil = selesaikanDanSegarkanBookmark(base64)) {
+            is HasilOperasi.Sukses -> HasilOperasi.Sukses(hasil.nilai.url)
+            is HasilOperasi.Gagal -> hasil
+        }
+
+    fun selesaikanDanSegarkanBookmark(base64: String): HasilOperasi<HasilBookmarkTerselesaikan> = memScoped {
         if (base64.isBlank()) {
             return HasilOperasi.Gagal("Data bookmark Base64 kosong", PenyebabGalat.VALIDASI)
         }
         val data = NSData.create(base64EncodedString = base64, options = 0uL)
             ?: return HasilOperasi.Gagal("Format data bookmark Base64 tidak valid", PenyebabGalat.VALIDASI)
-
         val errorPtr = alloc<ObjCObjectVar<NSError?>>()
         val isStalePtr = alloc<BooleanVar>()
-
         val url = NSURL.URLByResolvingBookmarkData(
             bookmarkData = data,
-            options = NSURLBookmarkResolutionWithSecurityScope,
+            options = NSURLBookmarkResolutionWithoutUI,
             relativeToURL = null,
             bookmarkDataIsStale = isStalePtr.ptr,
             error = errorPtr.ptr
         )
-
         if (url == null) {
             val err = errorPtr.value
             return HasilOperasi.Gagal(
@@ -74,13 +76,17 @@ object PenyimpanBookmarkKeamanan {
                 PenyebabGalat.IZIN_DITOLAK
             )
         }
-        HasilOperasi.Sukses(url)
+        val bookmarkBaru = if (isStalePtr.value) {
+            when (val segar = buatBookmarkBase64(url)) {
+                is HasilOperasi.Sukses -> segar.nilai
+                is HasilOperasi.Gagal -> null
+            }
+        } else {
+            null
+        }
+        HasilOperasi.Sukses(HasilBookmarkTerselesaikan(url = url, bookmarkBaruBase64 = bookmarkBaru))
     }
 
-    /**
-     * Menjalankan blok operasi sinkron dengan jaminan `startAccessingSecurityScopedResource`
-     * dan pelepasan `stopAccessingSecurityScopedResource` pada `finally`.
-     */
     inline fun <T> denganAksesKeamanan(url: NSURL, blok: () -> HasilOperasi<T>): HasilOperasi<T> {
         val perluLepas = url.startAccessingSecurityScopedResource()
         return try {
@@ -92,9 +98,6 @@ object PenyimpanBookmarkKeamanan {
         }
     }
 
-    /**
-     * Menjalankan blok operasi suspend dengan jaminan pelepasan security scope.
-     */
     suspend fun <T> denganAksesKeamananSuspend(
         url: NSURL,
         blok: suspend () -> HasilOperasi<T>
@@ -107,5 +110,108 @@ object PenyimpanBookmarkKeamanan {
                 url.stopAccessingSecurityScopedResource()
             }
         }
+    }
+
+    suspend fun <T> denganAksesKeamananGandaSuspend(
+        urlPertama: NSURL,
+        urlKedua: NSURL?,
+        blok: suspend () -> HasilOperasi<T>
+    ): HasilOperasi<T> {
+        val lepasPertama = urlPertama.startAccessingSecurityScopedResource()
+        val lepasKedua = if (urlKedua != null && urlKedua.path != urlPertama.path) {
+            urlKedua.startAccessingSecurityScopedResource()
+        } else {
+            false
+        }
+        return try {
+            blok()
+        } finally {
+            if (lepasKedua && urlKedua != null) {
+                urlKedua.stopAccessingSecurityScopedResource()
+            }
+            if (lepasPertama) {
+                urlPertama.stopAccessingSecurityScopedResource()
+            }
+        }
+    }
+
+    fun <T> koordinasiBaca(url: NSURL, aksi: (NSURL) -> HasilOperasi<T>): HasilOperasi<T> = memScoped {
+        val errorPtr = alloc<ObjCObjectVar<NSError?>>()
+        var hasilAksi: HasilOperasi<T>? = null
+        val coordinator = NSFileCoordinator(filePresenter = null)
+        coordinator.coordinateReadingItemAtURL(
+            url = url,
+            options = 0uL,
+            error = errorPtr.ptr
+        ) { coordinatedUrl ->
+            hasilAksi = aksi(coordinatedUrl ?: url)
+        }
+        hasilAksi ?: HasilOperasi.Gagal(
+            errorPtr.value?.localizedDescription ?: "Gagal koordinasi baca berkas iOS",
+            PenyebabGalat.IZIN_DITOLAK
+        )
+    }
+
+    fun <T> koordinasiTulis(
+        url: NSURL,
+        untukMenghapus: Boolean = false,
+        untukMengganti: Boolean = false,
+        aksi: (NSURL) -> HasilOperasi<T>
+    ): HasilOperasi<T> = memScoped {
+        val errorPtr = alloc<ObjCObjectVar<NSError?>>()
+        var hasilAksi: HasilOperasi<T>? = null
+        val opsi = when {
+            untukMenghapus -> NSFileCoordinatorWritingForDeleting
+            untukMengganti -> NSFileCoordinatorWritingForReplacing
+            else -> 0uL
+        }
+        val coordinator = NSFileCoordinator(filePresenter = null)
+        coordinator.coordinateWritingItemAtURL(
+            url = url,
+            options = opsi,
+            error = errorPtr.ptr
+        ) { coordinatedUrl ->
+            hasilAksi = aksi(coordinatedUrl ?: url)
+        }
+        hasilAksi ?: HasilOperasi.Gagal(
+            errorPtr.value?.localizedDescription ?: "Gagal koordinasi tulis berkas iOS",
+            PenyebabGalat.IZIN_DITOLAK
+        )
+    }
+
+    fun <T> koordinasiSalinAtauPindah(
+        sumberUrl: NSURL,
+        tujuanUrl: NSURL,
+        pindah: Boolean,
+        aksi: (NSURL, NSURL) -> HasilOperasi<T>
+    ): HasilOperasi<T> = memScoped {
+        val errorPtr = alloc<ObjCObjectVar<NSError?>>()
+        var hasilAksi: HasilOperasi<T>? = null
+        val coordinator = NSFileCoordinator(filePresenter = null)
+        if (pindah) {
+            coordinator.coordinateWritingItemAtURL(
+                url1 = sumberUrl,
+                options1 = NSFileCoordinatorWritingForMoving,
+                writingItemAtURL = tujuanUrl,
+                options2 = NSFileCoordinatorWritingForReplacing,
+                error = errorPtr.ptr
+            ) { coordSumber, coordTujuan ->
+                hasilAksi = aksi(coordSumber ?: sumberUrl, coordTujuan ?: tujuanUrl)
+            }
+        } else {
+            coordinator.coordinateReadingItemAtURL(
+                readingURL = sumberUrl,
+                options = 0uL,
+                writingItemAtURL = tujuanUrl,
+                options = NSFileCoordinatorWritingForReplacing,
+                error = errorPtr.ptr
+            ) { coordSumber, coordTujuan ->
+                hasilAksi = aksi(coordSumber ?: sumberUrl, coordTujuan ?: tujuanUrl)
+            }
+        }
+        hasilAksi ?: HasilOperasi.Gagal(
+            errorPtr.value?.localizedDescription ?: "Gagal koordinasi salin/pindah berkas iOS",
+            PenyebabGalat.IZIN_DITOLAK
+        )
     }
 }

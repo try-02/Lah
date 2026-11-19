@@ -5,43 +5,51 @@ import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.PenyebabGalat
 import platform.Foundation.NSURL
 import platform.UIKit.UIDocumentPickerDelegateProtocol
-import platform.UIKit.UIDocumentPickerMode
 import platform.UIKit.UIDocumentPickerViewController
+import platform.UniformTypeIdentifiers.UTTypeFolder
 import platform.darwin.NSObject
 
-/**
- * Penerima hasil Document Picker iOS untuk memilih direktori pohon berkas.
- */
+data class HasilPemilihanLokasiIos(
+    val lokasi: LokasiBerkas,
+    val bookmarkBase64: String?
+)
+
 class DokumenPenerimaLokasi : NSObject(), UIDocumentPickerDelegateProtocol {
-
     var onLokasiDipilih: ((HasilOperasi<LokasiBerkas>) -> Unit)? = null
+    var onLokasiDenganBookmarkDipilih: ((HasilOperasi<HasilPemilihanLokasiIos>) -> Unit)? = null
 
-    /**
-     * Membuat [UIDocumentPickerViewController] untuk membuka folder direktori.
-     */
-    fun buatPickerFolder(): UIDocumentPickerViewController {
-        val tipeFolder = listOf("public.folder")
-        val picker = UIDocumentPickerViewController(
-            documentTypes = tipeFolder,
-            inMode = UIDocumentPickerMode.UIDocumentPickerModeOpen
-        )
+    fun buatPickerFolder(direktoriAwal: NSURL? = null): UIDocumentPickerViewController {
+        val picker = UIDocumentPickerViewController(forOpeningContentTypes = listOf(UTTypeFolder))
         picker.delegate = this
         picker.allowsMultipleSelection = false
+        if (direktoriAwal != null) {
+            picker.directoryURL = direktoriAwal
+        }
         return picker
     }
 
     override fun documentPicker(controller: UIDocumentPickerViewController, didPickDocumentsAtURLs: List<*>) {
         val url = didPickDocumentsAtURLs.firstOrNull() as? NSURL
         if (url == null) {
-            onLokasiDipilih?.invoke(HasilOperasi.Gagal("Tidak ada dokumen yang dipilih", PenyebabGalat.VALIDASI))
+            val gagal = HasilOperasi.Gagal("Tidak ada folder yang dipilih", PenyebabGalat.VALIDASI)
+            onLokasiDipilih?.invoke(gagal)
+            onLokasiDenganBookmarkDipilih?.invoke(gagal)
             return
         }
-        val bookmarkHasil = PenyimpanBookmarkKeamanan.buatBookmarkBase64(url)
+        val bookmarkBase64 = when (val bm = PenyimpanBookmarkKeamanan.buatBookmarkBase64(url)) {
+            is HasilOperasi.Sukses -> bm.nilai
+            is HasilOperasi.Gagal -> null
+        }
         val lokasi = DokumenPemetaanLokasi.keLokasi(url)
         onLokasiDipilih?.invoke(HasilOperasi.Sukses(lokasi))
+        onLokasiDenganBookmarkDipilih?.invoke(
+            HasilOperasi.Sukses(HasilPemilihanLokasiIos(lokasi = lokasi, bookmarkBase64 = bookmarkBase64))
+        )
     }
 
     override fun documentPickerWasCancelled(controller: UIDocumentPickerViewController) {
-        onLokasiDipilih?.invoke(HasilOperasi.Gagal("Pemilihan folder dibatalkan pengguna", PenyebabGalat.VALIDASI))
+        val batal = HasilOperasi.Gagal("Pemilihan folder dibatalkan pengguna", PenyebabGalat.VALIDASI)
+        onLokasiDipilih?.invoke(batal)
+        onLokasiDenganBookmarkDipilih?.invoke(batal)
     }
 }

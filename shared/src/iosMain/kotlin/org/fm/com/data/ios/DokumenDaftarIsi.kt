@@ -26,10 +26,6 @@ import platform.Foundation.NSNumber
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLIsDirectoryKey
 
-/**
- * Pembaca daftar isi direktori sandbox iOS dalam SATU pemanggilan batch pre-fetch
- * (memenuhi target 1.000 item PRD §7.1).
- */
 class DokumenDaftarIsi(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
@@ -45,55 +41,51 @@ class DokumenDaftarIsi(
                 is HasilOperasi.Sukses -> hasil.nilai
                 is HasilOperasi.Gagal -> return@withContext hasil
             }
-
             PenyimpanBookmarkKeamanan.denganAksesKeamananSuspend(url) {
                 currentCoroutineContext().ensureActive()
-                val path = url.path
-                if (path == null || !fileManager.fileExistsAtPath(path)) {
-                    return@denganAksesKeamananSuspend HasilOperasi.Gagal(
-                        "Direktori tidak ditemukan: ${lokasi.pengenal}",
-                        PenyebabGalat.TIDAK_DITEMUKAN
-                    )
-                }
-
-                memScoped {
-                    val errorPtr = alloc<ObjCObjectVar<NSError?>>()
-                    val checkDir = url.resourceValuesForKeys(listOf(NSURLIsDirectoryKey), errorPtr.ptr)
-                    val isDir = (checkDir?.get(NSURLIsDirectoryKey) as? NSNumber)?.boolValue ?: false
-                    if (!isDir) {
-                        return@denganAksesKeamananSuspend HasilOperasi.Gagal(
-                            "Lokasi bukan direktori: ${lokasi.pengenal}",
-                            PenyebabGalat.VALIDASI
+                PenyimpanBookmarkKeamanan.koordinasiBaca(url) { coordinatedUrl ->
+                    val path = coordinatedUrl.path
+                    if (path == null || !fileManager.fileExistsAtPath(path)) {
+                        return@koordinasiBaca HasilOperasi.Gagal(
+                            "Direktori tidak ditemukan: ${lokasi.pengenal}",
+                            PenyebabGalat.TIDAK_DITEMUKAN
                         )
                     }
-
-                    val items = fileManager.contentsOfDirectoryAtURL(
-                        url = url,
-                        includingPropertiesForKeys = DokumenPemetaanLokasi.PROYEKSI_KUNCI_RESOURCE,
-                        options = NSDirectoryEnumerationSkipsSubdirectoryDescendants,
-                        error = errorPtr.ptr
-                    )
-
-                    if (items == null) {
-                        val err = errorPtr.value
-                        return@denganAksesKeamananSuspend HasilOperasi.Gagal(
-                            err?.localizedDescription ?: "Gagal membaca isi direktori iOS",
-                            PenyebabGalat.IZIN_DITOLAK
+                    memScoped {
+                        val errorPtr = alloc<ObjCObjectVar<NSError?>>()
+                        val checkDir = coordinatedUrl.resourceValuesForKeys(listOf(NSURLIsDirectoryKey), errorPtr.ptr)
+                        val isDir = (checkDir?.get(NSURLIsDirectoryKey) as? NSNumber)?.boolValue ?: false
+                        if (!isDir) {
+                            return@koordinasiBaca HasilOperasi.Gagal(
+                                "Lokasi bukan direktori: ${lokasi.pengenal}",
+                                PenyebabGalat.VALIDASI
+                            )
+                        }
+                        val items = fileManager.contentsOfDirectoryAtURL(
+                            url = coordinatedUrl,
+                            includingPropertiesForKeys = DokumenPemetaanLokasi.PROYEKSI_KUNCI_RESOURCE,
+                            options = NSDirectoryEnumerationSkipsSubdirectoryDescendants,
+                            error = errorPtr.ptr
                         )
+                        if (items == null) {
+                            val err = errorPtr.value
+                            return@koordinasiBaca HasilOperasi.Gagal(
+                                err?.localizedDescription ?: "Gagal membaca isi direktori iOS",
+                                PenyebabGalat.IZIN_DITOLAK
+                            )
+                        }
+                        val hasil = ArrayList<EntitasBerkas>(items.size)
+                        for (item in items) {
+                            val childUrl = item as? NSURL ?: continue
+                            val attrs = childUrl.resourceValuesForKeys(
+                                DokumenPemetaanLokasi.PROYEKSI_KUNCI_RESOURCE,
+                                errorPtr.ptr
+                            )
+                            hasil.add(DokumenPemetaanLokasi.keEntitasBerkas(childUrl, attrs))
+                        }
+                        hasil.sortBy { it.nama }
+                        HasilOperasi.Sukses(hasil)
                     }
-
-                    val hasil = ArrayList<EntitasBerkas>(items.size)
-                    for (item in items) {
-                        currentCoroutineContext().ensureActive()
-                        val childUrl = item as? NSURL ?: continue
-                        val attrs = childUrl.resourceValuesForKeys(
-                            DokumenPemetaanLokasi.PROYEKSI_KUNCI_RESOURCE,
-                            errorPtr.ptr
-                        )
-                        hasil.add(DokumenPemetaanLokasi.keEntitasBerkas(childUrl, attrs))
-                    }
-                    hasil.sortBy { it.nama }
-                    HasilOperasi.Sukses(hasil)
                 }
             }
         }

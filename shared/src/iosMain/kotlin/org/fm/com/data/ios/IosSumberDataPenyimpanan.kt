@@ -6,7 +6,6 @@ import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
-import kotlinx.cinterop.value
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -31,16 +30,13 @@ import platform.Foundation.NSFileManager
 import platform.Foundation.NSNumber
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLFileSizeKey
+import platform.Foundation.NSURLIsDirectoryKey
 
-/**
- * Adapter [SumberDataPenyimpanan] untuk penyimpanan sandbox [JenisLokasi.IOS] (PRD §5.1, K9, K10, T11, T12).
- */
 class IosSumberDataPenyimpanan internal constructor(
     private val daftarIsiPenyedia: (LokasiBerkas) -> Flow<HasilOperasi<List<EntitasBerkas>>>,
     private val operasiPenyedia: RepositoriOperasiBerkas,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : SumberDataPenyimpanan {
-
     constructor(
         ioDispatcher: CoroutineDispatcher = Dispatchers.IO
     ) : this(
@@ -64,8 +60,17 @@ class IosSumberDataPenyimpanan internal constructor(
             is HasilOperasi.Sukses -> hasil.nilai
             is HasilOperasi.Gagal -> return hasil
         }
-        val ukuran = bacaUkuran(url)
-        return HasilOperasi.Sukses(DokumenAliranIsi(url, ukuran, ioDispatcher))
+        val info = when (val cek = periksaUrl(url)) {
+            is HasilOperasi.Sukses -> cek.nilai
+            is HasilOperasi.Gagal -> return cek
+        }
+        if (!info.ada) {
+            return HasilOperasi.Gagal("Berkas tidak ditemukan: ${lokasi.pengenal}", PenyebabGalat.TIDAK_DITEMUKAN)
+        }
+        if (info.adalahFolder) {
+            return HasilOperasi.Gagal("Tidak bisa membaca folder sebagai berkas", PenyebabGalat.VALIDASI)
+        }
+        return HasilOperasi.Sukses(DokumenAliranIsi(url, info.ukuranByte, ioDispatcher))
     }
 
     override suspend fun bukaUntukTulis(lokasi: LokasiBerkas, timpa: Boolean): HasilOperasi<SumberTulisBerkas> {
@@ -73,13 +78,27 @@ class IosSumberDataPenyimpanan internal constructor(
             is HasilOperasi.Sukses -> hasil.nilai
             is HasilOperasi.Gagal -> return hasil
         }
-        if (!timpa) {
+        val info = when (val cek = periksaUrl(url)) {
+            is HasilOperasi.Sukses -> cek.nilai
+            is HasilOperasi.Gagal -> return cek
+        }
+        if (info.ada && info.adalahFolder) {
+            return HasilOperasi.Gagal("Tidak bisa menulis isi ke folder", PenyebabGalat.VALIDASI)
+        }
+        if (info.ada && !timpa) {
             return HasilOperasi.Gagal(
                 "Berkas sudah ada, perlu konfirmasi timpa: ${lokasi.pengenal}",
                 PenyebabGalat.KONFLIK
             )
         }
-        return HasilOperasi.Sukses(DokumenAliranTulis(url, apakahDokumenBaru = false, ioDispatcher))
+        return HasilOperasi.Sukses(
+            DokumenAliranTulis(
+                targetUrl = url,
+                apakahDokumenBaru = !info.ada,
+                lokasiTarget = DokumenPemetaanLokasi.keLokasi(url, lokasi.label),
+                ioDispatcher = ioDispatcher
+            )
+        )
     }
 
     override suspend fun bukaUntukTulisDi(
@@ -94,21 +113,34 @@ class IosSumberDataPenyimpanan internal constructor(
             is HasilOperasi.Sukses -> hasil.nilai
             is HasilOperasi.Gagal -> return hasil
         }
+        val infoInduk = when (val cekInduk = periksaUrl(parentUrl)) {
+            is HasilOperasi.Sukses -> cekInduk.nilai
+            is HasilOperasi.Gagal -> return cekInduk
+        }
+        if (!infoInduk.ada) {
+            return HasilOperasi.Gagal("Folder induk tidak ditemukan: ${induk.pengenal}", PenyebabGalat.TIDAK_DITEMUKAN)
+        }
+        if (!infoInduk.adalahFolder) {
+            return HasilOperasi.Gagal("Induk bukan folder: ${induk.pengenal}", PenyebabGalat.VALIDASI)
+        }
 
         val targetUrl = parentUrl.URLByAppendingPathComponent(nama)
             ?: return HasilOperasi.Gagal("Gagal menyusun URL berkas baru", PenyebabGalat.VALIDASI)
-
-        val targetPath = targetUrl.path
-        val targetAda = targetPath != null && NSFileManager.defaultManager.fileExistsAtPath(targetPath)
-
-        if (targetAda && !timpa) {
+        val infoTarget = when (val cekTarget = periksaUrl(targetUrl, parentUrl)) {
+            is HasilOperasi.Sukses -> cekTarget.nilai
+            is HasilOperasi.Gagal -> return cekTarget
+        }
+        if (infoTarget.ada && infoTarget.adalahFolder) {
+            return HasilOperasi.Gagal("Tidak bisa menulis isi ke folder", PenyebabGalat.VALIDASI)
+        }
+        if (infoTarget.ada && !timpa) {
             return HasilOperasi.Gagal("Berkas sudah ada, perlu konfirmasi timpa: $nama", PenyebabGalat.KONFLIK)
         }
-
         return HasilOperasi.Sukses(
             DokumenAliranTulis(
                 targetUrl = targetUrl,
-                apakahDokumenBaru = !targetAda,
+                apakahDokumenBaru = !infoTarget.ada,
+                lokasiTarget = DokumenPemetaanLokasi.keLokasi(targetUrl, nama),
                 ioDispatcher = ioDispatcher
             )
         )
@@ -132,11 +164,27 @@ class IosSumberDataPenyimpanan internal constructor(
     override suspend fun pindah(permintaan: PermintaanOperasi): HasilOperasi<EntitasBerkas> =
         operasiPenyedia.pindah(permintaan)
 
-    private fun bacaUkuran(url: NSURL): Long? = memScoped {
-        val errorPtr = alloc<ObjCObjectVar<NSError?>>()
-        val vals = url.resourceValuesForKeys(listOf(NSURLFileSizeKey), errorPtr.ptr)
-        (vals?.get(NSURLFileSizeKey) as? NSNumber)?.longLongValue
-    }
+    private data class InfoUrl(
+        val ada: Boolean,
+        val adalahFolder: Boolean,
+        val ukuranByte: Long?
+    )
+
+    private suspend fun periksaUrl(url: NSURL, parentUrl: NSURL? = null): HasilOperasi<InfoUrl> =
+        PenyimpanBookmarkKeamanan.denganAksesKeamananGandaSuspend(url, parentUrl) {
+            val path = url.path
+            val ada = path != null && NSFileManager.defaultManager.fileExistsAtPath(path)
+            if (!ada) {
+                return@denganAksesKeamananGandaSuspend HasilOperasi.Sukses(InfoUrl(false, false, null))
+            }
+            memScoped {
+                val errorPtr = alloc<ObjCObjectVar<NSError?>>()
+                val vals = url.resourceValuesForKeys(listOf(NSURLIsDirectoryKey, NSURLFileSizeKey), errorPtr.ptr)
+                val isDir = (vals?.get(NSURLIsDirectoryKey) as? NSNumber)?.boolValue ?: false
+                val ukuran = if (isDir) null else (vals?.get(NSURLFileSizeKey) as? NSNumber)?.longLongValue?.takeIf { it >= 0L }
+                HasilOperasi.Sukses(InfoUrl(true, isDir, ukuran))
+            }
+        }
 
     internal companion object {
         fun untukUji(
@@ -148,7 +196,6 @@ class IosSumberDataPenyimpanan internal constructor(
     }
 }
 
-/** Mendaftarkan adapter iOS untuk [JenisLokasi.IOS] ke [RepositoriRouterBerkas]. */
 fun buatRouterBerkasIos(
     sumberLain: Map<JenisLokasi, SumberDataPenyimpanan> = emptyMap(),
     ioDispatcher: CoroutineDispatcher = Dispatchers.IO

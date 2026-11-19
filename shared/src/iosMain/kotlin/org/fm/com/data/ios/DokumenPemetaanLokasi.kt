@@ -90,11 +90,9 @@ object DokumenPemetaanLokasi {
     fun keEntitasBerkas(url: NSURL, atribut: Map<Any?, *>? = null): EntitasBerkas {
         val lokasi = keLokasi(url)
         val fileManager = NSFileManager.defaultManager
-
-        val nama = (atribut?.get(NSURLNameKey) as? String)
-            ?: url.lastPathComponent
+        val nama = (atribut?.get(NSURLNameKey) as? String)?.takeIf { it.isNotBlank() }
+            ?: url.lastPathComponent?.takeIf { it.isNotBlank() }
             ?: "berkas"
-
         val isDir = (atribut?.get(NSURLIsDirectoryKey) as? NSNumber)?.boolValue
             ?: run {
                 memScoped {
@@ -103,24 +101,18 @@ object DokumenPemetaanLokasi {
                     (values?.get(NSURLIsDirectoryKey) as? NSNumber)?.boolValue ?: false
                 }
             }
-
         val isSymlink = (atribut?.get(NSURLIsSymbolicLinkKey) as? NSNumber)?.boolValue ?: false
-
         val ukuran = if (isDir) null else {
-            (atribut?.get(NSURLFileSizeKey) as? NSNumber)?.longLongValue
+            (atribut?.get(NSURLFileSizeKey) as? NSNumber)?.longLongValue?.takeIf { it >= 0L }
         }
-
         val waktuUbahMs = (atribut?.get(NSURLContentModificationDateKey) as? NSDate)?.let {
-            (it.timeIntervalSince1970 * 1000.0).toLong()
+            (it.timeIntervalSince1970 * 1000.0).toLong().takeIf { ms -> ms >= 0L }
         }
-
         val isHidden = (atribut?.get(NSURLIsHiddenKey) as? NSNumber)?.boolValue
             ?: nama.startsWith(".")
-
         val path = url.path
         val dapatDitulis = if (path != null) fileManager.isWritableFileAtPath(path) else true
         val dapatDibaca = if (path != null) fileManager.isReadableFileAtPath(path) else true
-
         val data = DataBerkas(
             pengenal = lokasi.pengenal,
             nama = nama,
