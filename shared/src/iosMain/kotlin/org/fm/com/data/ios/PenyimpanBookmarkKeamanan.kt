@@ -191,9 +191,9 @@ object PenyimpanBookmarkKeamanan {
         if (pindah) {
             coordinator.coordinateWritingItemAtURL(
                 url1 = sumberUrl,
-                options1 = NSFileCoordinatorWritingForMoving,
+                options = NSFileCoordinatorWritingForMoving,
                 writingItemAtURL = tujuanUrl,
-                options2 = NSFileCoordinatorWritingForReplacing,
+                _options = NSFileCoordinatorWritingForReplacing,
                 error = errorPtr.ptr
             ) { coordSumber, coordTujuan ->
                 hasilAksi = aksi(coordSumber ?: sumberUrl, coordTujuan ?: tujuanUrl)
@@ -203,7 +203,7 @@ object PenyimpanBookmarkKeamanan {
                 readingURL = sumberUrl,
                 options = 0uL,
                 writingItemAtURL = tujuanUrl,
-                options = NSFileCoordinatorWritingForReplacing,
+                _options = NSFileCoordinatorWritingForReplacing,
                 error = errorPtr.ptr
             ) { coordSumber, coordTujuan ->
                 hasilAksi = aksi(coordSumber ?: sumberUrl, coordTujuan ?: tujuanUrl)
