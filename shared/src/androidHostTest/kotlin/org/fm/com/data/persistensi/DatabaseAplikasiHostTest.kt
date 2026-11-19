@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+
 package org.fm.com.data.persistensi
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
