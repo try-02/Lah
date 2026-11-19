@@ -1,6 +1,7 @@
 package org.fm.com.presentation.editor
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -57,7 +58,7 @@ fun DialogTutupTab(
             }
         },
         dismissButton = {
-            androidx.compose.foundation.layout.Row {
+            Row {
                 TextButton(
                     onClick = onBatal,
                     enabled = !sedangMenyimpan
@@ -128,7 +129,8 @@ fun DialogSimpanSebagai(
     }
     val namaBersih = namaInput.trim()
     val namaSah = ValidasiNama.sah(namaBersih)
-    val namaKonflikSama = permintaan.pesanKonflikTujuan != null && namaBersih == permintaan.namaKonflik
+    val pesanKonflik = permintaan.pesanKonflikTujuan
+    val namaKonflikSama = pesanKonflik != null && namaBersih == permintaan.namaKonflik
 
     AlertDialog(
         onDismissRequest = onTutup,
@@ -155,9 +157,9 @@ fun DialogSimpanSebagai(
                                     color = MaterialTheme.colorScheme.error
                                 )
                             }
-                            namaKonflikSama -> {
+                            namaKonflikSama && pesanKonflik != null -> {
                                 Text(
-                                    permintaan.pesanKonflikTujuan ?: "Berkas dengan nama sama sudah ada",
+                                    pesanKonflik,
                                     color = MaterialTheme.colorScheme.error
                                 )
                             }

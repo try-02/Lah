@@ -7,9 +7,11 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -18,19 +20,18 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.fm.com.data.DataBerkas
 import org.fm.com.data.ImplementasiRepositoriBerkas
+import org.fm.com.data.persistensi.MemoriRepositoriRiwayatPencarian
+import org.fm.com.data.simpan.DeteksiKonflik
+import org.fm.com.data.simpan.SimpanTransaksional
 import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.JenisBerkas
 import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.usecase.BukaBerkasTeksUseCase
-import org.fm.com.data.persistensi.MemoriRepositoriRiwayatPencarian
-import org.fm.com.domain.usecase.RiwayatPencarianUseCase
-import `org.fm.com.data.simpan.DeteksiKonflik
-import org.fm.com.data.simpan.SimpanTransaksional
 import org.fm.com.domain.usecase.HasilStatistikTeks
+import org.fm.com.domain.usecase.RiwayatPencarianUseCase
 import org.fm.com.domain.usecase.SimpanBerkasUseCase
 import org.fm.com.domain.usecase.StatistikTeksUseCase
-
 
 class ViewModelEditorTest {
     @BeforeTest
@@ -43,9 +44,7 @@ class ViewModelEditorTest {
         Dispatchers.resetMain()
     }
 
-    private fun buatVm(repo: ImplementasiRepositoriBerkas,
-        riwayatPencarianUseCase: RiwayatPencarianUseCase? = null
-    ): ViewModelEditor {
+    private fun buatVm(repo: ImplementasiRepositoriBerkas): ViewModelEditor {
         val dispatcher = UnconfinedTestDispatcher()
         return ViewModelEditor(
             repositoriBerkas = repo,
@@ -54,13 +53,13 @@ class ViewModelEditorTest {
                 ioDispatcher = dispatcher,
                 computeDispatcher = dispatcher
             ),
-            riwayatPencarianUseCase = riwayatPencarianUseCase
+            computeDispatcher = dispatcher
         )
     }
 
     private fun buatVmLengkap(
         repo: ImplementasiRepositoriBerkas,
-        dispatcher: kotlinx.coroutines.CoroutineDispatcher
+        dispatcher: CoroutineDispatcher
     ): ViewModelEditor = ViewModelEditor(
         repositoriBerkas = repo,
         bukaBerkasTeksUseCase = BukaBerkasTeksUseCase(
@@ -299,17 +298,14 @@ class ViewModelEditorTest {
         assertEquals(1, vm.state.value.cariGanti.indeksKecocokanAktif)
         assertEquals(2, vm.state.value.tabAktif!!.posisiKursor.baris)
 
-        // Riwayat pencarian tercatat otomatis
         val riwayat = vm.state.first { it.riwayatPencarian.isNotEmpty() }.riwayatPencarian
         assertEquals(listOf("apel"), riwayat.map { it.kueri })
 
-        // Ganti satu pada kecocokan aktif (baris 2)
         vm.prosesIntent(IntentEditor.UbahTeksPengganti("jeruk"))
         vm.prosesIntent(IntentEditor.GantiSatu)
         assertEquals("satu apel\ndua jeruk\ntiga apel", vm.state.value.tabAktif!!.isiSaatIni)
         assertEquals(2, vm.state.value.cariGanti.jumlahKecocokan)
 
-        // Minta ganti semua -> wajib konfirmasi jumlah ubahan -> eksekusi -> bisa di-undo
         vm.prosesIntent(IntentEditor.MintaGantiSemua)
         assertEquals(2, vm.state.value.cariGanti.konfirmasiGantiSemuaJumlah)
         vm.prosesIntent(IntentEditor.KonfirmasiGantiSemua)
@@ -320,7 +316,6 @@ class ViewModelEditorTest {
         vm.prosesIntent(IntentEditor.Undo(vm.state.value.tabAktif!!.idTab))
         assertEquals("satu apel\ndua jeruk\ntiga apel", vm.state.value.tabAktif!!.isiSaatIni)
 
-        // Mode hanya baca tetap mengizinkan cari tetapi menolak ganti
         vm.prosesIntent(IntentEditor.ToggleModeHanyaBaca(vm.state.value.tabAktif!!.idTab))
         vm.prosesIntent(IntentEditor.UbahKueriCari("jeruk"))
         vm.state.first { it.cariGanti.jumlahKecocokan == 1 }
@@ -328,12 +323,10 @@ class ViewModelEditorTest {
         vm.prosesIntent(IntentEditor.GantiSatu)
         assertEquals("satu apel\ndua jeruk\ntiga apel", vm.state.value.tabAktif!!.isiSaatIni)
 
-        // Regex invalid menghasilkan pesan galat pola yang jelas
         vm.prosesIntent(IntentEditor.ToggleRegexCari)
         vm.prosesIntent(IntentEditor.UbahKueriCari("[rusak"))
         assertNotNull(vm.state.value.cariGanti.galatPola)
 
-        // Hapus riwayat pencarian
         vm.prosesIntent(IntentEditor.BersihkanRiwayatPencarian)
         assertEquals(emptyList(), vm.state.value.riwayatPencarian)
     }
