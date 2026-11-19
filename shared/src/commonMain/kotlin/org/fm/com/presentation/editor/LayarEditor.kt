@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -105,6 +104,12 @@ fun LayarEditor(
                 actions = {
                     if (tabAktif != null && tabAktif.statusMuat == StatusMuatTab.SIAP) {
                         TextButton(
+                            onClick = { viewModel.prosesIntent(IntentEditor.SimpanTab(tabAktif.idTab)) },
+                            enabled = tabAktif.dapatDiedit && !state.sedangMenyimpan
+                        ) {
+                            Text(if (state.sedangMenyimpan) "Menyimpan..." else "Simpan")
+                        }
+                        TextButton(
                             onClick = { viewModel.prosesIntent(IntentEditor.SetBukaDialogCariGanti(true)) }
                         ) {
                             Text("Cari")
@@ -130,6 +135,14 @@ fun LayarEditor(
                                 onDismissRequest = { menuTerbuka = false }
                             ) {
                                 DropdownMenuItem(
+                                    text = { Text("Simpan Sebagai...") },
+                                    enabled = !state.sedangMenyimpan,
+                                    onClick = {
+                                        menuTerbuka = false
+                                        viewModel.prosesIntent(IntentEditor.BukaDialogSimpanSebagai(tabAktif.idTab))
+                                    }
+                                )
+                                DropdownMenuItem(
                                     text = { Text("Cari & Ganti...") },
                                     onClick = {
                                         menuTerbuka = false
@@ -141,6 +154,13 @@ fun LayarEditor(
                                     onClick = {
                                         menuTerbuka = false
                                         viewModel.prosesIntent(IntentEditor.SetBukaDialogLompatBaris(true))
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Statistik Teks...") },
+                                    onClick = {
+                                        menuTerbuka = false
+                                        viewModel.prosesIntent(IntentEditor.HitungStatistikTab(tabAktif.idTab))
                                     }
                                 )
                                 val wrapAktif = tabAktif.wordWrapEfektif(state.wordWrapUmum)
@@ -187,6 +207,12 @@ fun LayarEditor(
                                     }
                                 )
                             }
+                        }
+                    } else if (tabAktif != null && tabAktif.statusMuat == StatusMuatTab.BINER) {
+                        TextButton(
+                            onClick = { viewModel.prosesIntent(IntentEditor.HitungStatistikTab(tabAktif.idTab)) }
+                        ) {
+                            Text("Statistik")
                         }
                     }
                 }
@@ -344,7 +370,37 @@ fun LayarEditor(
             onHapusSemuaRiwayat = { viewModel.prosesIntent(IntentEditor.BersihkanRiwayatPencarian) },
             onTutup = { viewModel.prosesIntent(IntentEditor.SetBukaDialogCariGanti(false)) }
         )
+
+        DialogStatistik(
+            state = state.dialogStatistik,
+            namaBerkas = tabAktif.namaBerkas,
+            onTutup = { viewModel.prosesIntent(IntentEditor.TutupDialogStatistik) }
+        )
     }
+
+    DialogTutupTab(
+        tab = state.tabMenungguKonfirmasiTutup,
+        sedangMenyimpan = state.sedangMenyimpan,
+        onSimpanDanTutup = { viewModel.prosesIntent(IntentEditor.KonfirmasiSimpanDanTutupTab) },
+        onBuangDanTutup = { viewModel.prosesIntent(IntentEditor.KonfirmasiBuangDanTutupTab) },
+        onBatal = { viewModel.prosesIntent(IntentEditor.BatalTutupTab) }
+    )
+
+    DialogKonflikSimpanEksternal(
+        permintaan = state.konfirmasiKonflikSimpan,
+        sedangMenyimpan = state.sedangMenyimpan,
+        onTimpa = { viewModel.prosesIntent(IntentEditor.KonfirmasiTimpaKonflikSimpan) },
+        onBatal = { viewModel.prosesIntent(IntentEditor.BatalKonflikSimpan) }
+    )
+
+    DialogSimpanSebagai(
+        permintaan = state.dialogSimpanSebagai,
+        sedangMenyimpan = state.sedangMenyimpan,
+        onSimpan = { nama, timpa ->
+            viewModel.prosesIntent(IntentEditor.EksekusiSimpanSebagai(nama, timpa))
+        },
+        onTutup = { viewModel.prosesIntent(IntentEditor.TutupDialogSimpanSebagai) }
+    )
 
     state.tabMenungguKonfirmasiTutup?.let { tabKotor ->
         AlertDialog(

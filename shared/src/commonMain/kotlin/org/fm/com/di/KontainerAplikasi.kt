@@ -5,14 +5,19 @@ import org.fm.com.data.DataBerkas
 import org.fm.com.data.SumberMemoriPenyimpanan
 import org.fm.com.data.persistensi.MemoriRepositoriRiwayatLokasi
 import org.fm.com.data.persistensi.MemoriRepositoriRiwayatPencarian
+import org.fm.com.data.simpan.DeteksiKonflik
+import org.fm.com.data.simpan.SimpanTransaksional
 import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.repository.RepositoriBerkas
 import org.fm.com.domain.repository.RepositoriOperasiBerkas
 import org.fm.com.domain.repository.RepositoriRiwayatLokasi
 import org.fm.com.domain.repository.RepositoriRiwayatPencarian
+import org.fm.com.domain.usecase.PelaksanaSimpanTransaksional
+import org.fm.com.domain.usecase.PemeriksaKonflikSimpan
 import org.fm.com.domain.usecase.RiwayatLokasiUseCase
 import org.fm.com.domain.usecase.RiwayatPencarianUseCase
+import org.fm.com.domain.usecase.SimpanBerkasUseCase
 import org.fm.com.presentation.filemanager.AksiPlatformBerkas
 import org.fm.com.presentation.filemanager.AksiPlatformBerkasBawaan
 import org.koin.core.module.Module
@@ -26,6 +31,7 @@ data class KontainerAplikasi(
     val riwayatLokasiUseCase: RiwayatLokasiUseCase,
     val repositoriRiwayatPencarian: RepositoriRiwayatPencarian,
     val riwayatPencarianUseCase: RiwayatPencarianUseCase,
+    val simpanBerkasUseCase: SimpanBerkasUseCase,
     val lokasiAwal: LokasiBerkas,
     val lokasiPintasan: List<LokasiBerkas> = listOf(lokasiAwal),
     val aksiPlatform: AksiPlatformBerkas = AksiPlatformBerkasBawaan(),
@@ -45,6 +51,9 @@ fun buatKontainerAplikasi(
             module {
                 single { RiwayatLokasiUseCase(get()) }
                 single { RiwayatPencarianUseCase(get()) }
+                single<PemeriksaKonflikSimpan> { DeteksiKonflik(get()) }
+                single<PelaksanaSimpanTransaksional> { SimpanTransaksional(get()) }
+                single { SimpanBerkasUseCase(get(), get()) }
             }
         )
     }
@@ -56,6 +65,7 @@ fun buatKontainerAplikasi(
         riwayatLokasiUseCase = koin.get(),
         repositoriRiwayatPencarian = koin.get(),
         riwayatPencarianUseCase = koin.get(),
+        simpanBerkasUseCase = koin.get(),
         lokasiAwal = lokasiAwal,
         lokasiPintasan = lokasiPintasan,
         aksiPlatform = aksiPlatform,

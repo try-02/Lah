@@ -25,6 +25,12 @@ import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.usecase.BukaBerkasTeksUseCase
 import org.fm.com.data.persistensi.MemoriRepositoriRiwayatPencarian
 import org.fm.com.domain.usecase.RiwayatPencarianUseCase
+import `org.fm.com.data.simpan.DeteksiKonflik
+import org.fm.com.data.simpan.SimpanTransaksional
+import org.fm.com.domain.usecase.HasilStatistikTeks
+import org.fm.com.domain.usecase.SimpanBerkasUseCase
+import org.fm.com.domain.usecase.StatistikTeksUseCase
+
 
 class ViewModelEditorTest {
     @BeforeTest
@@ -51,6 +57,25 @@ class ViewModelEditorTest {
             riwayatPencarianUseCase = riwayatPencarianUseCase
         )
     }
+
+    private fun buatVmLengkap(
+        repo: ImplementasiRepositoriBerkas,
+        dispatcher: kotlinx.coroutines.CoroutineDispatcher
+    ): ViewModelEditor = ViewModelEditor(
+        repositoriBerkas = repo,
+        bukaBerkasTeksUseCase = BukaBerkasTeksUseCase(
+            repositoriBerkas = repo,
+            ioDispatcher = dispatcher,
+            computeDispatcher = dispatcher
+        ),
+        statistikTeksUseCase = StatistikTeksUseCase(computeDispatcher = dispatcher),
+        simpanBerkasUseCase = SimpanBerkasUseCase(
+            pemeriksaKonflik = DeteksiKonflik(repo, ioDispatcher = dispatcher),
+            pelaksanaSimpan = SimpanTransaksional(repo, ioDispatcher = dispatcher),
+            computeDispatcher = dispatcher
+        ),
+        computeDispatcher = dispatcher
+    )
 
     @Test
     fun multiTabFokusTanpaDuplikatDanIndikatorBelumTersimpan() = runTest {
@@ -311,5 +336,118 @@ class ViewModelEditorTest {
         // Hapus riwayat pencarian
         vm.prosesIntent(IntentEditor.BersihkanRiwayatPencarian)
         assertEquals(emptyList(), vm.state.value.riwayatPencarian)
+    }
+
+    @Test
+    fun statistikTeksDihitungDiLatarBelakangDanDilewatiUntukBiner() = runTest {
+        val repo = ImplementasiRepositoriBerkas()
+        repo.simpan(
+            DataBerkas("/teks.txt", "teks.txt", JenisLokasi.POSIX, adalahFolder = false),
+            "baris satu\n\nbaris dua tiga".encodeToByteArray()
+        )
+        repo.simpan(
+            DataBerkas("/bin.dat", "bin.dat", JenisLokasi.POSIX, adalahFolder = false),
+            byteArrayOf(0x00, 0x01, 0x02)
+        )
+        val vm = buatVmLengkap(repo, UnconfinedTestDispatcher(testScheduler))
+
+        vm.prosesIntent(IntentEditor.BukaLokasi(LokasiBerkas("/teks.txt", JenisLokasi.POSIX, "teks.txt")))
+        val stTeks = vm.state.first { it.tabAktif?.statusMuat == StatusMuatTab.SIAP }
+        vm.prosesIntent(IntentEditor.HitungStatistikTab(stTeks.tabAktif!!.idTab))
+
+        val stStat = vm.state.first { it.dialogStatistik.terbuka && !it.dialogStatistik.sedangMenghitung }
+        val sukses = assertIs<HasilStatistikTeks.Sukses>(stStat.dialogStatistik.hasil)
+        assertEquals(3, sukses.statistik.jumlahBarisTotal)
+        assertEquals(1, sukses.statistik.jumlahBarisKosong)
+        assertEquals(5, sukses.statistik.jumlahKata)
+        assertEquals(14, sukses.statistik.panjangBarisTerpanjang)
+
+        vm.prosesIntent(IntentEditor.TutupDialogStatistik)
+        assertFalse(vm.state.value.dialogStatistik.terbuka)
+
+        vm.prosesIntent(IntentEditor.BukaLokasi(LokasiBerkas("/bin.dat", JenisLokasi.POSIX, "bin.dat")))
+        val stBin = vm.state.first { it.tabAktif?.namaBerkas == "bin.dat" && it.tabAktif?.statusMuat != StatusMuatTab.MEMUAT }
+        vm.prosesIntent(IntentEditor.HitungStatistikTab(stBin.tabAktif!!.idTab))
+        assertIs<HasilStatistikTeks.DilewatiBiner>(vm.state.value.dialogStatistik.hasil)
+    }
+
+    @Test
+    fun simpanDeteksiKonflikEksternalDanDialogTutupTabSimpanBuangBatal() = runTest {
+        val repo = ImplementasiRepositoriBerkas()
+        repo.simpan(DataBerkas("/kerja", "kerja", JenisLokasi.POSIX, adalahFolder = true))
+        repo.simpan(
+            DataBerkas("/kerja/catatan.txt", "catatan.txt", JenisLokasi.POSIX, adalahFolder = false),
+            "awal".encodeToByteArray()
+        )
+        val vm = buatVmLengkap(repo, UnconfinedTestDispatcher(testScheduler))
+        val lok = LokasiBerkas("/kerja/catatan.txt", JenisLokasi.POSIX, "catatan.txt")
+
+        vm.prosesIntent(IntentEditor.BukaLokasi(lok))
+        val idTab = vm.state.first { it.tabAktif?.statusMuat == StatusMuatTab.SIAP }.tabAktif!!.idTab
+        vm.prosesIntent(IntentEditor.UbahTeks(idTab, "edit lokal"))
+
+        // Simulasikan perubahan eksternal
+        repo.simpan(
+            DataBerkas("/kerja/catatan.txt", "catatan.txt", JenisLokasi.POSIX, adalahFolder = false),
+            "edit luar".encodeToByteArray()
+        )
+
+        // Tutup tab memicu DialogTutupTab -> Batal tidak menutup tab
+        vm.prosesIntent(IntentEditor.MintaTutupTab(idTab))
+        assertNotNull(vm.state.value.tabMenungguKonfirmasiTutup)
+        vm.prosesIntent(IntentEditor.BatalTutupTab)
+        assertEquals(1, vm.state.value.jumlahTab)
+        assertEquals("edit lokal", vm.state.value.tabAktif?.isiSaatIni)
+
+        // Simpan dan Tutup -> kena konflik eksternal -> editor tetap terbuka
+        vm.prosesIntent(IntentEditor.MintaTutupTab(idTab))
+        vm.prosesIntent(IntentEditor.KonfirmasiSimpanDanTutupTab)
+        val konflik = assertNotNull(vm.state.value.konfirmasiKonflikSimpan)
+        assertEquals(true, konflik.tutupSetelahSimpan)
+        assertEquals(1, vm.state.value.jumlahTab)
+        assertEquals("edit luar", repo.isiDari("/kerja/catatan.txt")?.decodeToString())
+
+        // Konfirmasi timpa -> berhasil disimpan dan tab langsung ditutup
+        vm.prosesIntent(IntentEditor.KonfirmasiTimpaKonflikSimpan)
+        val stAkhir = vm.state.first { !it.sedangMenyimpan && it.jumlahTab == 0 }
+        assertNull(stAkhir.konfirmasiKonflikSimpan)
+        assertEquals("edit lokal", repo.isiDari("/kerja/catatan.txt")?.decodeToString())
+    }
+
+    @Test
+    fun simpanGagalMempertahankanEditorTerbukaDanTabKosongSimpanSebagai() = runTest {
+        val repoGagal = ImplementasiRepositoriBerkas(gagalTulisSetelahPotongan = 0)
+        repoGagal.simpan(
+            DataBerkas("/gagal.txt", "gagal.txt", JenisLokasi.POSIX, adalahFolder = false),
+            "isi aman".encodeToByteArray()
+        )
+        val vmGagal = buatVmLengkap(repoGagal, UnconfinedTestDispatcher(testScheduler))
+        vmGagal.prosesIntent(IntentEditor.BukaLokasi(LokasiBerkas("/gagal.txt", JenisLokasi.POSIX, "gagal.txt")))
+        val idGagal = vmGagal.state.first { it.tabAktif?.statusMuat == StatusMuatTab.SIAP }.tabAktif!!.idTab
+
+        vmGagal.prosesIntent(IntentEditor.UbahTeks(idGagal, "ubah belum tersimpan"))
+        vmGagal.prosesIntent(IntentEditor.MintaTutupTab(idGagal))
+        vmGagal.prosesIntent(IntentEditor.KonfirmasiSimpanDanTutupTab)
+
+        assertEquals(1, vmGagal.state.value.jumlahTab)
+        assertTrue(vmGagal.state.value.tabAktif!!.adaPerubahanBelumTersimpan)
+        assertEquals("ubah belum tersimpan", vmGagal.state.value.tabAktif!!.isiSaatIni)
+        assertEquals("isi aman", repoGagal.isiDari("/gagal.txt")?.decodeToString())
+
+        // Tab kosong -> Simpan Sebagai ke folder aktif
+        val repoBaru = ImplementasiRepositoriBerkas()
+        repoBaru.simpan(DataBerkas("/dok", "dok", JenisLokasi.POSIX, adalahFolder = true))
+        val vmBaru = buatVmLengkap(repoBaru, UnconfinedTestDispatcher(testScheduler))
+        vmBaru.prosesIntent(IntentEditor.SetLokasiFolderSimpan(LokasiBerkas("/dok", JenisLokasi.POSIX, "dok")))
+        vmBaru.prosesIntent(IntentEditor.BuatTabKosong("catatan_baru.txt"))
+        val idKosong = vmBaru.state.value.tabAktif!!.idTab
+        vmBaru.prosesIntent(IntentEditor.UbahTeks(idKosong, "konten baru"))
+        vmBaru.prosesIntent(IntentEditor.SimpanTab(idKosong))
+
+        assertNotNull(vmBaru.state.value.dialogSimpanSebagai)
+        vmBaru.prosesIntent(IntentEditor.EksekusiSimpanSebagai("catatan_baru.txt"))
+        val tabTersimpan = vmBaru.state.first { !it.sedangMenyimpan && it.tabAktif?.adaPerubahanBelumTersimpan == false }.tabAktif!!
+        assertEquals("/dok/catatan_baru.txt", tabTersimpan.lokasi?.pengenal)
+        assertEquals("konten baru", repoBaru.isiDari("/dok/catatan_baru.txt")?.decodeToString())
     }
 }

@@ -1,6 +1,7 @@
 package org.fm.com.presentation.editor
 
 import org.fm.com.domain.model.LokasiBerkas
+import org.fm.com.domain.model.SidikIsiBerkas
 import org.fm.com.domain.usecase.EncodingTeks
 import org.fm.com.domain.usecase.JenisAkhirBaris
 
@@ -43,6 +44,7 @@ data class ModelTabEditor(
     val akhirBaris: JenisAkhirBaris = JenisAkhirBaris.LF,
     val ukuranByteAsli: Long? = null,
     val waktuUbahTerakhirMs: Long? = null,
+    val sidikIsiTersimpan: SidikIsiBerkas? = null,
     val jumlahBaris: Int = 1,
     val posisiKursor: PosisiKursor = PosisiKursor(),
     val dapatUndo: Boolean = false,

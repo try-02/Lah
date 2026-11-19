@@ -14,6 +14,8 @@ import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.PenyebabGalat
 import org.fm.com.domain.repository.RepositoriBerkas
+import org.fm.com.domain.model.PenghitungSidikIsi
+import org.fm.com.domain.model.SidikIsiBerkas
 
 const val BATAS_UKURAN_EDITOR_BAWAAN_BYTE: Long = 5L * 1024L * 1024L
 private const val UKURAN_SAMPEL_BINER = 8 * 1024
@@ -36,7 +38,8 @@ data class HasilMuatTeks(
     val isi: String,
     val encoding: EncodingTeks,
     val akhirBaris: JenisAkhirBaris,
-    val ukuranByteAsli: Long
+    val ukuranByteAsli: Long,
+    val sidikIsiByte: SidikIsiBerkas = SidikIsiBerkas(0L, ukuranByteAsli)
 )
 
 sealed interface HasilBukaBerkasTeks {
@@ -129,7 +132,8 @@ class BukaBerkasTeksUseCase(
                     isi = "",
                     encoding = EncodingTeks.UTF_8,
                     akhirBaris = JenisAkhirBaris.LF,
-                    ukuranByteAsli = 0L
+                    ukuranByteAsli = 0L,
+                    sidikIsiByte = PenghitungSidikIsi.dariBytes(bytes)
                 )
             )
         }
@@ -175,7 +179,8 @@ class BukaBerkasTeksUseCase(
                 isi = isiTernormalisasi,
                 encoding = encoding,
                 akhirBaris = akhirBaris,
-                ukuranByteAsli = bytes.size.toLong()
+                ukuranByteAsli = bytes.size.toLong(),
+                sidikIsiByte = PenghitungSidikIsi.dariBytes(bytes)
             )
         )
     }

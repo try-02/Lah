@@ -2,6 +2,8 @@ package org.fm.com.presentation.editor
 
 import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.LokasiBerkas
+import org.fm.com.domain.model.SidikIsiBerkas
+import org.fm.com.domain.usecase.HasilStatistikTeks
 import org.fm.com.domain.usecase.RentangKecocokan
 
 data class StateCariGanti(
@@ -24,12 +26,40 @@ data class StateCariGanti(
         get() = daftarKecocokan.getOrNull(indeksKecocokanAktif)
 }
 
+data class StateDialogStatistik(
+    val terbuka: Boolean = false,
+    val sedangMenghitung: Boolean = false,
+    val hasil: HasilStatistikTeks? = null
+)
+
+data class PermintaanKonfirmasiKonflikSimpan(
+    val idTab: String,
+    val namaBerkas: String,
+    val pesan: String,
+    val berkasHilangDiDisk: Boolean,
+    val tutupSetelahSimpan: Boolean
+)
+
+data class PermintaanSimpanSebagai(
+    val idTab: String,
+    val folderTujuan: LokasiBerkas,
+    val namaAwal: String,
+    val tutupSetelahSimpan: Boolean,
+    val namaKonflik: String? = null,
+    val pesanKonflikTujuan: String? = null
+)
+
 data class StateEditor(
     val daftarTab: List<ModelTabEditor> = emptyList(),
     val idTabAktif: String? = null,
     val wordWrapUmum: Boolean = true,
+    val lokasiFolderSimpanDefault: LokasiBerkas? = null,
+    val sedangMenyimpan: Boolean = false,
     val tabMenungguKonfirmasiTutup: ModelTabEditor? = null,
+    val konfirmasiKonflikSimpan: PermintaanKonfirmasiKonflikSimpan? = null,
+    val dialogSimpanSebagai: PermintaanSimpanSebagai? = null,
     val dialogLompatBarisTerbuka: Boolean = false,
+    val dialogStatistik: StateDialogStatistik = StateDialogStatistik(),
     val cariGanti: StateCariGanti = StateCariGanti(),
     val riwayatPencarian: List<ItemRiwayatPencarianUi> = emptyList(),
     val pesanInfo: String? = null
@@ -65,9 +95,24 @@ sealed interface IntentEditor {
 
     data class PilihTab(val idTab: String) : IntentEditor
     data class MintaTutupTab(val idTab: String) : IntentEditor
+    data object KonfirmasiSimpanDanTutupTab : IntentEditor
     data object KonfirmasiBuangDanTutupTab : IntentEditor
     data object BatalTutupTab : IntentEditor
     data class TutupSemuaTab(val paksa: Boolean = false) : IntentEditor
+
+    data class SetLokasiFolderSimpan(val lokasi: LokasiBerkas?) : IntentEditor
+    data class SimpanTab(val idTab: String) : IntentEditor
+    data class BukaDialogSimpanSebagai(val idTab: String) : IntentEditor
+    data class EksekusiSimpanSebagai(
+        val namaBerkas: String,
+        val paksaTimpa: Boolean = false
+    ) : IntentEditor
+    data object TutupDialogSimpanSebagai : IntentEditor
+    data object KonfirmasiTimpaKonflikSimpan : IntentEditor
+    data object BatalKonflikSimpan : IntentEditor
+
+    data class HitungStatistikTab(val idTab: String) : IntentEditor
+    data object TutupDialogStatistik : IntentEditor
 
     data class UbahTeks(
         val idTab: String,
@@ -116,7 +161,8 @@ sealed interface IntentEditor {
         val idTab: String,
         val lokasiBaru: LokasiBerkas? = null,
         val namaBaru: String? = null,
-        val waktuUbahBaruMs: Long? = null
+        val waktuUbahBaruMs: Long? = null,
+        val sidikBaru: SidikIsiBerkas? = null
     ) : IntentEditor
 
     data class SetPesanInfo(val pesan: String?) : IntentEditor

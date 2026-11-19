@@ -34,6 +34,8 @@ import org.fm.com.presentation.filemanager.ViewModelFilemanager
 import org.fm.com.presentation.filemanager.ViewModelOperasiMassal
 import org.fm.com.presentation.terbaru.LayarTerbaru
 import org.fm.com.presentation.terbaru.ViewModelTerbaru
+import androidx.compose.runtime.collectAsState
+import androidx.compose.material3.FloatingActionButton
 
 data class PermintaanBukaLokasi(
     val lokasi: LokasiBerkas,
@@ -69,8 +71,16 @@ fun App(
         val vmEditor: ViewModelEditor = viewModel(key = "editor_$kunciKontainer") {
             ViewModelEditor(
                 repositoriBerkas = kontainer.repositoriBerkas,
-                riwayatPencarianUseCase = kontainer.riwayatPencarianUseCase
+                riwayatPencarianUseCase = kontainer.riwayatPencarianUseCase,
+                simpanBerkasUseCase = kontainer.simpanBerkasUseCase
             )
+        }
+
+        val stateFm by vmFilemanager.state.collectAsState()
+        val stateEditor by vmEditor.state.collectAsState()
+
+        LaunchedEffect(stateFm.lokasiSaatIni) {
+            vmEditor.prosesIntent(IntentEditor.SetLokasiFolderSimpan(stateFm.lokasiSaatIni))
         }
 
         var tabTerpilih by remember { mutableIntStateOf(0) }
@@ -97,7 +107,10 @@ fun App(
         if (ruangEditorTerbuka) {
             LayarEditor(
                 viewModel = vmEditor,
-                onKembali = { ruangEditorTerbuka = false }
+                onKembali = {
+                    ruangEditorTerbuka = false
+                    vmFilemanager.prosesIntent(IntentFilemanager.Segarkan)
+                }
             )
         } else {
             Scaffold(
@@ -115,6 +128,14 @@ fun App(
                             label = { Text("Terbaru") },
                             icon = { Text("🕒") }
                         )
+                        if (stateEditor.jumlahTab > 0) {
+                            NavigationBarItem(
+                                selected = false,
+                                onClick = { ruangEditorTerbuka = true },
+                                label = { Text("Editor (${stateEditor.jumlahTab})") },
+                                icon = { Text("📝") }
+                            )
+                        }
                     }
                 }
             ) { bantalan ->
@@ -133,6 +154,8 @@ fun App(
                                     lokasi = item.lokasi,
                                     nama = item.nama,
                                     jenis = item.jenis,
+                                    ukuranByte = item.ukuranByte,
+                                    waktuUbahEpochMs = item.waktuUbahEpochMs,
                                     tersembunyi = item.tersembunyi,
                                     dapatDibaca = item.dapatDibaca,
                                     dapatDitulis = item.dapatDitulis

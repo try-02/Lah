@@ -40,7 +40,9 @@ data class ItemBerkasUi(
     val tersembunyi: Boolean,
     val adalahFolder: Boolean,
     val dapatDibaca: Boolean,
-    val dapatDitulis: Boolean
+    val dapatDitulis: Boolean,
+    val ukuranByte: Long? = null,
+    val waktuUbahEpochMs: Long? = null
 )
 
 data class StateFilemanager(
@@ -113,7 +115,9 @@ object PemetaanDomainUi {
         tersembunyi = tersembunyi,
         adalahFolder = jenis == JenisBerkas.FOLDER,
         dapatDibaca = dapatDibaca,
-        dapatDitulis = dapatDitulis
+        dapatDitulis = dapatDitulis,
+        ukuranByte = ukuranByte,
+        waktuUbahEpochMs = waktuUbahEpochMs
     )
 
     fun formatUkuran(ukuranByte: Long?, adalahFolder: Boolean): String {
