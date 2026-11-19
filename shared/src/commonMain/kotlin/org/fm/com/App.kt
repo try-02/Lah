@@ -11,6 +11,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -32,10 +33,11 @@ import org.fm.com.presentation.filemanager.DaftarBerkasLayar
 import org.fm.com.presentation.filemanager.IntentFilemanager
 import org.fm.com.presentation.filemanager.ViewModelFilemanager
 import org.fm.com.presentation.filemanager.ViewModelOperasiMassal
+import org.fm.com.presentation.pencarian.IntentPencarian
+import org.fm.com.presentation.pencarian.LayarPencarian
+import org.fm.com.presentation.pencarian.ViewModelPencarian
 import org.fm.com.presentation.terbaru.LayarTerbaru
 import org.fm.com.presentation.terbaru.ViewModelTerbaru
-import androidx.compose.runtime.collectAsState
-import androidx.compose.material3.FloatingActionButton
 
 data class PermintaanBukaLokasi(
     val lokasi: LokasiBerkas,
@@ -68,6 +70,12 @@ fun App(
         val vmTerbaru: ViewModelTerbaru = viewModel(key = "terbaru_$kunciKontainer") {
             ViewModelTerbaru(kontainer.riwayatLokasiUseCase)
         }
+        val vmPencarian: ViewModelPencarian = viewModel(key = "cari_$kunciKontainer") {
+            ViewModelPencarian(
+                cariNamaUseCase = kontainer.cariNamaBerkasUseCase,
+                cariIsiUseCase = kontainer.cariIsiBerkasUseCase
+            )
+        }
         val vmEditor: ViewModelEditor = viewModel(key = "editor_$kunciKontainer") {
             ViewModelEditor(
                 repositoriBerkas = kontainer.repositoriBerkas,
@@ -78,17 +86,21 @@ fun App(
 
         val stateFm by vmFilemanager.state.collectAsState()
         val stateEditor by vmEditor.state.collectAsState()
-
-        LaunchedEffect(stateFm.lokasiSaatIni) {
-            vmEditor.prosesIntent(IntentEditor.SetLokasiFolderSimpan(stateFm.lokasiSaatIni))
-        }
-
         var tabTerpilih by remember { mutableIntStateOf(0) }
         var ruangEditorTerbuka by remember { mutableStateOf(false) }
 
         LaunchedEffect(kontainer) {
             val lokasiSiap = onSiapkanAksesLokasi?.invoke(kontainer.lokasiAwal) ?: kontainer.lokasiAwal
             vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasiSiap))
+            vmPencarian.prosesIntent(IntentPencarian.SetFolderAkar(lokasiSiap))
+        }
+
+        LaunchedEffect(stateFm.lokasiSaatIni) {
+            val lokasiAktif = stateFm.lokasiSaatIni
+            vmEditor.prosesIntent(IntentEditor.SetLokasiFolderSimpan(lokasiAktif))
+            if (lokasiAktif != null) {
+                vmPencarian.prosesIntent(IntentPencarian.SetFolderAkar(lokasiAktif))
+            }
         }
 
         LaunchedEffect(permintaanBukaEksternal?.id) {
@@ -128,6 +140,12 @@ fun App(
                             label = { Text("Terbaru") },
                             icon = { Text("🕒") }
                         )
+                        NavigationBarItem(
+                            selected = tabTerpilih == 2,
+                            onClick = { tabTerpilih = 2 },
+                            label = { Text("Cari") },
+                            icon = { Text("🔍") }
+                        )
                         if (stateEditor.jumlahTab > 0) {
                             NavigationBarItem(
                                 selected = false,
@@ -144,8 +162,8 @@ fun App(
                         .fillMaxSize()
                         .padding(bantalan)
                 ) {
-                    if (tabTerpilih == 0) {
-                        DaftarBerkasLayar(
+                    when (tabTerpilih) {
+                        0 -> DaftarBerkasLayar(
                             viewModel = vmFilemanager,
                             viewModelOperasiMassal = vmOperasiMassal,
                             aksiPlatform = kontainer.aksiPlatform,
@@ -172,8 +190,7 @@ fun App(
                                 }
                             }
                         )
-                    } else {
-                        LayarTerbaru(
+                        1 -> LayarTerbaru(
                             viewModel = vmTerbaru,
                             onBukaLokasi = { lokasi ->
                                 scope.launch {
@@ -181,6 +198,22 @@ fun App(
                                     tabTerpilih = 0
                                     vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasiSiap))
                                 }
+                            }
+                        )
+                        else -> LayarPencarian(
+                            viewModel = vmPencarian,
+                            onBukaFolder = { lokasi ->
+                                scope.launch {
+                                    val lokasiSiap = onSiapkanAksesLokasi?.invoke(lokasi) ?: lokasi
+                                    tabTerpilih = 0
+                                    vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasiSiap))
+                                }
+                            },
+                            onBukaBerkasDiEditor = { entitas, nomorBaris ->
+                                vmEditor.prosesIntent(
+                                    IntentEditor.BukaBerkas(entitas = entitas, barisTujuan = nomorBaris)
+                                )
+                                ruangEditorTerbuka = true
                             }
                         )
                     }

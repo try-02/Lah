@@ -3,6 +3,7 @@ package org.fm.com.di
 import kotlinx.coroutines.runBlocking
 import org.fm.com.data.DataBerkas
 import org.fm.com.data.SumberMemoriPenyimpanan
+import org.fm.com.data.pencarian.PencariIsiBerkas
 import org.fm.com.data.persistensi.MemoriRepositoriRiwayatLokasi
 import org.fm.com.data.persistensi.MemoriRepositoriRiwayatPencarian
 import org.fm.com.data.simpan.DeteksiKonflik
@@ -13,8 +14,11 @@ import org.fm.com.domain.repository.RepositoriBerkas
 import org.fm.com.domain.repository.RepositoriOperasiBerkas
 import org.fm.com.domain.repository.RepositoriRiwayatLokasi
 import org.fm.com.domain.repository.RepositoriRiwayatPencarian
+import org.fm.com.domain.usecase.CariIsiBerkasUseCase
+import org.fm.com.domain.usecase.CariNamaBerkasUseCase
 import org.fm.com.domain.usecase.PelaksanaSimpanTransaksional
 import org.fm.com.domain.usecase.PemeriksaKonflikSimpan
+import org.fm.com.domain.usecase.PemindaiIsiBerkas
 import org.fm.com.domain.usecase.RiwayatLokasiUseCase
 import org.fm.com.domain.usecase.RiwayatPencarianUseCase
 import org.fm.com.domain.usecase.SimpanBerkasUseCase
@@ -32,6 +36,8 @@ data class KontainerAplikasi(
     val repositoriRiwayatPencarian: RepositoriRiwayatPencarian,
     val riwayatPencarianUseCase: RiwayatPencarianUseCase,
     val simpanBerkasUseCase: SimpanBerkasUseCase,
+    val cariNamaBerkasUseCase: CariNamaBerkasUseCase,
+    val cariIsiBerkasUseCase: CariIsiBerkasUseCase,
     val lokasiAwal: LokasiBerkas,
     val lokasiPintasan: List<LokasiBerkas> = listOf(lokasiAwal),
     val aksiPlatform: AksiPlatformBerkas = AksiPlatformBerkasBawaan(),
@@ -54,6 +60,9 @@ fun buatKontainerAplikasi(
                 single<PemeriksaKonflikSimpan> { DeteksiKonflik(get()) }
                 single<PelaksanaSimpanTransaksional> { SimpanTransaksional(get()) }
                 single { SimpanBerkasUseCase(get(), get()) }
+                single { CariNamaBerkasUseCase(get()) }
+                single<PemindaiIsiBerkas> { PencariIsiBerkas(get()) }
+                single { CariIsiBerkasUseCase(get()) }
             }
         )
     }
@@ -66,6 +75,8 @@ fun buatKontainerAplikasi(
         repositoriRiwayatPencarian = koin.get(),
         riwayatPencarianUseCase = koin.get(),
         simpanBerkasUseCase = koin.get(),
+        cariNamaBerkasUseCase = koin.get(),
+        cariIsiBerkasUseCase = koin.get(),
         lokasiAwal = lokasiAwal,
         lokasiPintasan = lokasiPintasan,
         aksiPlatform = aksiPlatform,
