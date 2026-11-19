@@ -256,7 +256,7 @@ class DokumenAliranTulis(
             fileManager.removeItemAtPath(path, null)
         } catch (_: Exception) {
         } finally {
-            if (lepasParent) parentUrl?.stopAccessingSecurityScopedResource()
+            if (lepasParent) parentUrl.stopAccessingSecurityScopedResource()
             if (lepasTarget) targetUrl.stopAccessingSecurityScopedResource()
         }
     }

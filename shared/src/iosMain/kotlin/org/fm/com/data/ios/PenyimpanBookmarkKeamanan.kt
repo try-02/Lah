@@ -10,6 +10,7 @@ import kotlinx.cinterop.ptr
 import kotlinx.cinterop.value
 import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.model.PenyebabGalat
+import platform.Foundation.NSBundle
 import platform.Foundation.NSData
 import platform.Foundation.NSError
 import platform.Foundation.NSFileCoordinator
@@ -135,6 +136,9 @@ object PenyimpanBookmarkKeamanan {
         }
     }
 
+    private fun prosesTanpaBundle(): Boolean =
+        NSBundle.mainBundle.bundleIdentifier == null
+
     fun <T> koordinasiBaca(url: NSURL, aksi: (NSURL) -> HasilOperasi<T>): HasilOperasi<T> = memScoped {
         val errorPtr = alloc<ObjCObjectVar<NSError?>>()
         var hasilAksi: HasilOperasi<T>? = null
@@ -146,10 +150,16 @@ object PenyimpanBookmarkKeamanan {
         ) { coordinatedUrl ->
             hasilAksi = aksi(coordinatedUrl ?: url)
         }
-        hasilAksi ?: HasilOperasi.Gagal(
-            errorPtr.value?.localizedDescription ?: "Gagal koordinasi baca berkas iOS",
-            PenyebabGalat.IZIN_DITOLAK
-        )
+        hasilAksi ?: if (prosesTanpaBundle()) {
+            aksi(url)
+        } else {
+            val err = errorPtr.value
+            HasilOperasi.Gagal(
+                err?.let { "${it.localizedDescription} (${it.domain}:${it.code})" }
+                    ?: "Gagal koordinasi baca berkas iOS",
+                PenyebabGalat.IZIN_DITOLAK
+            )
+        }
     }
 
     fun <T> koordinasiTulis(
@@ -173,10 +183,16 @@ object PenyimpanBookmarkKeamanan {
         ) { coordinatedUrl ->
             hasilAksi = aksi(coordinatedUrl ?: url)
         }
-        hasilAksi ?: HasilOperasi.Gagal(
-            errorPtr.value?.localizedDescription ?: "Gagal koordinasi tulis berkas iOS",
-            PenyebabGalat.IZIN_DITOLAK
-        )
+        hasilAksi ?: if (prosesTanpaBundle()) {
+            aksi(url)
+        } else {
+            val err = errorPtr.value
+            HasilOperasi.Gagal(
+                err?.let { "${it.localizedDescription} (${it.domain}:${it.code})" }
+                    ?: "Gagal koordinasi tulis berkas iOS",
+                PenyebabGalat.IZIN_DITOLAK
+            )
+        }
     }
 
     fun <T> koordinasiSalinAtauPindah(
@@ -209,9 +225,15 @@ object PenyimpanBookmarkKeamanan {
                 hasilAksi = aksi(coordSumber ?: sumberUrl, coordTujuan ?: tujuanUrl)
             }
         }
-        hasilAksi ?: HasilOperasi.Gagal(
-            errorPtr.value?.localizedDescription ?: "Gagal koordinasi salin/pindah berkas iOS",
-            PenyebabGalat.IZIN_DITOLAK
-        )
+        hasilAksi ?: if (prosesTanpaBundle()) {
+            aksi(sumberUrl, tujuanUrl)
+        } else {
+            val err = errorPtr.value
+            HasilOperasi.Gagal(
+                err?.let { "${it.localizedDescription} (${it.domain}:${it.code})" }
+                    ?: "Gagal koordinasi salin/pindah berkas iOS",
+                PenyebabGalat.IZIN_DITOLAK
+            )
+        }
     }
 }

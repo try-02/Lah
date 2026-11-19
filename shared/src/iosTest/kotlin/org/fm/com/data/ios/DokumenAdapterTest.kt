@@ -36,6 +36,13 @@ class DokumenAdapterTest {
         return dirUrl
     }
 
+    private fun <T> assertSukses(hasil: HasilOperasi<T>, langkah: String): T {
+        if (hasil is HasilOperasi.Gagal) {
+            kotlin.test.fail("[$langkah] Gagal (${hasil.penyebab}): ${hasil.pesan}")
+        }
+        return (hasil as HasilOperasi.Sukses<T>).nilai
+    }
+
     @Test
     fun pemetaanLokasiIosDuaArah() {
         val path = NSTemporaryDirectory() + "test_file.txt"
@@ -66,34 +73,36 @@ class DokumenAdapterTest {
             val adapter = IosSumberDataPenyimpanan()
             val rootLok = DokumenPemetaanLokasi.keLokasi(rootUrl)
 
-            val tulisKosong = assertIs<HasilOperasi.Sukses<SumberTulisBerkas>>(
-                adapter.bukaUntukTulisDi(rootLok, "kosong.txt", timpa = false)
+            val tulisKosong = assertSukses(
+                adapter.bukaUntukTulisDi(rootLok, "kosong.txt", timpa = false),
+                "bukaUntukTulisDi kosong.txt"
             )
-            assertIs<HasilOperasi.Sukses<Unit>>(tulisKosong.nilai.selesai())
-            val lokKosong = assertNotNull(tulisKosong.nilai.lokasiTarget)
+            assertSukses(tulisKosong.selesai(), "selesai kosong.txt")
+            val lokKosong = assertNotNull(tulisKosong.lokasiTarget)
 
-            val bacaKosong = assertIs<HasilOperasi.Sukses<SumberIsiBerkas>>(adapter.bukaUntukBaca(lokKosong))
-            assertEquals(0L, bacaKosong.nilai.ukuranByte)
-            val potKosong = assertIs<SumberIsiBerkas.HasilPotongan.Isi>(bacaKosong.nilai.potongan())
-            assertTrue(potKosong.potongan.selesai)
-            bacaKosong.nilai.tutup()
+            val bacaKosong = assertSukses(adapter.bukaUntukBaca(lokKosong), "bukaUntukBaca kosong.txt")
+            assertEquals(0L, bacaKosong.ukuranByte)
+            val potKosong = assertIs<SumberIsiBerkas.HasilPotongan.Isi>(bacaKosong.potongan())
+            assertTrue(potKosong.potongan.selesai, "potongan berkas kosong harus langsung selesai")
+            bacaKosong.tutup()
 
-            val tulis = assertIs<HasilOperasi.Sukses<SumberTulisBerkas>>(
-                adapter.bukaUntukTulisDi(rootLok, "catatan.txt", timpa = false)
+            val tulis = assertSukses(
+                adapter.bukaUntukTulisDi(rootLok, "catatan.txt", timpa = false),
+                "bukaUntukTulisDi catatan.txt"
             )
-            assertIs<HasilOperasi.Sukses<Unit>>(tulis.nilai.tulis(PotonganIsi("Halo ".encodeToByteArray())))
-            assertIs<HasilOperasi.Sukses<Unit>>(tulis.nilai.tulis(PotonganIsi("iOS!".encodeToByteArray())))
-            assertIs<HasilOperasi.Sukses<Unit>>(tulis.nilai.selesai())
+            assertSukses(tulis.tulis(PotonganIsi("Halo ".encodeToByteArray())), "tulis bagian 1")
+            assertSukses(tulis.tulis(PotonganIsi("iOS!".encodeToByteArray())), "tulis bagian 2")
+            assertSukses(tulis.selesai(), "selesai catatan.txt")
 
-            val lokCatatan = assertNotNull(tulis.nilai.lokasiTarget)
-            val baca = assertIs<HasilOperasi.Sukses<SumberIsiBerkas>>(adapter.bukaUntukBaca(lokCatatan))
+            val lokCatatan = assertNotNull(tulis.lokasiTarget)
+            val baca = assertSukses(adapter.bukaUntukBaca(lokCatatan), "bukaUntukBaca catatan.txt")
             var data = ByteArray(0)
             while (true) {
-                val p = assertIs<SumberIsiBerkas.HasilPotongan.Isi>(baca.nilai.potongan())
+                val p = assertIs<SumberIsiBerkas.HasilPotongan.Isi>(baca.potongan())
                 data += p.potongan.data
                 if (p.potongan.selesai) break
             }
-            baca.nilai.tutup()
+            baca.tutup()
             assertEquals("Halo iOS!", data.decodeToString())
         } finally {
             rootUrl.path?.let { NSFileManager.defaultManager.removeItemAtPath(it, null) }
@@ -120,32 +129,36 @@ class DokumenAdapterTest {
             val adapter = IosSumberDataPenyimpanan()
             val rootLok = DokumenPemetaanLokasi.keLokasi(rootUrl)
 
-            val sub = assertIs<HasilOperasi.Sukses<EntitasBerkas>>(
-                adapter.buatFolder(PermintaanOperasi(sumber = rootLok, namaBaru = "Sub"))
+            val sub = assertSukses(
+                adapter.buatFolder(PermintaanOperasi(sumber = rootLok, namaBaru = "Sub")),
+                "buatFolder Sub"
             )
-            val berkas = assertIs<HasilOperasi.Sukses<EntitasBerkas>>(
-                adapter.buatBerkasKosong(PermintaanOperasi(sumber = sub.nilai.lokasi, namaBaru = "a.txt"))
+            val berkas = assertSukses(
+                adapter.buatBerkasKosong(PermintaanOperasi(sumber = sub.lokasi, namaBaru = "a.txt")),
+                "buatBerkasKosong a.txt"
             )
             val renameKonflik = assertIs<HasilOperasi.Gagal>(
-                adapter.buatBerkasKosong(PermintaanOperasi(sumber = sub.nilai.lokasi, namaBaru = "a.txt"))
+                adapter.buatBerkasKosong(PermintaanOperasi(sumber = sub.lokasi, namaBaru = "a.txt"))
             )
             assertEquals(PenyebabGalat.KONFLIK, renameKonflik.penyebab)
 
-            val hasilRename = assertIs<HasilOperasi.Sukses<EntitasBerkas>>(
-                adapter.gantiNama(PermintaanOperasi(sumber = berkas.nilai.lokasi, namaBaru = "b.txt"))
+            val hasilRename = assertSukses(
+                adapter.gantiNama(PermintaanOperasi(sumber = berkas.lokasi, namaBaru = "b.txt")),
+                "gantiNama a.txt -> b.txt"
             )
-            assertEquals("b.txt", hasilRename.nilai.nama)
+            assertEquals("b.txt", hasilRename.nama)
 
-            val daftar = assertIs<HasilOperasi.Sukses<List<EntitasBerkas>>>(adapter.daftarIsi(sub.nilai.lokasi).first())
-            assertEquals(listOf("b.txt"), daftar.nilai.map { it.nama })
+            val daftar = assertSukses(adapter.daftarIsi(sub.lokasi).first(), "daftarIsi Sub")
+            assertEquals(listOf("b.txt"), daftar.map { it.nama })
 
             val salinDirKeDiri = assertIs<HasilOperasi.Gagal>(
-                adapter.salin(PermintaanOperasi(sumber = sub.nilai.lokasi, tujuan = sub.nilai.lokasi))
+                adapter.salin(PermintaanOperasi(sumber = sub.lokasi, tujuan = sub.lokasi))
             )
             assertEquals(PenyebabGalat.VALIDASI, salinDirKeDiri.penyebab)
 
-            assertIs<HasilOperasi.Sukses<Unit>>(
-                adapter.hapus(PermintaanOperasi(sumber = sub.nilai.lokasi, konfirmasi = true))
+            assertSukses(
+                adapter.hapus(PermintaanOperasi(sumber = sub.lokasi, konfirmasi = true)),
+                "hapus Sub"
             )
         } finally {
             rootUrl.path?.let { NSFileManager.defaultManager.removeItemAtPath(it, null) }
