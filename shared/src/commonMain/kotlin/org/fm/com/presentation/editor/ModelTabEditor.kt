@@ -34,7 +34,10 @@ data class ModelTabEditor(
     val ukuranByteAsli: Long? = null,
     val waktuUbahTerakhirMs: Long? = null,
     val jumlahBaris: Int = 1,
-    val posisiKursor: PosisiKursor = PosisiKursor()
+    val posisiKursor: PosisiKursor = PosisiKursor(),
+    val dapatUndo: Boolean = false,
+    val dapatRedo: Boolean = false,
+    val urutanNavigasiKursor: Long = 0L
 ) {
     val adaPerubahanBelumTersimpan: Boolean
         get() = statusMuat == StatusMuatTab.SIAP && isiSaatIni != isiTersimpan

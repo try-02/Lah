@@ -8,6 +8,7 @@ data class StateEditor(
     val idTabAktif: String? = null,
     val wordWrapUmum: Boolean = true,
     val tabMenungguKonfirmasiTutup: ModelTabEditor? = null,
+    val dialogLompatBarisTerbuka: Boolean = false,
     val pesanInfo: String? = null
 ) {
     val tabAktif: ModelTabEditor?
@@ -51,11 +52,15 @@ sealed interface IntentEditor {
         val indeksKursor: Int? = null
     ) : IntentEditor
 
+    data class Undo(val idTab: String) : IntentEditor
+    data class Redo(val idTab: String) : IntentEditor
+
     data class UbahPosisiKursor(
         val idTab: String,
         val indeksKarakter: Int
     ) : IntentEditor
 
+    data class SetBukaDialogLompatBaris(val buka: Boolean) : IntentEditor
     data class LompatKeBaris(
         val idTab: String,
         val nomorBaris: Int

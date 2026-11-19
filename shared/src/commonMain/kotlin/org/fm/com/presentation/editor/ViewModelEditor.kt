@@ -22,7 +22,9 @@ class ViewModelEditor(
     val state: StateFlow<StateEditor> = _state.asStateFlow()
 
     private val pekerjaanMuat = mutableMapOf<String, Job>()
+    private val sejarahPerTab = mutableMapOf<String, SejarahUndo>()
     private var penghitungTabKosong = 0L
+    private var urutanNavigasi = 0L
 
     fun prosesIntent(intent: IntentEditor) {
         when (intent) {
@@ -56,7 +58,10 @@ class ViewModelEditor(
             is IntentEditor.BatalTutupTab -> _state.update { it.copy(tabMenungguKonfirmasiTutup = null) }
             is IntentEditor.TutupSemuaTab -> tutupSemuaTab(intent.paksa)
             is IntentEditor.UbahTeks -> ubahTeks(intent.idTab, intent.teksBaru, intent.indeksKursor)
+            is IntentEditor.Undo -> eksekusiUndo(intent.idTab)
+            is IntentEditor.Redo -> eksekusiRedo(intent.idTab)
             is IntentEditor.UbahPosisiKursor -> ubahKursor(intent.idTab, intent.indeksKarakter)
+            is IntentEditor.SetBukaDialogLompatBaris -> _state.update { it.copy(dialogLompatBarisTerbuka = intent.buka) }
             is IntentEditor.LompatKeBaris -> lompatKeBaris(intent.idTab, intent.nomorBaris)
             is IntentEditor.ToggleModeHanyaBaca -> toggleModeHanyaBaca(intent.idTab)
             is IntentEditor.ToggleWordWrapTab -> toggleWordWrapTab(intent.idTab)
@@ -119,7 +124,15 @@ class ViewModelEditor(
     private fun muatUlangTab(idTab: String) {
         val tab = _state.value.daftarTab.firstOrNull { it.idTab == idTab } ?: return
         val lokasi = tab.lokasi ?: return
-        perbaruiTab(idTab) { it.copy(statusMuat = StatusMuatTab.MEMUAT, pesanStatus = null) }
+        sejarahPerTab[idTab]?.bersihkan()
+        perbaruiTab(idTab) {
+            it.copy(
+                statusMuat = StatusMuatTab.MEMUAT,
+                pesanStatus = null,
+                dapatUndo = false,
+                dapatRedo = false
+            )
+        }
         muatIsiTab(idTab, lokasi, barisTujuan = null)
     }
 
@@ -135,6 +148,8 @@ class ViewModelEditor(
                     } else {
                         PosisiKursor()
                     }
+                    sejarahPerTab.getOrPut(idTab) { SejarahUndo() }.bersihkan()
+                    val nav = if (barisTujuan != null) ++urutanNavigasi else 0L
                     perbaruiTab(idTab) { tab ->
                         tab.copy(
                             statusMuat = StatusMuatTab.SIAP,
@@ -145,7 +160,10 @@ class ViewModelEditor(
                             akhirBaris = data.akhirBaris,
                             ukuranByteAsli = data.ukuranByteAsli,
                             jumlahBaris = jumlahBaris,
-                            posisiKursor = kursor
+                            posisiKursor = kursor,
+                            dapatUndo = false,
+                            dapatRedo = false,
+                            urutanNavigasiKursor = nav
                         )
                     }
                 }
@@ -191,6 +209,7 @@ class ViewModelEditor(
     private fun buatTabKosong(nama: String) {
         penghitungTabKosong++
         val idTab = "baru:$penghitungTabKosong"
+        sejarahPerTab[idTab] = SejarahUndo()
         val tab = ModelTabEditor(
             idTab = idTab,
             lokasi = null,
@@ -235,17 +254,20 @@ class ViewModelEditor(
         }
         pekerjaanMuat.values.forEach { it.cancel() }
         pekerjaanMuat.clear()
+        sejarahPerTab.clear()
         _state.update {
             it.copy(
                 daftarTab = emptyList(),
                 idTabAktif = null,
-                tabMenungguKonfirmasiTutup = null
+                tabMenungguKonfirmasiTutup = null,
+                dialogLompatBarisTerbuka = false
             )
         }
     }
 
     private fun hapusTabInternal(idTab: String) {
         pekerjaanMuat.remove(idTab)?.cancel()
+        sejarahPerTab.remove(idTab)
         _state.update { st ->
             val idx = st.daftarTab.indexOfFirst { it.idTab == idTab }
             if (idx < 0) return@update st
@@ -272,17 +294,63 @@ class ViewModelEditor(
             return
         }
         if (teksBaru == tab.isiSaatIni) return
+
+        val kursorSesudahIdx = (indeksKursor ?: teksBaru.length).coerceIn(0, teksBaru.length)
+        val sejarah = sejarahPerTab.getOrPut(idTab) { SejarahUndo() }
+        sejarah.catatPerubahan(
+            teksSebelum = tab.isiSaatIni,
+            teksSesudah = teksBaru,
+            kursorSebelum = tab.posisiKursor.indeksKarakter,
+            kursorSesudah = kursorSesudahIdx
+        )
+
         val jumlahBaris = hitungJumlahBaris(teksBaru)
-        val kursorBaru = if (indeksKursor != null) {
-            hitungPosisiKursor(teksBaru, indeksKursor)
-        } else {
-            hitungPosisiKursor(teksBaru, teksBaru.length)
-        }
+        val kursorBaru = hitungPosisiKursor(teksBaru, kursorSesudahIdx)
         perbaruiTab(idTab) {
             it.copy(
                 isiSaatIni = teksBaru,
                 jumlahBaris = jumlahBaris,
-                posisiKursor = kursorBaru
+                posisiKursor = kursorBaru,
+                dapatUndo = sejarah.dapatUndo,
+                dapatRedo = sejarah.dapatRedo
+            )
+        }
+    }
+
+    private fun eksekusiUndo(idTab: String) {
+        val tab = _state.value.daftarTab.firstOrNull { it.idTab == idTab } ?: return
+        if (!tab.dapatDiedit) return
+        val sejarah = sejarahPerTab[idTab] ?: return
+        val hasil = sejarah.undo(tab.isiSaatIni) ?: return
+        val jumlahBaris = hitungJumlahBaris(hasil.teks)
+        val kursorBaru = hitungPosisiKursor(hasil.teks, hasil.indeksKursor)
+        perbaruiTab(idTab) {
+            it.copy(
+                isiSaatIni = hasil.teks,
+                jumlahBaris = jumlahBaris,
+                posisiKursor = kursorBaru,
+                dapatUndo = sejarah.dapatUndo,
+                dapatRedo = sejarah.dapatRedo,
+                urutanNavigasiKursor = ++urutanNavigasi
+            )
+        }
+    }
+
+    private fun eksekusiRedo(idTab: String) {
+        val tab = _state.value.daftarTab.firstOrNull { it.idTab == idTab } ?: return
+        if (!tab.dapatDiedit) return
+        val sejarah = sejarahPerTab[idTab] ?: return
+        val hasil = sejarah.redo(tab.isiSaatIni) ?: return
+        val jumlahBaris = hitungJumlahBaris(hasil.teks)
+        val kursorBaru = hitungPosisiKursor(hasil.teks, hasil.indeksKursor)
+        perbaruiTab(idTab) {
+            it.copy(
+                isiSaatIni = hasil.teks,
+                jumlahBaris = jumlahBaris,
+                posisiKursor = kursorBaru,
+                dapatUndo = sejarah.dapatUndo,
+                dapatRedo = sejarah.dapatRedo,
+                urutanNavigasiKursor = ++urutanNavigasi
             )
         }
     }
@@ -304,7 +372,13 @@ class ViewModelEditor(
             return
         }
         val kursor = hitungKursorUntukBaris(tab.isiSaatIni, nomorBaris)
-        perbaruiTab(idTab) { it.copy(posisiKursor = kursor) }
+        _state.update { it.copy(dialogLompatBarisTerbuka = false) }
+        perbaruiTab(idTab) {
+            it.copy(
+                posisiKursor = kursor,
+                urutanNavigasiKursor = ++urutanNavigasi
+            )
+        }
     }
 
     private fun toggleModeHanyaBaca(idTab: String) {
@@ -357,6 +431,7 @@ class ViewModelEditor(
     override fun onCleared() {
         pekerjaanMuat.values.forEach { it.cancel() }
         pekerjaanMuat.clear()
+        sejarahPerTab.clear()
         super.onCleared()
     }
 

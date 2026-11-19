@@ -174,4 +174,67 @@ class ViewModelEditorTest {
         vm.prosesIntent(IntentEditor.ToggleWordWrapTab(tab.idTab))
         assertFalse(vm.state.value.tabAktif!!.wordWrapEfektif(vm.state.value.wordWrapUmum))
     }
+
+    @Test
+    fun undoRedoPerTabDanLompatBarisValidasiBatas() = runTest {
+        val repo = ImplementasiRepositoriBerkas()
+        repo.simpan(
+            DataBerkas("/satu.kt", "satu.kt", JenisLokasi.POSIX, adalahFolder = false),
+            "baris 1\nbaris 2\nbaris 3".encodeToByteArray()
+        )
+        repo.simpan(
+            DataBerkas("/dua.kt", "dua.kt", JenisLokasi.POSIX, adalahFolder = false),
+            "alpha".encodeToByteArray()
+        )
+        val vm = buatVm(repo)
+
+        vm.prosesIntent(IntentEditor.BukaLokasi(LokasiBerkas("/satu.kt", JenisLokasi.POSIX, "satu.kt")))
+        val st1 = vm.state.first { it.tabAktif?.statusMuat == StatusMuatTab.SIAP && it.tabAktif?.namaBerkas == "satu.kt" }
+        val id1 = st1.tabAktif!!.idTab
+
+        vm.prosesIntent(IntentEditor.BukaLokasi(LokasiBerkas("/dua.kt", JenisLokasi.POSIX, "dua.kt")))
+        val st2 = vm.state.first { it.tabAktif?.statusMuat == StatusMuatTab.SIAP && it.tabAktif?.namaBerkas == "dua.kt" }
+        val id2 = st2.tabAktif!!.idTab
+
+        // Edit tab 2
+        vm.prosesIntent(IntentEditor.UbahTeks(id2, "alpha beta", indeksKursor = 10))
+        assertTrue(vm.state.value.tabAktif!!.dapatUndo)
+        assertFalse(vm.state.value.tabAktif!!.dapatRedo)
+
+        // Berpindah ke tab 1 -> tidak punya riwayat undo dari tab 2
+        vm.prosesIntent(IntentEditor.PilihTab(id1))
+        assertFalse(vm.state.value.tabAktif!!.dapatUndo)
+
+        // Lompat baris invalid ditolak dengan pesanInfo
+        vm.prosesIntent(IntentEditor.LompatKeBaris(id1, 99))
+        assertNotNull(vm.state.value.pesanInfo)
+        assertEquals(1, vm.state.value.tabAktif!!.posisiKursor.baris)
+
+        // Lompat baris valid -> kursor berpindah tepat
+        vm.prosesIntent(IntentEditor.LompatKeBaris(id1, 2))
+        assertEquals(2, vm.state.value.tabAktif!!.posisiKursor.baris)
+        assertEquals(1, vm.state.value.tabAktif!!.posisiKursor.kolom)
+
+        // Kembali ke tab 2 -> undo mengembalikan kondisi bersih & redo mengembalikan editan
+        vm.prosesIntent(IntentEditor.PilihTab(id2))
+        vm.prosesIntent(IntentEditor.Undo(id2))
+        val tab2PascaUndo = vm.state.value.tabAktif!!
+        assertEquals("alpha", tab2PascaUndo.isiSaatIni)
+        assertFalse(tab2PascaUndo.adaPerubahanBelumTersimpan)
+        assertTrue(tab2PascaUndo.dapatRedo)
+
+        vm.prosesIntent(IntentEditor.Redo(id2))
+        val tab2PascaRedo = vm.state.value.tabAktif!!
+        assertEquals("alpha beta", tab2PascaRedo.isiSaatIni)
+        assertTrue(tab2PascaRedo.adaPerubahanBelumTersimpan)
+    }
+
+    @Test
+    fun indeksBarisLogisKomponenNomorBarisAkurat() {
+        val indeks = bangunIndeksAwalBaris("satu\ndua\ntiga")
+        assertEquals(1, cariNomorBarisLogis(indeks, 0))
+        assertEquals(1, cariNomorBarisLogis(indeks, 3))
+        assertEquals(2, cariNomorBarisLogis(indeks, 5))
+        assertEquals(3, cariNomorBarisLogis(indeks, 9))
+    }
 }
