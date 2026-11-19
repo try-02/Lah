@@ -2,6 +2,7 @@ package org.fm.com.presentation.filemanager
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,8 +22,10 @@ data class StateOperasiMassal(
     val itemDiproses: Int = 0,
     val namaItemSaatIni: String = "",
     val daftarSumber: List<LokasiBerkas> = emptyList(),
+    val sedangMemilihTujuan: Boolean = false,
     val dialogPilihTujuanTerbuka: Boolean = false,
-    val hasilTerakhir: HasilMassal? = null
+    val hasilTerakhir: HasilMassal? = null,
+    val tampilkanDialogHasil: Boolean = false
 ) {
     val progresFloat: Float
         get() = if (totalItem > 0) itemDiproses.toFloat() / totalItem.toFloat() else 0f
@@ -36,30 +39,49 @@ class ViewModelOperasiMassal(
         repositoriOperasi
     )
 ) : ViewModel() {
-
     private val _state = MutableStateFlow(StateOperasiMassal())
     val state: StateFlow<StateOperasiMassal> = _state.asStateFlow()
-
     private var pekerjaanOperasi: Job? = null
 
     fun inisiasiSalin(sumber: List<LokasiBerkas>) {
+        if (sumber.isEmpty()) return
         _state.update {
             it.copy(
                 daftarSumber = sumber,
                 apakahPindah = false,
-                dialogPilihTujuanTerbuka = true,
-                hasilTerakhir = null
+                sedangMemilihTujuan = true,
+                dialogPilihTujuanTerbuka = false,
+                hasilTerakhir = null,
+                tampilkanDialogHasil = false
             )
         }
     }
 
     fun inisiasiPindah(sumber: List<LokasiBerkas>) {
+        if (sumber.isEmpty()) return
         _state.update {
             it.copy(
                 daftarSumber = sumber,
                 apakahPindah = true,
-                dialogPilihTujuanTerbuka = true,
-                hasilTerakhir = null
+                sedangMemilihTujuan = true,
+                dialogPilihTujuanTerbuka = false,
+                hasilTerakhir = null,
+                tampilkanDialogHasil = false
+            )
+        }
+    }
+
+    fun bukaKonfirmasiTempel() {
+        if (_state.value.daftarSumber.isEmpty()) return
+        _state.update { it.copy(dialogPilihTujuanTerbuka = true) }
+    }
+
+    fun batalModeTempel() {
+        _state.update {
+            it.copy(
+                sedangMemilihTujuan = false,
+                dialogPilihTujuanTerbuka = false,
+                daftarSumber = emptyList()
             )
         }
     }
@@ -68,13 +90,17 @@ class ViewModelOperasiMassal(
         _state.update { it.copy(dialogPilihTujuanTerbuka = false) }
     }
 
-    fun eksekusiKeTujuan(tujuan: LokasiBerkas, onSelesai: () -> Unit) {
+    fun tutupDialogHasil() {
+        _state.update { it.copy(tampilkanDialogHasil = false, hasilTerakhir = null) }
+    }
+
+    fun eksekusiKeTujuan(tujuan: LokasiBerkas, onSelesai: (HasilMassal?) -> Unit) {
         val sumber = _state.value.daftarSumber
         val pindah = _state.value.apakahPindah
         if (sumber.isEmpty()) return
-
         _state.update {
             it.copy(
+                sedangMemilihTujuan = false,
                 dialogPilihTujuanTerbuka = false,
                 sedangBerjalan = true,
                 totalItem = sumber.size,
@@ -82,42 +108,41 @@ class ViewModelOperasiMassal(
                 namaItemSaatIni = ""
             )
         }
-
         pekerjaanOperasi?.cancel()
         pekerjaanOperasi = viewModelScope.launch {
-            val hasil = salinPindahkanUseCase(
-                daftarSumber = sumber,
-                tujuanInduk = tujuan,
-                apakahPindah = pindah,
-                onProgres = { indeks, total, item ->
-                    _state.update {
-                        it.copy(
-                            itemDiproses = indeks,
-                            totalItem = total,
-                            namaItemSaatIni = item.label ?: item.pengenal.substringAfterLast('/')
-                        )
+            var hasilEksekusi: HasilMassal? = null
+            try {
+                hasilEksekusi = salinPindahkanUseCase(
+                    daftarSumber = sumber,
+                    tujuanInduk = tujuan,
+                    apakahPindah = pindah,
+                    onProgres = { indeks, total, item ->
+                        _state.update {
+                            it.copy(
+                                itemDiproses = indeks,
+                                totalItem = total,
+                                namaItemSaatIni = item.label ?: item.pengenal.substringAfterLast('/')
+                            )
+                        }
                     }
-                }
-            )
-
-            _state.update {
-                it.copy(
-                    sedangBerjalan = false,
-                    hasilTerakhir = hasil,
-                    daftarSumber = emptyList()
                 )
+            } catch (e: CancellationException) {
+                throw e
+            } finally {
+                _state.update {
+                    it.copy(
+                        sedangBerjalan = false,
+                        hasilTerakhir = hasilEksekusi,
+                        tampilkanDialogHasil = hasilEksekusi?.adaGagal == true,
+                        daftarSumber = emptyList()
+                    )
+                }
+                onSelesai(hasilEksekusi)
             }
-            onSelesai()
         }
     }
 
     fun batalkanOperasi() {
         pekerjaanOperasi?.cancel()
-        _state.update {
-            it.copy(
-                sedangBerjalan = false,
-                daftarSumber = emptyList()
-            )
-        }
     }
 }

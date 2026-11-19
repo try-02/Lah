@@ -1,25 +1,39 @@
 package org.fm.com.presentation.filemanager
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -28,17 +42,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
-import androidx.compose.material3.TextButton
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.AssistChip
 import org.fm.com.domain.model.LokasiBerkas
+import org.fm.com.domain.model.OperasiBerkas
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,11 +64,9 @@ fun DaftarBerkasLayar(
 ) {
     val state by viewModel.state.collectAsState()
     val stateMassal by viewModelOperasiMassal?.state?.collectAsState() ?: remember { mutableStateOf(StateOperasiMassal()) }
-
     @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
     val snackbarHostState = remember { SnackbarHostState() }
-
     var menuKonteksItem by remember { mutableStateOf<ItemBerkasUi?>(null) }
 
     LaunchedEffect(state.pesanInfo) {
@@ -75,28 +83,21 @@ fun DaftarBerkasLayar(
             if (state.sedangMultiSelect) {
                 BarAksiSeleksi(
                     jumlahTerpilih = state.itemTerpilih.size,
+                    kemampuan = state.kemampuanUi,
                     onPilihSemua = { viewModel.prosesIntent(IntentFilemanager.PilihSemua) },
                     onBersihkanPilihan = { viewModel.prosesIntent(IntentFilemanager.BersihkanPilihan) },
                     onAksiHapus = {
-                        if (state.kemampuanUi.dapatHapus) {
-                            viewModel.prosesIntent(IntentFilemanager.BukaDialogHapus(state.itemTerpilih.toList()))
-                        } else {
-                            viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Hapus tidak didukung pada penyimpanan ini"))
-                        }
+                        viewModel.prosesIntent(IntentFilemanager.BukaDialogHapus(state.itemTerpilih.toList()))
                     },
                     onAksiSalin = {
-                        if (state.kemampuanUi.dapatSalin) {
-                            viewModelOperasiMassal?.inisiasiSalin(state.itemTerpilih.toList())
-                        } else {
-                            viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Salin tidak didukung pada penyimpanan ini"))
-                        }
+                        val sumber = state.itemTerpilih.toList()
+                        viewModel.prosesIntent(IntentFilemanager.BersihkanPilihan)
+                        viewModelOperasiMassal?.inisiasiSalin(sumber)
                     },
                     onAksiPindah = {
-                        if (state.kemampuanUi.dapatPindah) {
-                            viewModelOperasiMassal?.inisiasiPindah(state.itemTerpilih.toList())
-                        } else {
-                            viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Pindah tidak didukung pada penyimpanan ini"))
-                        }
+                        val sumber = state.itemTerpilih.toList()
+                        viewModel.prosesIntent(IntentFilemanager.BersihkanPilihan)
+                        viewModelOperasiMassal?.inisiasiPindah(sumber)
                     }
                 )
             } else {
@@ -106,9 +107,6 @@ fun DaftarBerkasLayar(
                         if (onPilihFolder != null) {
                             TextButton(onClick = onPilihFolder) {
                                 Text("Pilih")
-                            }
-                            TextButton(onClick = onPilihFolder) {
-                                Text("Folder")
                             }
                         }
                         IconButton(onClick = {
@@ -132,7 +130,6 @@ fun DaftarBerkasLayar(
             }
         },
         floatingActionButton = {
-            // T24: Sembunyikan FAB jika lokasi tidak mendukung penambahan berkas
             if (!state.sedangMultiSelect && state.kemampuanUi.dapatMembuat) {
                 FloatingActionButton(onClick = {
                     viewModel.prosesIntent(IntentFilemanager.SetBukaDialogBuat(true))
@@ -171,12 +168,23 @@ fun DaftarBerkasLayar(
                     }
                 }
             }
+
             if (state.segmenBreadcrumb.isNotEmpty()) {
                 BreadcrumbLokasi(
                     segmen = state.segmenBreadcrumb,
                     onPilihSegmen = { segmen ->
                         viewModel.prosesIntent(IntentFilemanager.NavigasiKeSegmen(segmen))
                     }
+                )
+            }
+
+            if (stateMassal.sedangMemilihTujuan) {
+                BannerTempelBerkas(
+                    apakahPindah = stateMassal.apakahPindah,
+                    jumlahItem = stateMassal.daftarSumber.size,
+                    dapatTempel = state.lokasiSaatIni != null && state.kemampuanUi.dapatMembuat,
+                    onTempel = { viewModelOperasiMassal?.bukaKonfirmasiTempel() },
+                    onBatal = { viewModelOperasiMassal?.batalModeTempel() }
                 )
             }
 
@@ -203,7 +211,7 @@ fun DaftarBerkasLayar(
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
                             items(
                                 items = state.daftarItem,
-                                key = { it.lokasi.pengenal }
+                                key = { "${it.lokasi.jenis.name}:${it.lokasi.pengenal}" }
                             ) { item ->
                                 Box {
                                     ItemBerkasBaris(
@@ -225,10 +233,12 @@ fun DaftarBerkasLayar(
                                     )
                                     MenuKonteksItemBerkas(
                                         item = item,
-                                        terbuka = menuKonteksItem == item,
+                                        terbuka = menuKonteksItem?.lokasi == item.lokasi,
                                         kemampuan = state.kemampuanUi,
                                         onTutup = { menuKonteksItem = null },
                                         onPilih = { viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi)) },
+                                        onSalin = { viewModelOperasiMassal?.inisiasiSalin(listOf(item.lokasi)) },
+                                        onPindah = { viewModelOperasiMassal?.inisiasiPindah(listOf(item.lokasi)) },
                                         onBukaDengan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBukaDengan(item)) },
                                         onBagikan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBagikan(item)) },
                                         onGantiNama = { viewModel.prosesIntent(IntentFilemanager.BukaDialogRename(item)) },
@@ -245,7 +255,7 @@ fun DaftarBerkasLayar(
                         ) {
                             items(
                                 items = state.daftarItem,
-                                key = { it.lokasi.pengenal }
+                                key = { "${it.lokasi.jenis.name}:${it.lokasi.pengenal}" }
                             ) { item ->
                                 Box {
                                     ItemBerkasKotak(
@@ -267,10 +277,12 @@ fun DaftarBerkasLayar(
                                     )
                                     MenuKonteksItemBerkas(
                                         item = item,
-                                        terbuka = menuKonteksItem == item,
+                                        terbuka = menuKonteksItem?.lokasi == item.lokasi,
                                         kemampuan = state.kemampuanUi,
                                         onTutup = { menuKonteksItem = null },
                                         onPilih = { viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi)) },
+                                        onSalin = { viewModelOperasiMassal?.inisiasiSalin(listOf(item.lokasi)) },
+                                        onPindah = { viewModelOperasiMassal?.inisiasiPindah(listOf(item.lokasi)) },
                                         onBukaDengan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBukaDengan(item)) },
                                         onBagikan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBagikan(item)) },
                                         onGantiNama = { viewModel.prosesIntent(IntentFilemanager.BukaDialogRename(item)) },
@@ -308,6 +320,7 @@ fun DaftarBerkasLayar(
 
     DialogPropertiBerkas(
         item = state.dialogPropertiItem,
+        kemampuan = state.kemampuanUi,
         onSalinNama = { nama ->
             clipboardManager.setText(AnnotatedString(nama))
             viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Nama disalin: $nama"))
@@ -327,6 +340,12 @@ fun DaftarBerkasLayar(
             }
         },
         onTutup = { viewModel.prosesIntent(IntentFilemanager.BukaDialogRename(null)) }
+    )
+
+    DialogKonfirmasiTimpa(
+        permintaan = state.konfirmasiTimpa,
+        onKonfirmasi = { viewModel.prosesIntent(IntentFilemanager.KonfirmasiTimpaAksi(it)) },
+        onBatal = { viewModel.prosesIntent(IntentFilemanager.TutupKonfirmasiTimpa) }
     )
 
     DialogKonfirmasiHapus(
@@ -355,19 +374,94 @@ fun DaftarBerkasLayar(
         lokasiTujuan = state.lokasiSaatIni,
         onKonfirmasi = {
             state.lokasiSaatIni?.let { tujuan ->
-                viewModelOperasiMassal?.eksekusiKeTujuan(tujuan) {
+                viewModelOperasiMassal?.eksekusiKeTujuan(tujuan) { hasil ->
                     viewModel.prosesIntent(IntentFilemanager.BersihkanPilihan)
                     viewModel.prosesIntent(IntentFilemanager.Segarkan)
-                    viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Operasi massal selesai"))
+                    val pesan = when {
+                        hasil == null -> "Operasi dibatalkan"
+                        hasil.adaGagal -> "Selesai dengan ${hasil.berhasil.size} berhasil dan ${hasil.gagal.size} gagal"
+                        else -> "Berhasil memproses ${hasil.berhasil.size} item"
+                    }
+                    viewModel.prosesIntent(IntentFilemanager.SetPesanInfo(pesan))
                 }
             }
         },
         onTutup = { viewModelOperasiMassal?.tutupDialogTujuan() }
     )
 
+    DialogHasilOperasiMassal(
+        terbuka = stateMassal.tampilkanDialogHasil,
+        hasil = stateMassal.hasilTerakhir,
+        onTutup = { viewModelOperasiMassal?.tutupDialogHasil() }
+    )
+
     IndikatorProgresMassal(
         state = stateMassal,
         onBatal = { viewModelOperasiMassal?.batalkanOperasi() }
+    )
+}
+
+@Composable
+private fun BannerTempelBerkas(
+    apakahPindah: Boolean,
+    jumlahItem: Int,
+    dapatTempel: Boolean,
+    onTempel: () -> Unit,
+    onBatal: () -> Unit
+) {
+    val kata = if (apakahPindah) "Memindah" else "Menyalin"
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "$kata $jumlahItem item. Buka folder tujuan lalu tempel.",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            OutlinedButton(onClick = onBatal) {
+                Text("Batal")
+            }
+            Spacer(modifier = Modifier.width(6.dp))
+            Button(onClick = onTempel, enabled = dapatTempel) {
+                Text("Tempel")
+            }
+        }
+    }
+}
+
+@Composable
+private fun DialogKonfirmasiTimpa(
+    permintaan: PermintaanKonfirmasiTimpa?,
+    onKonfirmasi: (PermintaanKonfirmasiTimpa) -> Unit,
+    onBatal: () -> Unit
+) {
+    if (permintaan == null) return
+    AlertDialog(
+        onDismissRequest = onBatal,
+        title = { Text("Konfirmasi Timpa") },
+        text = {
+            Text("Item bernama '${permintaan.nama}' sudah ada di folder ini. Timpa item yang sudah ada?")
+        },
+        confirmButton = {
+            TextButton(onClick = { onKonfirmasi(permintaan) }) {
+                Text("Timpa", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onBatal) {
+                Text("Batal")
+            }
+        }
     )
 }
 
@@ -378,6 +472,8 @@ private fun MenuKonteksItemBerkas(
     kemampuan: ModelKemampuanUi,
     onTutup: () -> Unit,
     onPilih: () -> Unit,
+    onSalin: () -> Unit,
+    onPindah: () -> Unit,
     onBukaDengan: () -> Unit,
     onBagikan: () -> Unit,
     onGantiNama: () -> Unit,
@@ -392,31 +488,80 @@ private fun MenuKonteksItemBerkas(
             text = { Text("Pilih") },
             onClick = { onTutup(); onPilih() }
         )
+        MenuItemDenganAlasan(
+            judul = "Salin",
+            didukung = kemampuan.dapatSalin,
+            alasan = kemampuan.alasan(OperasiBerkas.MENYALIN),
+            onKlik = { onTutup(); onSalin() }
+        )
+        MenuItemDenganAlasan(
+            judul = "Pindah",
+            didukung = kemampuan.dapatPindah,
+            alasan = kemampuan.alasan(OperasiBerkas.MEMINDAHKAN),
+            onKlik = { onTutup(); onPindah() }
+        )
         if (!item.adalahFolder) {
-            DropdownMenuItem(
-                text = { Text("Buka Dengan...") },
-                enabled = kemampuan.dapatBukaDengan,
-                onClick = { onTutup(); onBukaDengan() }
+            MenuItemDenganAlasan(
+                judul = "Buka Dengan...",
+                didukung = kemampuan.dapatBukaDengan,
+                alasan = kemampuan.alasan(OperasiBerkas.MEMBUKA_DENGAN),
+                onKlik = { onTutup(); onBukaDengan() }
             )
-            DropdownMenuItem(
-                text = { Text("Bagikan") },
-                enabled = kemampuan.dapatBagikan,
-                onClick = { onTutup(); onBagikan() }
+            MenuItemDenganAlasan(
+                judul = "Bagikan",
+                didukung = kemampuan.dapatBagikan,
+                alasan = kemampuan.alasan(OperasiBerkas.MEMBAGIKAN),
+                onKlik = { onTutup(); onBagikan() }
             )
         }
-        DropdownMenuItem(
-            text = { Text("Ganti Nama") },
-            enabled = kemampuan.dapatGantiNama,
-            onClick = { onTutup(); onGantiNama() }
+        MenuItemDenganAlasan(
+            judul = "Ganti Nama",
+            didukung = kemampuan.dapatGantiNama,
+            alasan = kemampuan.alasan(OperasiBerkas.MENGGANTI_NAMA),
+            onKlik = { onTutup(); onGantiNama() }
         )
+        if (!kemampuan.dapatBuatTautanSimbolik) {
+            MenuItemDenganAlasan(
+                judul = "Buat Tautan Simbolik",
+                didukung = false,
+                alasan = kemampuan.alasan(OperasiBerkas.MEMBUAT_TAUTAN_SIMBOLIK),
+                onKlik = {}
+            )
+        }
         DropdownMenuItem(
             text = { Text("Properti") },
             onClick = { onTutup(); onProperti() }
         )
-        DropdownMenuItem(
-            text = { Text("Hapus") },
-            enabled = kemampuan.dapatHapus,
-            onClick = { onTutup(); onHapus() }
+        MenuItemDenganAlasan(
+            judul = "Hapus",
+            didukung = kemampuan.dapatHapus,
+            alasan = kemampuan.alasan(OperasiBerkas.MENGHAPUS),
+            onKlik = { onTutup(); onHapus() }
         )
     }
+}
+
+@Composable
+private fun MenuItemDenganAlasan(
+    judul: String,
+    didukung: Boolean,
+    alasan: String?,
+    onKlik: () -> Unit
+) {
+    DropdownMenuItem(
+        text = {
+            Column {
+                Text(judul)
+                if (!didukung && !alasan.isNullOrBlank()) {
+                    Text(
+                        text = alasan,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+            }
+        },
+        enabled = didukung,
+        onClick = onKlik
+    )
 }

@@ -60,24 +60,48 @@ fun LayarTerbaru(
                 .fillMaxSize()
                 .padding(bantalan)
         ) {
-            if (state.sedangMemuat || state.pesanGalat != null || state.daftarItem.isEmpty()) {
-                LayarStatusFilemanager(
-                    sedangMemuat = state.sedangMemuat,
-                    pesanGalat = state.pesanGalat,
-                    jumlahItem = state.jumlahItem,
-                    onMuatUlang = {}
-                )
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(
-                        items = state.daftarItem,
-                        key = { "${it.lokasi.jenis}_${it.lokasi.pengenal}" }
-                    ) { item ->
-                        ItemRiwayatBaris(
-                            item = item,
-                            onKlik = { onBukaLokasi(item.lokasi) },
-                            onHapus = { viewModel.prosesIntent(IntentTerbaru.HapusItem(item.lokasi)) }
+            when {
+                state.sedangMemuat || state.pesanGalat != null -> {
+                    LayarStatusFilemanager(
+                        sedangMemuat = state.sedangMemuat,
+                        pesanGalat = state.pesanGalat,
+                        jumlahItem = state.jumlahItem,
+                        onMuatUlang = { viewModel.prosesIntent(IntentTerbaru.Segarkan) }
+                    )
+                }
+                state.daftarItem.isEmpty() -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center
+                    ) {
+                        Text(
+                            text = "Belum Ada Riwayat Lokasi",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Folder yang Anda buka akan tampil di sini.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+                else -> {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(
+                            items = state.daftarItem,
+                            key = { "${it.lokasi.jenis}_${it.lokasi.pengenal}" }
+                        ) { item ->
+                            ItemRiwayatBaris(
+                                item = item,
+                                onKlik = { onBukaLokasi(item.lokasi) },
+                                onHapus = { viewModel.prosesIntent(IntentTerbaru.HapusItem(item.lokasi)) }
+                            )
+                        }
                     }
                 }
             }

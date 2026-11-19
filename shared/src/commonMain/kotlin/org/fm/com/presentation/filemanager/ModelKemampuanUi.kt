@@ -2,10 +2,8 @@ package org.fm.com.presentation.filemanager
 
 import org.fm.com.domain.model.KemampuanPenyimpanan
 import org.fm.com.domain.model.OperasiBerkas
+import org.fm.com.domain.usecase.KemampuanDipakaiUseCase
 
-/**
- * Model UI untuk mengaktifkan/menonaktifkan kontrol berdasarkan kapabilitas penyimpanan (PRD §4.1, §5.1).
- */
 data class ModelKemampuanUi(
     val dapatMembuat: Boolean = true,
     val dapatGantiNama: Boolean = true,
@@ -14,6 +12,7 @@ data class ModelKemampuanUi(
     val dapatPindah: Boolean = true,
     val dapatBagikan: Boolean = true,
     val dapatBukaDengan: Boolean = true,
+    val dapatBuatTautanSimbolik: Boolean = true,
     val dapatLihatPathPosix: Boolean = true,
     val alasanTidakDidukung: Map<OperasiBerkas, String> = emptyMap()
 ) {
@@ -22,27 +21,30 @@ data class ModelKemampuanUi(
     companion object {
         val DEFAULT = ModelKemampuanUi()
 
-        fun dari(kemampuan: KemampuanPenyimpanan?): ModelKemampuanUi {
+        fun dari(
+            kemampuan: KemampuanPenyimpanan?,
+            useCase: KemampuanDipakaiUseCase = KemampuanDipakaiUseCase()
+        ): ModelKemampuanUi {
             if (kemampuan == null) return DEFAULT
-
+            val statusPerOperasi = OperasiBerkas.entries.associateWith { useCase(kemampuan, it) }
             val alasanMap = buildMap {
-                for (op in OperasiBerkas.entries) {
-                    val alasan = kemampuan.alasan(op)
-                    if (alasan != null) {
+                for ((op, status) in statusPerOperasi) {
+                    val alasan = status.alasan
+                    if (!status.didukung && alasan != null) {
                         put(op, alasan)
                     }
                 }
             }
-
             return ModelKemampuanUi(
-                dapatMembuat = kemampuan.apakahDidukung(OperasiBerkas.MEMBUAT),
-                dapatGantiNama = kemampuan.apakahDidukung(OperasiBerkas.MENGGANTI_NAMA),
-                dapatHapus = kemampuan.apakahDidukung(OperasiBerkas.MENGHAPUS),
-                dapatSalin = kemampuan.apakahDidukung(OperasiBerkas.MENYALIN),
-                dapatPindah = kemampuan.apakahDidukung(OperasiBerkas.MEMINDAHKAN),
-                dapatBagikan = kemampuan.apakahDidukung(OperasiBerkas.MEMBAGIKAN),
-                dapatBukaDengan = kemampuan.apakahDidukung(OperasiBerkas.MEMBUKA_DENGAN),
-                dapatLihatPathPosix = kemampuan.apakahDidukung(OperasiBerkas.MELIHAT_PATH_POSIX),
+                dapatMembuat = statusPerOperasi.getValue(OperasiBerkas.MEMBUAT).didukung,
+                dapatGantiNama = statusPerOperasi.getValue(OperasiBerkas.MENGGANTI_NAMA).didukung,
+                dapatHapus = statusPerOperasi.getValue(OperasiBerkas.MENGHAPUS).didukung,
+                dapatSalin = statusPerOperasi.getValue(OperasiBerkas.MENYALIN).didukung,
+                dapatPindah = statusPerOperasi.getValue(OperasiBerkas.MEMINDAHKAN).didukung,
+                dapatBagikan = statusPerOperasi.getValue(OperasiBerkas.MEMBAGIKAN).didukung,
+                dapatBukaDengan = statusPerOperasi.getValue(OperasiBerkas.MEMBUKA_DENGAN).didukung,
+                dapatBuatTautanSimbolik = statusPerOperasi.getValue(OperasiBerkas.MEMBUAT_TAUTAN_SIMBOLIK).didukung,
+                dapatLihatPathPosix = statusPerOperasi.getValue(OperasiBerkas.MELIHAT_PATH_POSIX).didukung,
                 alasanTidakDidukung = alasanMap
             )
         }

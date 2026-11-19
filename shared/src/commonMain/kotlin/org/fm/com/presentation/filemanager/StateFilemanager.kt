@@ -1,5 +1,11 @@
+@file:OptIn(kotlin.time.ExperimentalTime::class)
+
 package org.fm.com.presentation.filemanager
 
+import kotlin.time.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.number
+import kotlinx.datetime.toLocalDateTime
 import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.JenisBerkas
 import org.fm.com.domain.model.KemampuanPenyimpanan
@@ -12,6 +18,18 @@ enum class ModeTampilan {
     DAFTAR,
     KISI
 }
+
+enum class JenisAksiTimpa {
+    BUAT_FOLDER,
+    BUAT_BERKAS,
+    GANTI_NAMA
+}
+
+data class PermintaanKonfirmasiTimpa(
+    val jenis: JenisAksiTimpa,
+    val nama: String,
+    val sumber: LokasiBerkas? = null
+)
 
 data class ItemBerkasUi(
     val lokasi: LokasiBerkas,
@@ -48,6 +66,7 @@ data class StateFilemanager(
     val dialogHapusItems: List<LokasiBerkas>? = null,
     val dialogBukaDenganItem: ItemBerkasUi? = null,
     val dialogBagikanItem: ItemBerkasUi? = null,
+    val konfirmasiTimpa: PermintaanKonfirmasiTimpa? = null,
     val dapatNavigasiKembali: Boolean = false
 ) {
     val jumlahItem: Int get() = daftarItem.size
@@ -74,6 +93,8 @@ sealed interface IntentFilemanager {
     data class BukaDialogProperti(val item: ItemBerkasUi?) : IntentFilemanager
     data class BukaDialogRename(val item: ItemBerkasUi?) : IntentFilemanager
     data class EksekusiRename(val sumber: LokasiBerkas, val namaBaru: String) : IntentFilemanager
+    data class KonfirmasiTimpaAksi(val permintaan: PermintaanKonfirmasiTimpa) : IntentFilemanager
+    data object TutupKonfirmasiTimpa : IntentFilemanager
     data class BukaDialogHapus(val items: List<LokasiBerkas>?) : IntentFilemanager
     data object EksekusiHapusTerpilih : IntentFilemanager
     data class BukaDialogBukaDengan(val item: ItemBerkasUi?) : IntentFilemanager
@@ -83,7 +104,6 @@ sealed interface IntentFilemanager {
 }
 
 object PemetaanDomainUi {
-
     fun EntitasBerkas.keUi(): ItemBerkasUi = ItemBerkasUi(
         lokasi = lokasi,
         nama = nama,
@@ -116,39 +136,12 @@ object PemetaanDomainUi {
 
     fun formatTanggal(epochMs: Long?): String {
         if (epochMs == null || epochMs <= 0L) return "-"
-        val totalDetik = epochMs / 1000
-        val detikPerHari = 86400L
-        var sisaHari = totalDetik / detikPerHari
-
-        var tahun = 1970
-        while (true) {
-            val kabisat = (tahun % 4 == 0 && tahun % 100 != 0) || (tahun % 400 == 0)
-            val hariDalamTahun = if (kabisat) 366 else 365
-            if (sisaHari >= hariDalamTahun) {
-                sisaHari -= hariDalamTahun
-                tahun++
-            } else {
-                break
-            }
-        }
-
-        val kabisat = (tahun % 4 == 0 && tahun % 100 != 0) || (tahun % 400 == 0)
-        val hariPerBulan = intArrayOf(31, if (kabisat) 29 else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
-        var bulan = 1
-        for (h in hariPerBulan) {
-            if (sisaHari >= h) {
-                sisaHari -= h
-                bulan++
-            } else {
-                break
-            }
-        }
-        val hari = sisaHari.toInt() + 1
-        val detikSisaHari = totalDetik % detikPerHari
-        val jam = (detikSisaHari / 3600).toInt()
-        val menit = ((detikSisaHari % 3600) / 60).toInt()
-
-        return "${tahun}-${duaDigit(bulan)}-${duaDigit(hari)} ${duaDigit(jam)}:${duaDigit(menit)}"
+        return runCatching {
+            val dt = Instant.fromEpochMilliseconds(epochMs)
+                .toLocalDateTime(TimeZone.currentSystemDefault())
+            "${dt.year}-${duaDigit(dt.month.number)}-${duaDigit(dt.day)} " +
+                "${duaDigit(dt.hour)}:${duaDigit(dt.minute)}"
+        }.getOrElse { "-" }
     }
 
     private fun duaDigit(angka: Int): String = if (angka < 10) "0$angka" else "$angka"

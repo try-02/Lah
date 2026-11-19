@@ -1,8 +1,6 @@
 package org.fm.com.presentation.filemanager
 
-import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -14,6 +12,7 @@ import androidx.compose.runtime.Composable
 @Composable
 fun BarAksiSeleksi(
     jumlahTerpilih: Int,
+    kemampuan: ModelKemampuanUi = ModelKemampuanUi.DEFAULT,
     onPilihSemua: () -> Unit,
     onBersihkanPilihan: () -> Unit,
     onAksiHapus: () -> Unit,
@@ -36,14 +35,21 @@ fun BarAksiSeleksi(
             TextButton(onClick = onPilihSemua) {
                 Text("Semua")
             }
-            IconButton(onClick = onAksiSalin) {
+            TextButton(onClick = onAksiSalin, enabled = kemampuan.dapatSalin) {
                 Text("Salin")
             }
-            IconButton(onClick = onAksiPindah) {
+            TextButton(onClick = onAksiPindah, enabled = kemampuan.dapatPindah) {
                 Text("Pindah")
             }
-            IconButton(onClick = onAksiHapus) {
-                Text("Hapus", color = MaterialTheme.colorScheme.error)
+            TextButton(onClick = onAksiHapus, enabled = kemampuan.dapatHapus) {
+                Text(
+                    "Hapus",
+                    color = if (kemampuan.dapatHapus) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.outline
+                    }
+                )
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
