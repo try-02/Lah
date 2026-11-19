@@ -42,7 +42,8 @@ jobs:
       - name: Build Android & host tests
         run: |
           chmod +x ./gradlew
-          ./gradlew :androidApp:assembleDebug :shared:testAndroidHostTest --stacktrace --console=plain
+          ./gradlew :shared:testAndroidHostTest --stacktrace --console=plain
+          ./gradlew :androidApp:assembleDebug --stacktrace --console=plain
           
       - name: Sign APK
         uses: r0adkll/sign-android-release@v1

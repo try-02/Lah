@@ -2,23 +2,19 @@ package org.fm.com.data.saf
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertIs
-import kotlinx.coroutines.test.runTest
 import org.fm.com.domain.io.PotonganIsi
-import org.fm.com.domain.model.HasilOperasi
-import org.fm.com.domain.model.PenyebabGalat
+import org.fm.com.domain.model.ValidasiNama
 
 class SafAliranTulisUji {
-
     @Test
     fun validasiNamaMencegahTraversalDanKarakterIlegal() {
-        assertEquals(false, org.fm.com.domain.model.ValidasiNama.sah(".."))
-        assertEquals(false, org.fm.com.domain.model.ValidasiNama.sah("."))
-        assertEquals(false, org.fm.com.domain.model.ValidasiNama.sah("folder/file.txt"))
-        assertEquals(false, org.fm.com.domain.model.ValidasiNama.sah("folder\\file.txt"))
-        assertEquals(false, org.fm.com.domain.model.ValidasiNama.sah("berkas\u0000.txt"))
-        assertEquals(false, org.fm.com.domain.model.ValidasiNama.sah("   "))
-        assertEquals(true, org.fm.com.domain.model.ValidasiNama.sah("catatan_2026.txt"))
+        assertEquals(false, ValidasiNama.sah(".."))
+        assertEquals(false, ValidasiNama.sah("."))
+        assertEquals(false, ValidasiNama.sah("folder/file.txt"))
+        assertEquals(false, ValidasiNama.sah("folder\\file.txt"))
+        assertEquals(false, ValidasiNama.sah("berkas\u0000.txt"))
+        assertEquals(false, ValidasiNama.sah("   "))
+        assertEquals(true, ValidasiNama.sah("catatan_2026.txt"))
     }
 
     @Test
@@ -27,5 +23,14 @@ class SafAliranTulisUji {
         val p2 = PotonganIsi("halo".encodeToByteArray(), selesai = false)
         assertEquals(p1, p2)
         assertEquals(p1.hashCode(), p2.hashCode())
+    }
+
+    @Test
+    fun pemetaanMimeTypeSafAkurat() {
+        assertEquals("text/plain", SafOperasiBerkas.tentukanMimeType("Main.kt"))
+        assertEquals("application/json", SafOperasiBerkas.tentukanMimeType("paket.JSON"))
+        assertEquals("application/zip", SafOperasiBerkas.tentukanMimeType("arsip.zip"))
+        assertEquals("application/octet-stream", SafOperasiBerkas.tentukanMimeType("tanpa_ekstensi"))
+        assertEquals("application/octet-stream", SafOperasiBerkas.tentukanMimeType(".gitignore"))
     }
 }

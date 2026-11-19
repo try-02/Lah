@@ -104,8 +104,14 @@ class ImplementasiRepositoriBerkas(
             }
         }
 
-    override suspend fun bukaUntukTulis(lokasi: LokasiBerkas, timpa: Boolean): HasilOperasi<SumberTulisBerkas> =
-        mutex.withLock {
+    // Perbarui bukaUntukTulis di ImplementasiRepositoriBerkas:
+    override suspend fun bukaUntukTulis(lokasi: LokasiBerkas, timpa: Boolean): HasilOperasi<SumberTulisBerkas> {
+        val namaSegmen = lokasi.label?.takeIf { it.isNotBlank() }
+            ?: lokasi.pengenal.trimEnd('/').substringAfterLast('/')
+        if (lokasi.pengenal == "/" || !ValidasiNama.sah(namaSegmen)) {
+            return HasilOperasi.Gagal("Lokasi tulis tidak sah: ${lokasi.pengenal}", PenyebabGalat.VALIDASI)
+        }
+        return mutex.withLock {
             val lama = kaset[lokasi.pengenal]
             when {
                 lama != null && lama.adalahFolder -> HasilOperasi.Gagal(
@@ -117,6 +123,7 @@ class ImplementasiRepositoriBerkas(
                 else -> HasilOperasi.Sukses(SumberMemoriTulis(this, lokasi, timpa, gagalTulisSetelahPotongan))
             }
         }
+    }
 
     override suspend fun bukaUntukTulisDi(
         induk: LokasiBerkas, nama: String, timpa: Boolean
@@ -334,6 +341,7 @@ private class SumberMemoriBaca(
  * Konflik diperiksa ulang atomik saat [selesai]. Gagal tulis → BATAL + bersih (terminal).
  * [batalkan] idempoten; tidak pernah mengubah hasil SELESAI.
  */
+// Perbarui SumberMemoriTulis di bagian bawah ImplementasiRepositoriBerkas.kt:
 private class SumberMemoriTulis(
     private val repo: ImplementasiRepositoriBerkas,
     private val lokasi: LokasiBerkas,
@@ -341,9 +349,10 @@ private class SumberMemoriTulis(
     private val gagalSetelahPotongan: Int?
 ) : SumberTulisBerkas {
     private enum class Status { AKTIF, SELESAI, BATAL }
-
     private val penampung = mutableListOf<ByteArray>()
     private var status = Status.AKTIF
+
+    override val lokasiTarget: LokasiBerkas = lokasi
 
     override suspend fun tulis(potongan: PotonganIsi): HasilOperasi<Unit> {
         if (status != Status.AKTIF) {

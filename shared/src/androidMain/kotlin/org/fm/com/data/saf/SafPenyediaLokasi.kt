@@ -210,25 +210,17 @@ class SafPenyediaLokasi(
 
     private fun ambilIzinPersisten(uriPohon: Uri, flagIzin: Int?): HasilOperasi<Unit> {
         val maskIzin = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        val flagsDiminta = if (flagIzin != null) {
-            val tersaring = flagIzin and maskIzin
-            if ((tersaring and Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0) {
-                tersaring
-            } else {
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            }
+        val flagsDariIntent = flagIzin?.let { it and maskIzin } ?: 0
+        val flagsDiminta = if (flagsDariIntent != 0) {
+            flagsDariIntent or Intent.FLAG_GRANT_READ_URI_PERMISSION
         } else {
             maskIzin
         }
-
         return try {
             contentResolver.takePersistableUriPermission(uriPohon, flagsDiminta)
             HasilOperasi.Sukses(Unit)
         } catch (e: SecurityException) {
-            // Sebagian penyedia / folder sistem hanya memberikan akses baca;
-            // coba simpan izin baca saja jika flag tulis ikut diminta tanpa intent flags.
-            val dapatFallbackBaca = flagIzin == null &&
-                (flagsDiminta and Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0
+            val dapatFallbackBaca = (flagsDiminta and Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0
             if (dapatFallbackBaca) {
                 try {
                     contentResolver.takePersistableUriPermission(

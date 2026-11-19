@@ -2,12 +2,18 @@ package org.fm.com.domain.usecase
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import org.fm.com.domain.io.SumberIsiBerkas
 import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.HasilOperasi
+import org.fm.com.domain.model.JenisBerkas
+import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.PenyebabGalat
+import org.fm.com.domain.model.ValidasiNama
 import org.fm.com.domain.repository.HasilItemGagal
 import org.fm.com.domain.repository.HasilMassal
 import org.fm.com.domain.repository.PermintaanOperasi
@@ -25,34 +31,27 @@ class SalinPindahkanBerkasUseCase(
         onProgres: (indeks: Int, total: Int, itemSaatIni: LokasiBerkas) -> Unit = { _, _, _ -> }
     ): HasilMassal {
         if (daftarSumber.isEmpty()) return HasilMassal.KOSONG
-
         val berhasil = mutableListOf<EntitasBerkas>()
         val gagal = mutableListOf<HasilItemGagal>()
         val total = daftarSumber.size
-
         for ((indeks, sumber) in daftarSumber.withIndex()) {
+            currentCoroutineContext().ensureActive()
             onProgres(indeks + 1, total, sumber)
-
             val hasil = if (sumber.jenis == tujuanInduk.jenis) {
-                // Coba native operasional via repositori
                 val permintaan = PermintaanOperasi(sumber = sumber, tujuan = tujuanInduk, konfirmasi = false)
                 val hasilNative = if (apakahPindah) {
                     repositoriOperasi.pindah(permintaan)
                 } else {
                     repositoriOperasi.salin(permintaan)
                 }
-
                 if (hasilNative is HasilOperasi.Gagal && hasilNative.penyebab == PenyebabGalat.TIDAK_DIDUKUNG) {
-                    // Fallback streaming jika adapter lokal tidak mendukung copy/move native
                     salinViaStreaming(sumber, tujuanInduk, apakahPindah)
                 } else {
                     hasilNative
                 }
             } else {
-                // Lintas jenis lokasi (K9): wajib streaming
                 salinViaStreaming(sumber, tujuanInduk, apakahPindah)
             }
-
             when (hasil) {
                 is HasilOperasi.Sukses -> berhasil.add(hasil.nilai)
                 is HasilOperasi.Gagal -> gagal.add(
@@ -60,87 +59,228 @@ class SalinPindahkanBerkasUseCase(
                 )
             }
         }
-
         return HasilMassal(berhasil = berhasil, gagal = gagal)
     }
 
     private suspend fun salinViaStreaming(
         sumber: LokasiBerkas,
         tujuanInduk: LokasiBerkas,
-        apakahPindah: Boolean
+        apakahPindah: Boolean,
+        namaEksplisit: String? = null,
+        folderTerbuatBaru: MutableSet<String> = mutableSetOf(),
+        dikunjungi: MutableSet<String> = mutableSetOf()
     ): HasilOperasi<EntitasBerkas> {
-        val namaTarget = sumber.label ?: sumber.pengenal.trimEnd('/').substringAfterLast('/')
-        if (namaTarget.isBlank()) {
-            return HasilOperasi.Gagal("Pengenal sumber tidak valid", PenyebabGalat.VALIDASI)
+        currentCoroutineContext().ensureActive()
+        val kunciKunjungan = "${sumber.jenis.name}:${sumber.pengenal}"
+        if (!dikunjungi.add(kunciKunjungan)) {
+            return HasilOperasi.Gagal("Terdeteksi siklus folder saat menyalin: ${sumber.pengenal}", PenyebabGalat.VALIDASI)
+        }
+        val namaTarget = namaEksplisit
+            ?: sumber.label?.takeIf { it.isNotBlank() }
+            ?: sumber.pengenal.trimEnd('/').substringAfterLast('/')
+        if (!ValidasiNama.sah(namaTarget)) {
+            return HasilOperasi.Gagal("Nama sumber tidak valid untuk disalin: $namaTarget", PenyebabGalat.VALIDASI)
         }
 
         val readerHasil = repositoriBerkas.bukaUntukBaca(sumber)
-        val reader = when (readerHasil) {
-            is HasilOperasi.Sukses -> readerHasil.nilai
-            is HasilOperasi.Gagal -> return readerHasil
+        if (readerHasil is HasilOperasi.Gagal) {
+            if (readerHasil.penyebab == PenyebabGalat.VALIDASI) {
+                return salinFolderViaStreaming(
+                    sumberFolder = sumber,
+                    namaFolder = namaTarget,
+                    tujuanInduk = tujuanInduk,
+                    apakahPindah = apakahPindah,
+                    folderTerbuatBaru = folderTerbuatBaru,
+                    dikunjungi = dikunjungi
+                )
+            }
+            return readerHasil
         }
 
+        val reader = (readerHasil as HasilOperasi.Sukses).nilai
         val writerHasil = repositoriBerkas.bukaUntukTulisDi(tujuanInduk, namaTarget, timpa = false)
         val writer = when (writerHasil) {
             is HasilOperasi.Sukses -> writerHasil.nilai
             is HasilOperasi.Gagal -> {
-                reader.tutup()
+                withContext(NonCancellable) { reader.tutup() }
                 return writerHasil
             }
         }
 
         var transferSukses = false
+        var gagalTransfer: HasilOperasi.Gagal? = null
+        var totalByte = 0L
         try {
             while (true) {
+                currentCoroutineContext().ensureActive()
                 when (val potonganHasil = reader.potongan()) {
                     is SumberIsiBerkas.HasilPotongan.Isi -> {
                         val p = potonganHasil.potongan
                         if (p.data.isNotEmpty()) {
                             val tulisHasil = writer.tulis(p)
                             if (tulisHasil is HasilOperasi.Gagal) {
-                                return tulisHasil
+                                gagalTransfer = tulisHasil
+                                break
                             }
+                            totalByte += p.data.size
                         }
                         if (p.selesai) break
                     }
                     is SumberIsiBerkas.HasilPotongan.Gagal -> {
-                        return HasilOperasi.Gagal(potonganHasil.pesan, PenyebabGalat.TIDAK_DIKETAHUI)
+                        gagalTransfer = HasilOperasi.Gagal(potonganHasil.pesan, PenyebabGalat.TIDAK_DIKETAHUI)
+                        break
                     }
                 }
             }
-            val finalHasil = writer.selesai()
-            if (finalHasil is HasilOperasi.Sukses) {
-                transferSukses = true
+            if (gagalTransfer == null) {
+                when (val finalHasil = writer.selesai()) {
+                    is HasilOperasi.Sukses -> transferSukses = true
+                    is HasilOperasi.Gagal -> gagalTransfer = finalHasil
+                }
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            return HasilOperasi.Gagal(e.message ?: "Kegagalan streaming", PenyebabGalat.TIDAK_DIKETAHUI)
+            gagalTransfer = HasilOperasi.Gagal(e.message ?: "Kegagalan streaming", PenyebabGalat.TIDAK_DIKETAHUI)
         } finally {
-            reader.tutup()
-            if (!transferSukses) {
-                withContext(NonCancellable) {
+            withContext(NonCancellable) {
+                reader.tutup()
+                if (!transferSukses) {
                     writer.batalkan()
                 }
             }
         }
 
+        if (gagalTransfer != null) {
+            return gagalTransfer
+        }
+
+        val lokasiHasil = writer.lokasiTarget
+            ?: return HasilOperasi.Gagal(
+                "Backend tulis tidak mengembalikan lokasi hasil",
+                PenyebabGalat.TIDAK_DIKETAHUI
+            )
+
         if (apakahPindah) {
             val hapusHasil = repositoriOperasi.hapus(PermintaanOperasi(sumber = sumber, konfirmasi = true))
             if (hapusHasil is HasilOperasi.Gagal) {
-                return HasilOperasi.Gagal("Berhasil disalin tetapi gagal menghapus sumber", hapusHasil.penyebab)
+                return HasilOperasi.Gagal(
+                    "Berhasil disalin tetapi gagal menghapus sumber: ${hapusHasil.pesan}",
+                    hapusHasil.penyebab
+                )
             }
         }
 
-        val entitasTujuan = EntitasBerkas(
-            lokasi = LokasiBerkas(
-                pengenal = "${tujuanInduk.pengenal.trimEnd('/')}/$namaTarget",
-                jenis = tujuanInduk.jenis,
-                label = namaTarget
-            ),
-            nama = namaTarget,
-            jenis = org.fm.com.domain.model.JenisBerkas.LAIN
+        return HasilOperasi.Sukses(
+            EntitasBerkas(
+                lokasi = lokasiHasil,
+                nama = lokasiHasil.label ?: namaTarget,
+                jenis = JenisBerkas.LAIN,
+                ukuranByte = totalByte
+            )
         )
-        return HasilOperasi.Sukses(entitasTujuan)
+    }
+
+    private suspend fun salinFolderViaStreaming(
+        sumberFolder: LokasiBerkas,
+        namaFolder: String,
+        tujuanInduk: LokasiBerkas,
+        apakahPindah: Boolean,
+        folderTerbuatBaru: MutableSet<String>,
+        dikunjungi: MutableSet<String>
+    ): HasilOperasi<EntitasBerkas> {
+        if (sumberFolder == tujuanInduk) {
+            return HasilOperasi.Gagal(
+                "Tidak bisa menyalin/memindah folder ke dalam dirinya sendiri",
+                PenyebabGalat.VALIDASI
+            )
+        }
+        if (sumberFolder.jenis == JenisLokasi.POSIX && tujuanInduk.jenis == JenisLokasi.POSIX) {
+            val awalanSumber = if (sumberFolder.pengenal.endsWith("/")) {
+                sumberFolder.pengenal
+            } else {
+                "${sumberFolder.pengenal}/"
+            }
+            if (tujuanInduk.pengenal.startsWith(awalanSumber)) {
+                return HasilOperasi.Gagal(
+                    "Tidak bisa menyalin/memindah folder ke dalam turunannya sendiri",
+                    PenyebabGalat.VALIDASI
+                )
+            }
+        }
+
+        val daftarAnakHasil = repositoriBerkas.daftarIsi(sumberFolder).first()
+        val daftarAnak = when (daftarAnakHasil) {
+            is HasilOperasi.Sukses -> daftarAnakHasil.nilai
+            is HasilOperasi.Gagal -> return daftarAnakHasil
+        }
+
+        for (anak in daftarAnak) {
+            if (anak.lokasi == tujuanInduk) {
+                return HasilOperasi.Gagal(
+                    "Tidak bisa menyalin/memindah folder ke dalam turunannya sendiri",
+                    PenyebabGalat.VALIDASI
+                )
+            }
+        }
+
+        val buatFolderHasil = repositoriOperasi.buatFolder(
+            PermintaanOperasi(sumber = tujuanInduk, namaBaru = namaFolder, konfirmasi = false)
+        )
+        val entitasFolderTujuan = when (buatFolderHasil) {
+            is HasilOperasi.Sukses -> buatFolderHasil.nilai
+            is HasilOperasi.Gagal -> return buatFolderHasil
+        }
+        folderTerbuatBaru.add("${entitasFolderTujuan.lokasi.jenis.name}:${entitasFolderTujuan.lokasi.pengenal}")
+
+        for (anak in daftarAnak) {
+            currentCoroutineContext().ensureActive()
+            val kunciAnak = "${anak.lokasi.jenis.name}:${anak.lokasi.pengenal}"
+            if (kunciAnak in folderTerbuatBaru) {
+                continue
+            }
+            if (anak.jenis == JenisBerkas.TAUTAN) {
+                return HasilOperasi.Gagal(
+                    "Salin streaming tidak mendukung tautan simbolik: ${anak.nama}",
+                    PenyebabGalat.TIDAK_DIDUKUNG
+                )
+            }
+            val hasilAnak = if (anak.jenis == JenisBerkas.FOLDER) {
+                salinFolderViaStreaming(
+                    sumberFolder = anak.lokasi,
+                    namaFolder = anak.nama,
+                    tujuanInduk = entitasFolderTujuan.lokasi,
+                    apakahPindah = false,
+                    folderTerbuatBaru = folderTerbuatBaru,
+                    dikunjungi = dikunjungi
+                )
+            } else {
+                salinViaStreaming(
+                    sumber = anak.lokasi,
+                    tujuanInduk = entitasFolderTujuan.lokasi,
+                    apakahPindah = false,
+                    namaEksplisit = anak.nama,
+                    folderTerbuatBaru = folderTerbuatBaru,
+                    dikunjungi = dikunjungi
+                )
+            }
+            if (hasilAnak is HasilOperasi.Gagal) {
+                return hasilAnak
+            }
+        }
+
+        if (apakahPindah) {
+            val hapusSumber = repositoriOperasi.hapus(
+                PermintaanOperasi(sumber = sumberFolder, konfirmasi = true)
+            )
+            if (hapusSumber is HasilOperasi.Gagal) {
+                return HasilOperasi.Gagal(
+                    "Folder berhasil disalin tetapi gagal menghapus sumber: ${hapusSumber.pesan}",
+                    hapusSumber.penyebab
+                )
+            }
+        }
+
+        return HasilOperasi.Sukses(entitasFolderTujuan)
     }
 }
