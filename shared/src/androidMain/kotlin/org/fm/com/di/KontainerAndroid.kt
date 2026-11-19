@@ -8,6 +8,7 @@ import org.fm.com.data.RepositoriRouterBerkas
 import org.fm.com.data.persistensi.DatabaseAplikasi
 import org.fm.com.data.persistensi.PenyediaDriverBasisDataAndroid
 import org.fm.com.data.persistensi.SqlDelightRepositoriRiwayatLokasi
+import org.fm.com.data.persistensi.SqlDelightRepositoriRiwayatPencarian
 import org.fm.com.data.persistensi.buatDatabaseAplikasi
 import org.fm.com.data.posix.PosixSumberDataPenyimpanan
 import org.fm.com.data.saf.SafPenyediaLokasi
@@ -19,6 +20,7 @@ import org.fm.com.domain.model.PlatformPenyimpanan
 import org.fm.com.domain.repository.RepositoriBerkas
 import org.fm.com.domain.repository.RepositoriOperasiBerkas
 import org.fm.com.domain.repository.RepositoriRiwayatLokasi
+import org.fm.com.domain.repository.RepositoriRiwayatPencarian
 import org.fm.com.presentation.filemanager.AksiPlatformBerkasAndroid
 import org.koin.dsl.module
 
@@ -28,6 +30,7 @@ class KontainerAndroid internal constructor(
     val safPenyediaLokasi: SafPenyediaLokasi,
     val routerBerkas: RepositoriRouterBerkas,
     val repositoriRiwayat: RepositoriRiwayatLokasi,
+    val repositoriRiwayatPencarian: RepositoriRiwayatPencarian,
     val lokasiRuangKerja: LokasiBerkas
 ) {
     suspend fun muatLokasiAwal(): LokasiBerkas = withContext(Dispatchers.IO) {
@@ -59,6 +62,7 @@ class KontainerAndroid internal constructor(
             single<RepositoriBerkas> { routerBerkas }
             single<RepositoriOperasiBerkas> { routerBerkas }
             single<RepositoriRiwayatLokasi> { repositoriRiwayat }
+            single<RepositoriRiwayatPencarian> { repositoriRiwayatPencarian }
         }
     )
 }
@@ -68,6 +72,7 @@ fun buatKontainerAndroid(context: Context): KontainerAndroid {
     val driver = PenyediaDriverBasisDataAndroid(appContext).buatDriver()
     val database = buatDatabaseAplikasi(driver)
     val repoRiwayat = SqlDelightRepositoriRiwayatLokasi(database)
+    val repoRiwayatPencarian = SqlDelightRepositoriRiwayatPencarian(database)
     val safPenyediaLokasi = SafPenyediaLokasi(appContext)
     val router = RepositoriRouterBerkas(
         mapOf(
@@ -92,6 +97,7 @@ fun buatKontainerAndroid(context: Context): KontainerAndroid {
         safPenyediaLokasi = safPenyediaLokasi,
         routerBerkas = router,
         repositoriRiwayat = repoRiwayat,
+        repositoriRiwayatPencarian = repoRiwayatPencarian,
         lokasiRuangKerja = lokasiRuangKerja
     )
 }

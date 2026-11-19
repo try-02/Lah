@@ -14,6 +14,7 @@ import org.fm.com.data.ios.PenyimpanBookmarkKeamanan
 import org.fm.com.data.persistensi.DatabaseAplikasi
 import org.fm.com.data.persistensi.PenyediaDriverBasisDataIos
 import org.fm.com.data.persistensi.SqlDelightRepositoriRiwayatLokasi
+import org.fm.com.data.persistensi.SqlDelightRepositoriRiwayatPencarian
 import org.fm.com.data.persistensi.buatDatabaseAplikasi
 import org.fm.com.data.posix.PosixSumberDataPenyimpanan
 import org.fm.com.domain.model.HasilOperasi
@@ -23,6 +24,7 @@ import org.fm.com.domain.model.PlatformPenyimpanan
 import org.fm.com.domain.repository.RepositoriBerkas
 import org.fm.com.domain.repository.RepositoriOperasiBerkas
 import org.fm.com.domain.repository.RepositoriRiwayatLokasi
+import org.fm.com.domain.repository.RepositoriRiwayatPencarian
 import org.fm.com.presentation.filemanager.AksiPlatformBerkasIos
 import org.koin.dsl.module
 import platform.Foundation.NSDocumentDirectory
@@ -36,6 +38,7 @@ class KontainerIos internal constructor(
     val database: DatabaseAplikasi,
     val routerBerkas: RepositoriRouterBerkas,
     val repositoriRiwayat: RepositoriRiwayatLokasi,
+    val repositoriRiwayatPencarian: RepositoriRiwayatPencarian,
     val lokasiDokumenApp: LokasiBerkas
 ) {
     suspend fun simpanBookmarkLokasi(lokasi: LokasiBerkas, bookmarkBase64: String?) = withContext(Dispatchers.IO) {
@@ -80,6 +83,7 @@ class KontainerIos internal constructor(
             single<RepositoriBerkas> { routerBerkas }
             single<RepositoriOperasiBerkas> { routerBerkas }
             single<RepositoriRiwayatLokasi> { repositoriRiwayat }
+            single<RepositoriRiwayatPencarian> { repositoriRiwayatPencarian }
         }
     )
 }
@@ -88,6 +92,7 @@ fun buatKontainerIos(): KontainerIos {
     val driver = PenyediaDriverBasisDataIos().buatDriver()
     val database = buatDatabaseAplikasi(driver)
     val repoRiwayat = SqlDelightRepositoriRiwayatLokasi(database)
+    val repoRiwayatPencarian = SqlDelightRepositoriRiwayatPencarian(database)
     val router = RepositoriRouterBerkas(
         mapOf(
             JenisLokasi.IOS to IosSumberDataPenyimpanan(),
@@ -108,6 +113,7 @@ fun buatKontainerIos(): KontainerIos {
         database = database,
         routerBerkas = router,
         repositoriRiwayat = repoRiwayat,
+        repositoriRiwayatPencarian = repoRiwayatPencarian,
         lokasiDokumenApp = lokasiDokumen
     )
 }

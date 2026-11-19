@@ -1,0 +1,35 @@
+import kotlin.Boolean;
+
+CREATE TABLE riwayatPencarianEntity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    kueri TEXT NOT NULL,
+    peka_huruf INTEGER AS Boolean NOT NULL DEFAULT 0,
+    kata_utuh INTEGER AS Boolean NOT NULL DEFAULT 0,
+    regex INTEGER AS Boolean NOT NULL DEFAULT 0,
+    waktu_terakhir_dipakai INTEGER NOT NULL,
+    CONSTRAINT unik_kueri_pencarian UNIQUE (kueri)
+);
+
+semuaRiwayatPencarian:
+SELECT *
+FROM riwayatPencarianEntity
+ORDER BY waktu_terakhir_dipakai DESC
+LIMIT :batas;
+
+tambahAtauPerbaruiPencarian:
+INSERT OR REPLACE INTO riwayatPencarianEntity (
+    kueri,
+    peka_huruf,
+    kata_utuh,
+    regex,
+    waktu_terakhir_dipakai
+) VALUES (
+    ?, ?, ?, ?, ?
+);
+
+hapusRiwayatPencarian:
+DELETE FROM riwayatPencarianEntity
+WHERE kueri = :kueri;
+
+hapusSemuaRiwayatPencarian:
+DELETE FROM riwayatPencarianEntity;

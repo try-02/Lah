@@ -105,6 +105,11 @@ fun LayarEditor(
                 actions = {
                     if (tabAktif != null && tabAktif.statusMuat == StatusMuatTab.SIAP) {
                         TextButton(
+                            onClick = { viewModel.prosesIntent(IntentEditor.SetBukaDialogCariGanti(true)) }
+                        ) {
+                            Text("Cari")
+                        }
+                        TextButton(
                             onClick = { viewModel.prosesIntent(IntentEditor.Undo(tabAktif.idTab)) },
                             enabled = tabAktif.dapatUndo && tabAktif.dapatDiedit
                         ) {
@@ -124,6 +129,13 @@ fun LayarEditor(
                                 expanded = menuTerbuka,
                                 onDismissRequest = { menuTerbuka = false }
                             ) {
+                                DropdownMenuItem(
+                                    text = { Text("Cari & Ganti...") },
+                                    onClick = {
+                                        menuTerbuka = false
+                                        viewModel.prosesIntent(IntentEditor.SetBukaDialogCariGanti(true))
+                                    }
+                                )
                                 DropdownMenuItem(
                                     text = { Text("Lompat ke Baris...") },
                                     onClick = {
@@ -263,9 +275,9 @@ fun LayarEditor(
                             ) {
                                 Text(
                                     text = if (tabAktif.hanyaBacaPermanen) {
-                                        "Mode Hanya Baca (berkas/penyimpanan tak dapat ditulis) — seleksi & salin tetap aktif"
+                                        "Mode Hanya Baca (berkas/penyimpanan tak dapat ditulis) — seleksi, salin & cari tetap aktif"
                                     } else {
-                                        "Mode Hanya Baca aktif — seleksi & salin tetap tersedia"
+                                        "Mode Hanya Baca aktif — seleksi, salin & cari tetap tersedia"
                                     },
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -277,11 +289,11 @@ fun LayarEditor(
                         AreaTeksEditor(
                             tab = tabAktif,
                             wordWrapAktif = tabAktif.wordWrapEfektif(state.wordWrapUmum),
-                            onUbahTeks = { teksBaru, kursor ->
-                                viewModel.prosesIntent(IntentEditor.UbahTeks(tabAktif.idTab, teksBaru, kursor))
+                            onUbahTeks = { teksBaru, awal, akhir ->
+                                viewModel.prosesIntent(IntentEditor.UbahTeks(tabAktif.idTab, teksBaru, awal, akhir))
                             },
-                            onUbahKursor = { kursor ->
-                                viewModel.prosesIntent(IntentEditor.UbahPosisiKursor(tabAktif.idTab, kursor))
+                            onUbahKursor = { awal, akhir ->
+                                viewModel.prosesIntent(IntentEditor.UbahPosisiKursor(tabAktif.idTab, awal, akhir))
                             },
                             modifier = Modifier.weight(1f).fillMaxWidth()
                         )
@@ -309,6 +321,28 @@ fun LayarEditor(
                 viewModel.prosesIntent(IntentEditor.LompatKeBaris(tabAktif.idTab, nomor))
             },
             onTutup = { viewModel.prosesIntent(IntentEditor.SetBukaDialogLompatBaris(false)) }
+        )
+
+        DialogCariGanti(
+            state = state.cariGanti,
+            teksDokumen = tabAktif.isiSaatIni,
+            modeHanyaBaca = tabAktif.modeHanyaBaca,
+            riwayatPencarian = state.riwayatPencarian,
+            onUbahKueriCari = { viewModel.prosesIntent(IntentEditor.UbahKueriCari(it)) },
+            onUbahTeksPengganti = { viewModel.prosesIntent(IntentEditor.UbahTeksPengganti(it)) },
+            onTogglePekaHuruf = { viewModel.prosesIntent(IntentEditor.TogglePekaHurufCari) },
+            onToggleKataUtuh = { viewModel.prosesIntent(IntentEditor.ToggleKataUtuhCari) },
+            onToggleRegex = { viewModel.prosesIntent(IntentEditor.ToggleRegexCari) },
+            onCariSebelumnya = { viewModel.prosesIntent(IntentEditor.CariSebelumnya) },
+            onCariBerikutnya = { viewModel.prosesIntent(IntentEditor.CariBerikutnya) },
+            onGantiSatu = { viewModel.prosesIntent(IntentEditor.GantiSatu) },
+            onMintaGantiSemua = { viewModel.prosesIntent(IntentEditor.MintaGantiSemua) },
+            onKonfirmasiGantiSemua = { viewModel.prosesIntent(IntentEditor.KonfirmasiGantiSemua) },
+            onBatalGantiSemua = { viewModel.prosesIntent(IntentEditor.BatalGantiSemua) },
+            onPilihRiwayat = { viewModel.prosesIntent(IntentEditor.PilihRiwayatPencarian(it)) },
+            onHapusItemRiwayat = { viewModel.prosesIntent(IntentEditor.HapusItemRiwayatPencarian(it)) },
+            onHapusSemuaRiwayat = { viewModel.prosesIntent(IntentEditor.BersihkanRiwayatPencarian) },
+            onTutup = { viewModel.prosesIntent(IntentEditor.SetBukaDialogCariGanti(false)) }
         )
     }
 
@@ -388,8 +422,8 @@ private fun BarTabEditor(
 private fun AreaTeksEditor(
     tab: ModelTabEditor,
     wordWrapAktif: Boolean,
-    onUbahTeks: (String, Int) -> Unit,
-    onUbahKursor: (Int) -> Unit,
+    onUbahTeks: (String, Int, Int) -> Unit,
+    onUbahKursor: (Int, Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scrollVertikal = rememberScrollState()
@@ -401,20 +435,31 @@ private fun AreaTeksEditor(
         mutableStateOf(
             TextFieldValue(
                 text = tab.isiSaatIni,
-                selection = TextRange(tab.posisiKursor.indeksKarakter.coerceIn(0, tab.isiSaatIni.length))
+                selection = TextRange(
+                    tab.posisiKursor.indeksKarakter.coerceIn(0, tab.isiSaatIni.length),
+                    tab.posisiKursor.indeksAkhirSeleksi.coerceIn(0, tab.isiSaatIni.length)
+                )
             )
         )
     }
 
-    LaunchedEffect(tab.idTab, tab.isiSaatIni, tab.urutanNavigasiKursor) {
-        val targetKursor = tab.posisiKursor.indeksKarakter.coerceIn(0, tab.isiSaatIni.length)
+    LaunchedEffect(
+        tab.idTab,
+        tab.isiSaatIni,
+        tab.urutanNavigasiKursor,
+        tab.posisiKursor.indeksKarakter,
+        tab.posisiKursor.indeksAkhirSeleksi
+    ) {
+        val targetAwal = tab.posisiKursor.indeksKarakter.coerceIn(0, tab.isiSaatIni.length)
+        val targetAkhir = tab.posisiKursor.indeksAkhirSeleksi.coerceIn(0, tab.isiSaatIni.length)
+        val targetRange = TextRange(targetAwal, targetAkhir)
         if (tfv.text != tab.isiSaatIni) {
             tfv = TextFieldValue(
                 text = tab.isiSaatIni,
-                selection = TextRange(targetKursor)
+                selection = targetRange
             )
-        } else if (tab.urutanNavigasiKursor > 0L && tfv.selection.start != targetKursor) {
-            tfv = tfv.copy(selection = TextRange(targetKursor))
+        } else if (tab.urutanNavigasiKursor > 0L && tfv.selection != targetRange) {
+            tfv = tfv.copy(selection = targetRange)
         }
     }
 
@@ -425,6 +470,13 @@ private fun AreaTeksEditor(
         val barisVisual = layout.getLineForOffset(offset)
         val topY = layout.getLineTop(barisVisual).toInt()
         scrollVertikal.animateScrollTo((topY - 80).coerceAtLeast(0))
+
+        if (!wordWrapAktif) {
+            runCatching {
+                val rect = layout.getCursorRect(offset)
+                scrollHorizontal.animateScrollTo((rect.left - 80f).toInt().coerceAtLeast(0))
+            }
+        }
     }
 
     val paddingAtasDp = 10.dp
@@ -470,15 +522,15 @@ private fun AreaTeksEditor(
                         val pilihanBaru = nilaiBaru.selection
                         if (tfv.selection != pilihanBaru) {
                             tfv = tfv.copy(selection = pilihanBaru)
-                            onUbahKursor(pilihanBaru.start)
+                            onUbahKursor(pilihanBaru.start, pilihanBaru.end)
                         }
                     } else {
                         val teksBerubah = nilaiBaru.text != tfv.text
                         tfv = nilaiBaru
                         if (teksBerubah) {
-                            onUbahTeks(nilaiBaru.text, nilaiBaru.selection.start)
+                            onUbahTeks(nilaiBaru.text, nilaiBaru.selection.start, nilaiBaru.selection.end)
                         } else {
-                            onUbahKursor(nilaiBaru.selection.start)
+                            onUbahKursor(nilaiBaru.selection.start, nilaiBaru.selection.end)
                         }
                     }
                 },

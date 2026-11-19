@@ -4,12 +4,15 @@ import kotlinx.coroutines.runBlocking
 import org.fm.com.data.DataBerkas
 import org.fm.com.data.SumberMemoriPenyimpanan
 import org.fm.com.data.persistensi.MemoriRepositoriRiwayatLokasi
+import org.fm.com.data.persistensi.MemoriRepositoriRiwayatPencarian
 import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.repository.RepositoriBerkas
 import org.fm.com.domain.repository.RepositoriOperasiBerkas
 import org.fm.com.domain.repository.RepositoriRiwayatLokasi
+import org.fm.com.domain.repository.RepositoriRiwayatPencarian
 import org.fm.com.domain.usecase.RiwayatLokasiUseCase
+import org.fm.com.domain.usecase.RiwayatPencarianUseCase
 import org.fm.com.presentation.filemanager.AksiPlatformBerkas
 import org.fm.com.presentation.filemanager.AksiPlatformBerkasBawaan
 import org.koin.core.module.Module
@@ -21,6 +24,8 @@ data class KontainerAplikasi(
     val repositoriOperasi: RepositoriOperasiBerkas,
     val repositoriRiwayat: RepositoriRiwayatLokasi,
     val riwayatLokasiUseCase: RiwayatLokasiUseCase,
+    val repositoriRiwayatPencarian: RepositoriRiwayatPencarian,
+    val riwayatPencarianUseCase: RiwayatPencarianUseCase,
     val lokasiAwal: LokasiBerkas,
     val lokasiPintasan: List<LokasiBerkas> = listOf(lokasiAwal),
     val aksiPlatform: AksiPlatformBerkas = AksiPlatformBerkasBawaan(),
@@ -39,6 +44,7 @@ fun buatKontainerAplikasi(
             modulPlatform,
             module {
                 single { RiwayatLokasiUseCase(get()) }
+                single { RiwayatPencarianUseCase(get()) }
             }
         )
     }
@@ -48,6 +54,8 @@ fun buatKontainerAplikasi(
         repositoriOperasi = koin.get(),
         repositoriRiwayat = koin.get(),
         riwayatLokasiUseCase = koin.get(),
+        repositoriRiwayatPencarian = koin.get(),
+        riwayatPencarianUseCase = koin.get(),
         lokasiAwal = lokasiAwal,
         lokasiPintasan = lokasiPintasan,
         aksiPlatform = aksiPlatform,
@@ -78,6 +86,7 @@ fun buatKontainerPreview(): KontainerAplikasi {
             single<RepositoriBerkas> { storage }
             single<RepositoriOperasiBerkas> { storage }
             single<RepositoriRiwayatLokasi> { MemoriRepositoriRiwayatLokasi() }
+            single<RepositoriRiwayatPencarian> { MemoriRepositoriRiwayatPencarian() }
         }
     )
 }

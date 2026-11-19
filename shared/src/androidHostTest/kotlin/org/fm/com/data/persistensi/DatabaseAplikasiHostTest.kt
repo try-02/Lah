@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.runTest
 import org.fm.com.domain.model.EntitasRiwayatLokasi
 import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.LokasiBerkas
+import org.fm.com.domain.model.EntitasRiwayatPencarian
 
 class DatabaseAplikasiHostTest {
     @Test
@@ -75,6 +76,32 @@ class DatabaseAplikasiHostTest {
         assertEquals(listOf("/sdcard/Kerja"), emisi[1].map { it.lokasi.pengenal })
         assertEquals(0, emisi[2].size)
         assertEquals(0, repo.daftarRiwayat(10).first().size)
+        driver.close()
+    }
+
+    @Test
+    fun sqlDelightRepositoriRiwayatPencarianReaktifDanUnik() = runTest {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        DatabaseAplikasi.Schema.create(driver)
+        val db = buatDatabaseAplikasi(driver)
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val repo = SqlDelightRepositoriRiwayatPencarian(db, ioDispatcher = dispatcher)
+
+        val emisi = mutableListOf<List<EntitasRiwayatPencarian>>()
+        val job = backgroundScope.launch(dispatcher) {
+            repo.daftarRiwayat(10).take(4).toList(emisi)
+        }
+
+        repo.catatPencarian(EntitasRiwayatPencarian("cariA", pekaHuruf = true, waktuTerakhirDipakaiEpochMs = 100L))
+        repo.catatPencarian(EntitasRiwayatPencarian("cariA", pekaHuruf = false, gunakanRegex = true, waktuTerakhirDipakaiEpochMs = 200L))
+        repo.hapusSemua()
+
+        job.join()
+        assertEquals(4, emisi.size)
+        assertEquals(0, emisi[0].size)
+        assertEquals(listOf("cariA"), emisi[1].map { it.kueri })
+        assertEquals(true, emisi[2].first().gunakanRegex)
+        assertEquals(0, emisi[3].size)
         driver.close()
     }
 }

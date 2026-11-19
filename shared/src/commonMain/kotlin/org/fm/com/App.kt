@@ -3,26 +3,31 @@ package org.fm.com
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import org.fm.com.di.KontainerAplikasi
 import org.fm.com.di.buatKontainerPreview
+import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.LokasiBerkas
+import org.fm.com.presentation.editor.IntentEditor
+import org.fm.com.presentation.editor.LayarEditor
+import org.fm.com.presentation.editor.ViewModelEditor
 import org.fm.com.presentation.filemanager.DaftarBerkasLayar
 import org.fm.com.presentation.filemanager.IntentFilemanager
 import org.fm.com.presentation.filemanager.ViewModelFilemanager
@@ -61,8 +66,15 @@ fun App(
         val vmTerbaru: ViewModelTerbaru = viewModel(key = "terbaru_$kunciKontainer") {
             ViewModelTerbaru(kontainer.riwayatLokasiUseCase)
         }
+        val vmEditor: ViewModelEditor = viewModel(key = "editor_$kunciKontainer") {
+            ViewModelEditor(
+                repositoriBerkas = kontainer.repositoriBerkas,
+                riwayatPencarianUseCase = kontainer.riwayatPencarianUseCase
+            )
+        }
 
         var tabTerpilih by remember { mutableIntStateOf(0) }
+        var ruangEditorTerbuka by remember { mutableStateOf(false) }
 
         LaunchedEffect(kontainer) {
             val lokasiSiap = onSiapkanAksesLokasi?.invoke(kontainer.lokasiAwal) ?: kontainer.lokasiAwal
@@ -72,6 +84,7 @@ fun App(
         LaunchedEffect(permintaanBukaEksternal?.id) {
             val lokasi = permintaanBukaEksternal?.lokasi ?: return@LaunchedEffect
             val lokasiSiap = onSiapkanAksesLokasi?.invoke(lokasi) ?: lokasi
+            ruangEditorTerbuka = false
             tabTerpilih = 0
             vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasiSiap))
         }
@@ -81,59 +94,73 @@ fun App(
             vmFilemanager.prosesIntent(IntentFilemanager.SetPesanInfo(pesan))
         }
 
-        Scaffold(
-            bottomBar = {
-                NavigationBar {
-                    NavigationBarItem(
-                        selected = tabTerpilih == 0,
-                        onClick = { tabTerpilih = 0 },
-                        label = { Text("Berkas") },
-                        icon = { Text("📁") }
-                    )
-                    NavigationBarItem(
-                        selected = tabTerpilih == 1,
-                        onClick = { tabTerpilih = 1 },
-                        label = { Text("Terbaru") },
-                        icon = { Text("🕒") }
-                    )
+        if (ruangEditorTerbuka) {
+            LayarEditor(
+                viewModel = vmEditor,
+                onKembali = { ruangEditorTerbuka = false }
+            )
+        } else {
+            Scaffold(
+                bottomBar = {
+                    NavigationBar {
+                        NavigationBarItem(
+                            selected = tabTerpilih == 0,
+                            onClick = { tabTerpilih = 0 },
+                            label = { Text("Berkas") },
+                            icon = { Text("📁") }
+                        )
+                        NavigationBarItem(
+                            selected = tabTerpilih == 1,
+                            onClick = { tabTerpilih = 1 },
+                            label = { Text("Terbaru") },
+                            icon = { Text("🕒") }
+                        )
+                    }
                 }
-            }
-        ) { bantalan ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bantalan)
-            ) {
-                if (tabTerpilih == 0) {
-                    DaftarBerkasLayar(
-                        viewModel = vmFilemanager,
-                        viewModelOperasiMassal = vmOperasiMassal,
-                        aksiPlatform = kontainer.aksiPlatform,
-                        onBukaBerkas = { item ->
-                            vmFilemanager.prosesIntent(
-                                IntentFilemanager.SetPesanInfo("Membuka ${item.nama} (${item.jenis.name})")
-                            )
-                        },
-                        onPilihFolder = onPilihFolder,
-                        lokasiPintasan = lokasiPintasan,
-                        onPilihLokasiPintasan = { lokasi ->
-                            scope.launch {
-                                val lokasiSiap = onSiapkanAksesLokasi?.invoke(lokasi) ?: lokasi
-                                vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasiSiap))
+            ) { bantalan ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bantalan)
+                ) {
+                    if (tabTerpilih == 0) {
+                        DaftarBerkasLayar(
+                            viewModel = vmFilemanager,
+                            viewModelOperasiMassal = vmOperasiMassal,
+                            aksiPlatform = kontainer.aksiPlatform,
+                            onBukaBerkas = { item ->
+                                val entitas = EntitasBerkas(
+                                    lokasi = item.lokasi,
+                                    nama = item.nama,
+                                    jenis = item.jenis,
+                                    tersembunyi = item.tersembunyi,
+                                    dapatDibaca = item.dapatDibaca,
+                                    dapatDitulis = item.dapatDitulis
+                                )
+                                vmEditor.prosesIntent(IntentEditor.BukaBerkas(entitas))
+                                ruangEditorTerbuka = true
+                            },
+                            onPilihFolder = onPilihFolder,
+                            lokasiPintasan = lokasiPintasan,
+                            onPilihLokasiPintasan = { lokasi ->
+                                scope.launch {
+                                    val lokasiSiap = onSiapkanAksesLokasi?.invoke(lokasi) ?: lokasi
+                                    vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasiSiap))
+                                }
                             }
-                        }
-                    )
-                } else {
-                    LayarTerbaru(
-                        viewModel = vmTerbaru,
-                        onBukaLokasi = { lokasi ->
-                            scope.launch {
-                                val lokasiSiap = onSiapkanAksesLokasi?.invoke(lokasi) ?: lokasi
-                                tabTerpilih = 0
-                                vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasiSiap))
+                        )
+                    } else {
+                        LayarTerbaru(
+                            viewModel = vmTerbaru,
+                            onBukaLokasi = { lokasi ->
+                                scope.launch {
+                                    val lokasiSiap = onSiapkanAksesLokasi?.invoke(lokasi) ?: lokasi
+                                    tabTerpilih = 0
+                                    vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasiSiap))
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }

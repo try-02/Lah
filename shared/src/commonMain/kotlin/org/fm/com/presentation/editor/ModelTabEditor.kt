@@ -15,8 +15,18 @@ enum class StatusMuatTab {
 data class PosisiKursor(
     val baris: Int = 1,
     val kolom: Int = 1,
-    val indeksKarakter: Int = 0
-)
+    val indeksKarakter: Int = 0,
+    val indeksAkhirSeleksi: Int = indeksKarakter
+) {
+    val adaSeleksi: Boolean
+        get() = indeksAkhirSeleksi != indeksKarakter
+
+    val awalRentang: Int
+        get() = minOf(indeksKarakter, indeksAkhirSeleksi)
+
+    val akhirRentang: Int
+        get() = maxOf(indeksKarakter, indeksAkhirSeleksi)
+}
 
 data class ModelTabEditor(
     val idTab: String,

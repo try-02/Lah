@@ -23,6 +23,8 @@ import org.fm.com.domain.model.JenisBerkas
 import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.usecase.BukaBerkasTeksUseCase
+import org.fm.com.data.persistensi.MemoriRepositoriRiwayatPencarian
+import org.fm.com.domain.usecase.RiwayatPencarianUseCase
 
 class ViewModelEditorTest {
     @BeforeTest
@@ -35,7 +37,9 @@ class ViewModelEditorTest {
         Dispatchers.resetMain()
     }
 
-    private fun buatVm(repo: ImplementasiRepositoriBerkas): ViewModelEditor {
+    private fun buatVm(repo: ImplementasiRepositoriBerkas,
+        riwayatPencarianUseCase: RiwayatPencarianUseCase? = null
+    ): ViewModelEditor {
         val dispatcher = UnconfinedTestDispatcher()
         return ViewModelEditor(
             repositoriBerkas = repo,
@@ -43,7 +47,8 @@ class ViewModelEditorTest {
                 repositoriBerkas = repo,
                 ioDispatcher = dispatcher,
                 computeDispatcher = dispatcher
-            )
+            ),
+            riwayatPencarianUseCase = riwayatPencarianUseCase
         )
     }
 
@@ -236,5 +241,75 @@ class ViewModelEditorTest {
         assertEquals(1, cariNomorBarisLogis(indeks, 3))
         assertEquals(2, cariNomorBarisLogis(indeks, 5))
         assertEquals(3, cariNomorBarisLogis(indeks, 9))
+    }
+
+    @Test
+    fun cariDanGantiKonfirmasiMassalSertaModeHanyaBacaBekerja() = runTest {
+        val repo = ImplementasiRepositoriBerkas()
+        val repoRiwayat = MemoriRepositoriRiwayatPencarian()
+        val riwayatUc = RiwayatPencarianUseCase(repoRiwayat)
+        repo.simpan(
+            DataBerkas("/cari.txt", "cari.txt", JenisLokasi.POSIX, adalahFolder = false),
+            "satu apel\ndua apel\ntiga apel".encodeToByteArray()
+        )
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val vm = ViewModelEditor(
+            repositoriBerkas = repo,
+            bukaBerkasTeksUseCase = BukaBerkasTeksUseCase(repo, ioDispatcher = dispatcher, computeDispatcher = dispatcher),
+            riwayatPencarianUseCase = riwayatUc,
+            computeDispatcher = dispatcher
+        )
+
+        vm.prosesIntent(IntentEditor.BukaLokasi(LokasiBerkas("/cari.txt", JenisLokasi.POSIX, "cari.txt")))
+        vm.state.first { it.tabAktif?.statusMuat == StatusMuatTab.SIAP }
+
+        vm.prosesIntent(IntentEditor.SetBukaDialogCariGanti(true))
+        vm.prosesIntent(IntentEditor.UbahKueriCari("apel"))
+        vm.state.first { it.cariGanti.jumlahKecocokan == 3 }
+        assertEquals(0, vm.state.value.cariGanti.indeksKecocokanAktif)
+        assertEquals(5, vm.state.value.tabAktif!!.posisiKursor.awalRentang)
+        assertEquals(9, vm.state.value.tabAktif!!.posisiKursor.akhirRentang)
+
+        vm.prosesIntent(IntentEditor.CariBerikutnya)
+        assertEquals(1, vm.state.value.cariGanti.indeksKecocokanAktif)
+        assertEquals(2, vm.state.value.tabAktif!!.posisiKursor.baris)
+
+        // Riwayat pencarian tercatat otomatis
+        val riwayat = vm.state.first { it.riwayatPencarian.isNotEmpty() }.riwayatPencarian
+        assertEquals(listOf("apel"), riwayat.map { it.kueri })
+
+        // Ganti satu pada kecocokan aktif (baris 2)
+        vm.prosesIntent(IntentEditor.UbahTeksPengganti("jeruk"))
+        vm.prosesIntent(IntentEditor.GantiSatu)
+        assertEquals("satu apel\ndua jeruk\ntiga apel", vm.state.value.tabAktif!!.isiSaatIni)
+        assertEquals(2, vm.state.value.cariGanti.jumlahKecocokan)
+
+        // Minta ganti semua -> wajib konfirmasi jumlah ubahan -> eksekusi -> bisa di-undo
+        vm.prosesIntent(IntentEditor.MintaGantiSemua)
+        assertEquals(2, vm.state.value.cariGanti.konfirmasiGantiSemuaJumlah)
+        vm.prosesIntent(IntentEditor.KonfirmasiGantiSemua)
+        assertNull(vm.state.value.cariGanti.konfirmasiGantiSemuaJumlah)
+        assertEquals("satu jeruk\ndua jeruk\ntiga jeruk", vm.state.value.tabAktif!!.isiSaatIni)
+        assertEquals(0, vm.state.value.cariGanti.jumlahKecocokan)
+
+        vm.prosesIntent(IntentEditor.Undo(vm.state.value.tabAktif!!.idTab))
+        assertEquals("satu apel\ndua jeruk\ntiga apel", vm.state.value.tabAktif!!.isiSaatIni)
+
+        // Mode hanya baca tetap mengizinkan cari tetapi menolak ganti
+        vm.prosesIntent(IntentEditor.ToggleModeHanyaBaca(vm.state.value.tabAktif!!.idTab))
+        vm.prosesIntent(IntentEditor.UbahKueriCari("jeruk"))
+        vm.state.first { it.cariGanti.jumlahKecocokan == 1 }
+        vm.prosesIntent(IntentEditor.UbahTeksPengganti("mangga"))
+        vm.prosesIntent(IntentEditor.GantiSatu)
+        assertEquals("satu apel\ndua jeruk\ntiga apel", vm.state.value.tabAktif!!.isiSaatIni)
+
+        // Regex invalid menghasilkan pesan galat pola yang jelas
+        vm.prosesIntent(IntentEditor.ToggleRegexCari)
+        vm.prosesIntent(IntentEditor.UbahKueriCari("[rusak"))
+        assertNotNull(vm.state.value.cariGanti.galatPola)
+
+        // Hapus riwayat pencarian
+        vm.prosesIntent(IntentEditor.BersihkanRiwayatPencarian)
+        assertEquals(emptyList(), vm.state.value.riwayatPencarian)
     }
 }

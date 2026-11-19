@@ -42,8 +42,22 @@ class DatabaseAplikasiIosTest {
         db.preferensiEntityQueries.simpanNilai("beranda", "file:///private/var/mobile/Dokumen", 1_700_000_200L)
         val nilai = db.preferensiEntityQueries.ambilNilai("beranda").executeAsOneOrNull()
         assertEquals("file:///private/var/mobile/Dokumen", nilai)
+        
+        // 4. Uji riwayatPencarianEntityQueries
+        db.riwayatPencarianEntityQueries.tambahAtauPerbaruiPencarian(
+            kueri = "TODO",
+            peka_huruf = true,
+            kata_utuh = true,
+            regex = false,
+            waktu_terakhir_dipakai = 1_700_000_300L
+        )
+        val riwayatCari = db.riwayatPencarianEntityQueries.semuaRiwayatPencarian(10L).executeAsList()
+        assertEquals(1, riwayatCari.size)
+        assertEquals("TODO", riwayatCari.first().kueri)
+        db.riwayatPencarianEntityQueries.hapusRiwayatPencarian("TODO")
+        assertEquals(0, db.riwayatPencarianEntityQueries.semuaRiwayatPencarian(10L).executeAsList().size)
 
-        // 4. Uji Hapus
+        // 5. Uji Hapus
         db.preferensiEntityQueries.hapusKunci("beranda")
         assertNull(db.preferensiEntityQueries.ambilNilai("beranda").executeAsOneOrNull())
 

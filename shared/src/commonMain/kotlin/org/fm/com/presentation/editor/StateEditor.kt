@@ -2,6 +2,27 @@ package org.fm.com.presentation.editor
 
 import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.LokasiBerkas
+import org.fm.com.domain.usecase.RentangKecocokan
+
+data class StateCariGanti(
+    val terbuka: Boolean = false,
+    val kueriCari: String = "",
+    val teksPengganti: String = "",
+    val pekaHuruf: Boolean = false,
+    val kataUtuh: Boolean = false,
+    val gunakanRegex: Boolean = false,
+    val daftarKecocokan: List<RentangKecocokan> = emptyList(),
+    val indeksKecocokanAktif: Int = -1,
+    val galatPola: String? = null,
+    val sedangMencari: Boolean = false,
+    val konfirmasiGantiSemuaJumlah: Int? = null
+) {
+    val jumlahKecocokan: Int
+        get() = daftarKecocokan.size
+
+    val kecocokanAktif: RentangKecocokan?
+        get() = daftarKecocokan.getOrNull(indeksKecocokanAktif)
+}
 
 data class StateEditor(
     val daftarTab: List<ModelTabEditor> = emptyList(),
@@ -9,6 +30,8 @@ data class StateEditor(
     val wordWrapUmum: Boolean = true,
     val tabMenungguKonfirmasiTutup: ModelTabEditor? = null,
     val dialogLompatBarisTerbuka: Boolean = false,
+    val cariGanti: StateCariGanti = StateCariGanti(),
+    val riwayatPencarian: List<ItemRiwayatPencarianUi> = emptyList(),
     val pesanInfo: String? = null
 ) {
     val tabAktif: ModelTabEditor?
@@ -49,7 +72,8 @@ sealed interface IntentEditor {
     data class UbahTeks(
         val idTab: String,
         val teksBaru: String,
-        val indeksKursor: Int? = null
+        val indeksKursor: Int? = null,
+        val indeksAkhirSeleksi: Int? = null
     ) : IntentEditor
 
     data class Undo(val idTab: String) : IntentEditor
@@ -57,7 +81,8 @@ sealed interface IntentEditor {
 
     data class UbahPosisiKursor(
         val idTab: String,
-        val indeksKarakter: Int
+        val indeksKarakter: Int,
+        val indeksAkhirSeleksi: Int = indeksKarakter
     ) : IntentEditor
 
     data class SetBukaDialogLompatBaris(val buka: Boolean) : IntentEditor
@@ -65,6 +90,22 @@ sealed interface IntentEditor {
         val idTab: String,
         val nomorBaris: Int
     ) : IntentEditor
+
+    data class SetBukaDialogCariGanti(val buka: Boolean) : IntentEditor
+    data class UbahKueriCari(val kueri: String) : IntentEditor
+    data class UbahTeksPengganti(val teks: String) : IntentEditor
+    data object TogglePekaHurufCari : IntentEditor
+    data object ToggleKataUtuhCari : IntentEditor
+    data object ToggleRegexCari : IntentEditor
+    data object CariBerikutnya : IntentEditor
+    data object CariSebelumnya : IntentEditor
+    data object GantiSatu : IntentEditor
+    data object MintaGantiSemua : IntentEditor
+    data object KonfirmasiGantiSemua : IntentEditor
+    data object BatalGantiSemua : IntentEditor
+    data class PilihRiwayatPencarian(val item: ItemRiwayatPencarianUi) : IntentEditor
+    data class HapusItemRiwayatPencarian(val kueri: String) : IntentEditor
+    data object BersihkanRiwayatPencarian : IntentEditor
 
     data class ToggleModeHanyaBaca(val idTab: String) : IntentEditor
     data class ToggleWordWrapTab(val idTab: String) : IntentEditor

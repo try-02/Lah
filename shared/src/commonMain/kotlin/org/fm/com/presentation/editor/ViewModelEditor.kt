@@ -2,29 +2,57 @@ package org.fm.com.presentation.editor
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.OperasiBerkas
 import org.fm.com.domain.repository.RepositoriBerkas
 import org.fm.com.domain.usecase.BukaBerkasTeksUseCase
+import org.fm.com.domain.usecase.CariGantiUseCase
 import org.fm.com.domain.usecase.HasilBukaBerkasTeks
+import org.fm.com.domain.usecase.HasilCariEditor
+import org.fm.com.domain.usecase.HasilOperasiGanti
+import org.fm.com.domain.usecase.OpsiCariEditor
+import org.fm.com.domain.usecase.RentangKecocokan
+import org.fm.com.domain.usecase.RiwayatPencarianUseCase
 
 class ViewModelEditor(
     private val repositoriBerkas: RepositoriBerkas,
-    private val bukaBerkasTeksUseCase: BukaBerkasTeksUseCase = BukaBerkasTeksUseCase(repositoriBerkas)
+    private val bukaBerkasTeksUseCase: BukaBerkasTeksUseCase = BukaBerkasTeksUseCase(repositoriBerkas),
+    private val cariGantiUseCase: CariGantiUseCase = CariGantiUseCase(),
+    private val riwayatPencarianUseCase: RiwayatPencarianUseCase? = null,
+    private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ViewModel() {
     private val _state = MutableStateFlow(StateEditor())
     val state: StateFlow<StateEditor> = _state.asStateFlow()
 
     private val pekerjaanMuat = mutableMapOf<String, Job>()
+    private var pekerjaanCari: Job? = null
+    private var pekerjaanRiwayat: Job? = null
     private val sejarahPerTab = mutableMapOf<String, SejarahUndo>()
     private var penghitungTabKosong = 0L
     private var urutanNavigasi = 0L
+
+    init {
+        if (riwayatPencarianUseCase != null) {
+            pekerjaanRiwayat = viewModelScope.launch {
+                riwayatPencarianUseCase.ambilRiwayat()
+                    .catch { /* Abaikan kegagalan aliran riwayat agar editor tetap berjalan */ }
+                    .collect { daftar ->
+                        val uiList = daftar.map { it.keUi() }
+                        _state.update { it.copy(riwayatPencarian = uiList) }
+                    }
+            }
+        }
+    }
 
     fun prosesIntent(intent: IntentEditor) {
         when (intent) {
@@ -50,19 +78,50 @@ class ViewModelEditor(
                 )
             }
             is IntentEditor.BuatTabKosong -> buatTabKosong(intent.nama)
-            is IntentEditor.PilihTab -> _state.update { st ->
-                if (st.daftarTab.any { it.idTab == intent.idTab }) st.copy(idTabAktif = intent.idTab) else st
-            }
+            is IntentEditor.PilihTab -> pilihTab(intent.idTab)
             is IntentEditor.MintaTutupTab -> mintaTutupTab(intent.idTab)
             is IntentEditor.KonfirmasiBuangDanTutupTab -> konfirmasiBuangDanTutup()
             is IntentEditor.BatalTutupTab -> _state.update { it.copy(tabMenungguKonfirmasiTutup = null) }
             is IntentEditor.TutupSemuaTab -> tutupSemuaTab(intent.paksa)
-            is IntentEditor.UbahTeks -> ubahTeks(intent.idTab, intent.teksBaru, intent.indeksKursor)
+            is IntentEditor.UbahTeks -> ubahTeks(
+                idTab = intent.idTab,
+                teksBaru = intent.teksBaru,
+                indeksKursor = intent.indeksKursor,
+                indeksAkhirSeleksi = intent.indeksAkhirSeleksi
+            )
             is IntentEditor.Undo -> eksekusiUndo(intent.idTab)
             is IntentEditor.Redo -> eksekusiRedo(intent.idTab)
-            is IntentEditor.UbahPosisiKursor -> ubahKursor(intent.idTab, intent.indeksKarakter)
+            is IntentEditor.UbahPosisiKursor -> ubahKursor(
+                idTab = intent.idTab,
+                indeksKarakter = intent.indeksKarakter,
+                indeksAkhirSeleksi = intent.indeksAkhirSeleksi
+            )
             is IntentEditor.SetBukaDialogLompatBaris -> _state.update { it.copy(dialogLompatBarisTerbuka = intent.buka) }
             is IntentEditor.LompatKeBaris -> lompatKeBaris(intent.idTab, intent.nomorBaris)
+            is IntentEditor.SetBukaDialogCariGanti -> setBukaDialogCariGanti(intent.buka)
+            is IntentEditor.UbahKueriCari -> perbaruiParameterCari { it.copy(kueriCari = intent.kueri) }
+            is IntentEditor.UbahTeksPengganti -> _state.update {
+                it.copy(
+                    cariGanti = it.cariGanti.copy(
+                        teksPengganti = intent.teks,
+                        konfirmasiGantiSemuaJumlah = null
+                    )
+                )
+            }
+            is IntentEditor.TogglePekaHurufCari -> perbaruiParameterCari { it.copy(pekaHuruf = !it.pekaHuruf) }
+            is IntentEditor.ToggleKataUtuhCari -> perbaruiParameterCari { it.copy(kataUtuh = !it.kataUtuh) }
+            is IntentEditor.ToggleRegexCari -> perbaruiParameterCari { it.copy(gunakanRegex = !it.gunakanRegex) }
+            is IntentEditor.CariBerikutnya -> navigasiKecocokan(maju = true)
+            is IntentEditor.CariSebelumnya -> navigasiKecocokan(maju = false)
+            is IntentEditor.GantiSatu -> eksekusiGantiSatu()
+            is IntentEditor.MintaGantiSemua -> mintaGantiSemua()
+            is IntentEditor.KonfirmasiGantiSemua -> eksekusiGantiSemua()
+            is IntentEditor.BatalGantiSemua -> _state.update {
+                it.copy(cariGanti = it.cariGanti.copy(konfirmasiGantiSemuaJumlah = null))
+            }
+            is IntentEditor.PilihRiwayatPencarian -> pilihRiwayatPencarian(intent.item)
+            is IntentEditor.HapusItemRiwayatPencarian -> hapusItemRiwayatPencarian(intent.kueri)
+            is IntentEditor.BersihkanRiwayatPencarian -> bersihkanRiwayatPencarian()
             is IntentEditor.ToggleModeHanyaBaca -> toggleModeHanyaBaca(intent.idTab)
             is IntentEditor.ToggleWordWrapTab -> toggleWordWrapTab(intent.idTab)
             is IntentEditor.SetWordWrapUmum -> _state.update { it.copy(wordWrapUmum = intent.aktif) }
@@ -91,7 +150,7 @@ class ViewModelEditor(
         val idTab = buatIdTabLokasi(lokasi)
         val tabAda = _state.value.daftarTab.firstOrNull { it.idTab == idTab }
         if (tabAda != null) {
-            _state.update { it.copy(idTabAktif = idTab) }
+            pilihTab(idTab)
             if (tabAda.statusMuat == StatusMuatTab.SIAP && barisTujuan != null) {
                 lompatKeBaris(idTab, barisTujuan)
             } else if (tabAda.statusMuat == StatusMuatTab.GAGAL) {
@@ -119,6 +178,15 @@ class ViewModelEditor(
             )
         }
         muatIsiTab(idTab, lokasi, barisTujuan)
+    }
+
+    private fun pilihTab(idTab: String) {
+        val berubah = _state.value.idTabAktif != idTab && _state.value.daftarTab.any { it.idTab == idTab }
+        if (!berubah) return
+        _state.update { st -> st.copy(idTabAktif = idTab) }
+        if (_state.value.cariGanti.terbuka) {
+            jadwalkanPencarian(pilihTerdekat = false)
+        }
     }
 
     private fun muatUlangTab(idTab: String) {
@@ -165,6 +233,9 @@ class ViewModelEditor(
                             dapatRedo = false,
                             urutanNavigasiKursor = nav
                         )
+                    }
+                    if (_state.value.cariGanti.terbuka && _state.value.idTabAktif == idTab) {
+                        jadwalkanPencarian(pilihTerdekat = false)
                     }
                 }
                 is HasilBukaBerkasTeks.Biner -> {
@@ -227,6 +298,9 @@ class ViewModelEditor(
                 idTabAktif = idTab
             )
         }
+        if (_state.value.cariGanti.terbuka) {
+            jadwalkanPencarian(pilihTerdekat = false)
+        }
     }
 
     private fun mintaTutupTab(idTab: String) {
@@ -254,13 +328,22 @@ class ViewModelEditor(
         }
         pekerjaanMuat.values.forEach { it.cancel() }
         pekerjaanMuat.clear()
+        pekerjaanCari?.cancel()
         sejarahPerTab.clear()
         _state.update {
             it.copy(
                 daftarTab = emptyList(),
                 idTabAktif = null,
                 tabMenungguKonfirmasiTutup = null,
-                dialogLompatBarisTerbuka = false
+                dialogLompatBarisTerbuka = false,
+                cariGanti = it.cariGanti.copy(
+                    terbuka = false,
+                    daftarKecocokan = emptyList(),
+                    indeksKecocokanAktif = -1,
+                    galatPola = null,
+                    sedangMencari = false,
+                    konfirmasiGantiSemuaJumlah = null
+                )
             )
         }
     }
@@ -278,15 +361,36 @@ class ViewModelEditor(
                 else -> daftarBaru[idx.coerceAtMost(daftarBaru.lastIndex)].idTab
             }
             val menungguBaru = if (st.tabMenungguKonfirmasiTutup?.idTab == idTab) null else st.tabMenungguKonfirmasiTutup
+            val cgBaru = if (daftarBaru.isEmpty()) {
+                st.cariGanti.copy(
+                    terbuka = false,
+                    daftarKecocokan = emptyList(),
+                    indeksKecocokanAktif = -1,
+                    galatPola = null,
+                    sedangMencari = false,
+                    konfirmasiGantiSemuaJumlah = null
+                )
+            } else {
+                st.cariGanti
+            }
             st.copy(
                 daftarTab = daftarBaru,
                 idTabAktif = aktifBaru,
-                tabMenungguKonfirmasiTutup = menungguBaru
+                tabMenungguKonfirmasiTutup = menungguBaru,
+                cariGanti = cgBaru
             )
+        }
+        if (_state.value.cariGanti.terbuka && _state.value.tabAktif != null) {
+            jadwalkanPencarian(pilihTerdekat = false)
         }
     }
 
-    private fun ubahTeks(idTab: String, teksBaru: String, indeksKursor: Int?) {
+    private fun ubahTeks(
+        idTab: String,
+        teksBaru: String,
+        indeksKursor: Int?,
+        indeksAkhirSeleksi: Int?
+    ) {
         val tab = _state.value.daftarTab.firstOrNull { it.idTab == idTab } ?: return
         if (tab.statusMuat != StatusMuatTab.SIAP) return
         if (tab.modeHanyaBaca) {
@@ -296,6 +400,7 @@ class ViewModelEditor(
         if (teksBaru == tab.isiSaatIni) return
 
         val kursorSesudahIdx = (indeksKursor ?: teksBaru.length).coerceIn(0, teksBaru.length)
+        val akhirSeleksiAman = (indeksAkhirSeleksi ?: kursorSesudahIdx).coerceIn(0, teksBaru.length)
         val sejarah = sejarahPerTab.getOrPut(idTab) { SejarahUndo() }
         sejarah.catatPerubahan(
             teksSebelum = tab.isiSaatIni,
@@ -305,7 +410,7 @@ class ViewModelEditor(
         )
 
         val jumlahBaris = hitungJumlahBaris(teksBaru)
-        val kursorBaru = hitungPosisiKursor(teksBaru, kursorSesudahIdx)
+        val kursorBaru = hitungPosisiKursor(teksBaru, kursorSesudahIdx, akhirSeleksiAman)
         perbaruiTab(idTab) {
             it.copy(
                 isiSaatIni = teksBaru,
@@ -314,6 +419,9 @@ class ViewModelEditor(
                 dapatUndo = sejarah.dapatUndo,
                 dapatRedo = sejarah.dapatRedo
             )
+        }
+        if (_state.value.cariGanti.terbuka && _state.value.idTabAktif == idTab) {
+            jadwalkanPencarian(pilihTerdekat = false)
         }
     }
 
@@ -334,6 +442,9 @@ class ViewModelEditor(
                 urutanNavigasiKursor = ++urutanNavigasi
             )
         }
+        if (_state.value.cariGanti.terbuka && _state.value.idTabAktif == idTab) {
+            jadwalkanPencarian(pilihTerdekat = false)
+        }
     }
 
     private fun eksekusiRedo(idTab: String) {
@@ -353,12 +464,15 @@ class ViewModelEditor(
                 urutanNavigasiKursor = ++urutanNavigasi
             )
         }
+        if (_state.value.cariGanti.terbuka && _state.value.idTabAktif == idTab) {
+            jadwalkanPencarian(pilihTerdekat = false)
+        }
     }
 
-    private fun ubahKursor(idTab: String, indeksKarakter: Int) {
+    private fun ubahKursor(idTab: String, indeksKarakter: Int, indeksAkhirSeleksi: Int) {
         val tab = _state.value.daftarTab.firstOrNull { it.idTab == idTab } ?: return
         if (tab.statusMuat != StatusMuatTab.SIAP) return
-        val kursorBaru = hitungPosisiKursor(tab.isiSaatIni, indeksKarakter)
+        val kursorBaru = hitungPosisiKursor(tab.isiSaatIni, indeksKarakter, indeksAkhirSeleksi)
         if (kursorBaru != tab.posisiKursor) {
             perbaruiTab(idTab) { it.copy(posisiKursor = kursorBaru) }
         }
@@ -376,6 +490,555 @@ class ViewModelEditor(
         perbaruiTab(idTab) {
             it.copy(
                 posisiKursor = kursor,
+                urutanNavigasiKursor = ++urutanNavigasi
+            )
+        }
+    }
+
+    private fun setBukaDialogCariGanti(buka: Boolean) {
+        if (!buka) {
+            pekerjaanCari?.cancel()
+            _state.update {
+                it.copy(
+                    cariGanti = it.cariGanti.copy(
+                        terbuka = false,
+                        sedangMencari = false,
+                        konfirmasiGantiSemuaJumlah = null
+                    )
+                )
+            }
+            return
+        }
+
+        val tab = _state.value.tabAktif
+        var kueriAwal = _state.value.cariGanti.kueriCari
+        if (tab != null && tab.statusMuat == StatusMuatTab.SIAP && tab.posisiKursor.adaSeleksi) {
+            val awal = tab.posisiKursor.awalRentang.coerceIn(0, tab.isiSaatIni.length)
+            val akhir = tab.posisiKursor.akhirRentang.coerceIn(0, tab.isiSaatIni.length)
+            if (akhir > awal && akhir - awal <= 200) {
+                val potongan = tab.isiSaatIni.substring(awal, akhir)
+                if ('\n' !in potongan) {
+                    kueriAwal = potongan
+                }
+            }
+        }
+
+        _state.update {
+            it.copy(
+                cariGanti = it.cariGanti.copy(
+                    terbuka = true,
+                    kueriCari = kueriAwal,
+                    konfirmasiGantiSemuaJumlah = null
+                )
+            )
+        }
+        jadwalkanPencarian(pilihTerdekat = true)
+    }
+
+    private fun perbaruiParameterCari(transformasi: (StateCariGanti) -> StateCariGanti) {
+        _state.update { st ->
+            st.copy(
+                cariGanti = transformasi(st.cariGanti).copy(konfirmasiGantiSemuaJumlah = null)
+            )
+        }
+        if (_state.value.cariGanti.terbuka) {
+            jadwalkanPencarian(pilihTerdekat = true)
+        }
+    }
+
+    private fun jadwalkanPencarian(pilihTerdekat: Boolean) {
+        pekerjaanCari?.cancel()
+        val tab = _state.value.tabAktif
+        val cg = _state.value.cariGanti
+        if (tab == null || tab.statusMuat != StatusMuatTab.SIAP || cg.kueriCari.isEmpty()) {
+            _state.update {
+                it.copy(
+                    cariGanti = it.cariGanti.copy(
+                        daftarKecocokan = emptyList(),
+                        indeksKecocokanAktif = -1,
+                        galatPola = null,
+                        sedangMencari = false
+                    )
+                )
+            }
+            return
+        }
+
+        val snapshotIdTab = tab.idTab
+        val snapshotTeks = tab.isiSaatIni
+        val snapshotKueri = cg.kueriCari
+        val opsi = OpsiCariEditor(
+            pekaHuruf = cg.pekaHuruf,
+            kataUtuh = cg.kataUtuh,
+            gunakanRegex = cg.gunakanRegex
+        )
+        val awalSeleksi = tab.posisiKursor.awalRentang
+        val akhirSeleksi = tab.posisiKursor.akhirRentang
+
+        _state.update { it.copy(cariGanti = it.cariGanti.copy(sedangMencari = true)) }
+        val job = viewModelScope.launch {
+            val hasil = withContext(computeDispatcher) {
+                cariGantiUseCase.cariSemua(snapshotTeks, snapshotKueri, opsi)
+            }
+            val tabSekarang = _state.value.tabAktif ?: return@launch
+            val cgSekarang = _state.value.cariGanti
+            if (tabSekarang.idTab != snapshotIdTab ||
+                tabSekarang.isiSaatIni != snapshotTeks ||
+                cgSekarang.kueriCari != snapshotKueri
+            ) {
+                return@launch
+            }
+            terapkanHasilPencarian(
+                idTab = snapshotIdTab,
+                teks = snapshotTeks,
+                hasil = hasil,
+                awalSeleksi = awalSeleksi,
+                akhirSeleksi = akhirSeleksi,
+                sorotKecocokan = pilihTerdekat
+            )
+        }
+        pekerjaanCari = job
+        job.invokeOnCompletion {
+            if (pekerjaanCari === job) {
+                pekerjaanCari = null
+            }
+        }
+    }
+
+    private fun terapkanHasilPencarian(
+        idTab: String,
+        teks: String,
+        hasil: HasilCariEditor,
+        awalSeleksi: Int,
+        akhirSeleksi: Int,
+        sorotKecocokan: Boolean
+    ) {
+        when (hasil) {
+            is HasilCariEditor.PolaTidakValid -> {
+                _state.update {
+                    it.copy(
+                        cariGanti = it.cariGanti.copy(
+                            daftarKecocokan = emptyList(),
+                            indeksKecocokanAktif = -1,
+                            galatPola = hasil.pesan,
+                            sedangMencari = false
+                        )
+                    )
+                }
+            }
+            is HasilCariEditor.Sukses -> {
+                val daftar = hasil.daftarKecocokan
+                val indeksAktif = if (daftar.isEmpty()) {
+                    -1
+                } else {
+                    val pas = daftar.indexOfFirst { it.awal == awalSeleksi && it.akhirEksklusif == akhirSeleksi }
+                    if (pas >= 0) {
+                        pas
+                    } else if (sorotKecocokan) {
+                        val terdekat = daftar.indexOfFirst { it.awal >= awalSeleksi }
+                        if (terdekat >= 0) terdekat else 0
+                    } else {
+                        -1
+                    }
+                }
+                _state.update {
+                    it.copy(
+                        cariGanti = it.cariGanti.copy(
+                            daftarKecocokan = daftar,
+                            indeksKecocokanAktif = indeksAktif,
+                            galatPola = null,
+                            sedangMencari = false
+                        )
+                    )
+                }
+                if (sorotKecocokan && indeksAktif >= 0) {
+                    sorotRentangDiTab(idTab, teks, daftar[indeksAktif])
+                }
+            }
+        }
+    }
+
+    private fun navigasiKecocokan(maju: Boolean) {
+        val tab = _state.value.tabAktif ?: return
+        if (tab.statusMuat != StatusMuatTab.SIAP) return
+        val cg = _state.value.cariGanti
+        if (cg.kueriCari.isEmpty()) return
+
+        pekerjaanCari?.cancel()
+        val opsi = OpsiCariEditor(cg.pekaHuruf, cg.kataUtuh, cg.gunakanRegex)
+        catatRiwayatPencarian(cg.kueriCari, opsi)
+
+        viewModelScope.launch {
+            val hasil = withContext(computeDispatcher) {
+                cariGantiUseCase.cariSemua(tab.isiSaatIni, cg.kueriCari, opsi)
+            }
+            val tabSekarang = _state.value.tabAktif ?: return@launch
+            if (tabSekarang.idTab != tab.idTab) return@launch
+
+            when (hasil) {
+                is HasilCariEditor.PolaTidakValid -> {
+                    _state.update {
+                        it.copy(
+                            cariGanti = it.cariGanti.copy(
+                                daftarKecocokan = emptyList(),
+                                indeksKecocokanAktif = -1,
+                                galatPola = hasil.pesan,
+                                sedangMencari = false
+                            ),
+                            pesanInfo = hasil.pesan
+                        )
+                    }
+                }
+                is HasilCariEditor.Sukses -> {
+                    val daftar = hasil.daftarKecocokan
+                    if (daftar.isEmpty()) {
+                        _state.update {
+                            it.copy(
+                                cariGanti = it.cariGanti.copy(
+                                    daftarKecocokan = emptyList(),
+                                    indeksKecocokanAktif = -1,
+                                    galatPola = null,
+                                    sedangMencari = false
+                                ),
+                                pesanInfo = "Tidak ditemukan kecocokan"
+                            )
+                        }
+                        return@launch
+                    }
+                    val awal = tabSekarang.posisiKursor.awalRentang
+                    val akhir = tabSekarang.posisiKursor.akhirRentang
+                    val indeksBaru = if (maju) {
+                        cariGantiUseCase.pilihKecocokanBerikutnya(daftar, awal, akhir)
+                    } else {
+                        cariGantiUseCase.pilihKecocokanSebelumnya(daftar, awal, akhir)
+                    }
+                    _state.update {
+                        it.copy(
+                            cariGanti = it.cariGanti.copy(
+                                daftarKecocokan = daftar,
+                                indeksKecocokanAktif = indeksBaru,
+                                galatPola = null,
+                                sedangMencari = false
+                            )
+                        )
+                    }
+                    if (indeksBaru >= 0) {
+                        sorotRentangDiTab(tabSekarang.idTab, tabSekarang.isiSaatIni, daftar[indeksBaru])
+                    }
+                }
+            }
+        }
+    }
+
+    private fun eksekusiGantiSatu() {
+        val tab = _state.value.tabAktif ?: return
+        if (tab.statusMuat != StatusMuatTab.SIAP) return
+        if (tab.modeHanyaBaca) {
+            _state.update { it.copy(pesanInfo = "Berkas sedang dalam mode hanya baca") }
+            return
+        }
+        val cg = _state.value.cariGanti
+        if (cg.kueriCari.isEmpty()) return
+
+        pekerjaanCari?.cancel()
+        val opsi = OpsiCariEditor(cg.pekaHuruf, cg.kataUtuh, cg.gunakanRegex)
+        catatRiwayatPencarian(cg.kueriCari, opsi)
+
+        viewModelScope.launch {
+            val hasilGanti = withContext(computeDispatcher) {
+                cariGantiUseCase.gantiSatu(
+                    teks = tab.isiSaatIni,
+                    kueri = cg.kueriCari,
+                    teksPengganti = cg.teksPengganti,
+                    awalSeleksi = tab.posisiKursor.awalRentang,
+                    akhirSeleksi = tab.posisiKursor.akhirRentang,
+                    opsi = opsi
+                )
+            }
+            val tabSekarang = _state.value.tabAktif ?: return@launch
+            if (tabSekarang.idTab != tab.idTab || tabSekarang.isiSaatIni != tab.isiSaatIni) return@launch
+
+            when (hasilGanti) {
+                is HasilOperasiGanti.PolaTidakValid -> {
+                    _state.update {
+                        it.copy(
+                            cariGanti = it.cariGanti.copy(
+                                galatPola = hasilGanti.pesan,
+                                sedangMencari = false
+                            ),
+                            pesanInfo = hasilGanti.pesan
+                        )
+                    }
+                }
+                is HasilOperasiGanti.Sukses -> {
+                    if (hasilGanti.jumlahUbahan == 0) {
+                        _state.update {
+                            it.copy(
+                                cariGanti = it.cariGanti.copy(
+                                    daftarKecocokan = emptyList(),
+                                    indeksKecocokanAktif = -1,
+                                    galatPola = null,
+                                    sedangMencari = false
+                                ),
+                                pesanInfo = "Tidak ada kecocokan untuk diganti"
+                            )
+                        }
+                        return@launch
+                    }
+
+                    val sejarah = sejarahPerTab.getOrPut(tabSekarang.idTab) { SejarahUndo() }
+                    sejarah.catatPerubahan(
+                        teksSebelum = tabSekarang.isiSaatIni,
+                        teksSesudah = hasilGanti.teksBaru,
+                        kursorSebelum = tabSekarang.posisiKursor.indeksKarakter,
+                        kursorSesudah = hasilGanti.posisiKursorSetelahnya
+                    )
+                    val rentangBerikut = hasilGanti.rentangBerikutnya
+                    val awalBaru = rentangBerikut?.awal ?: hasilGanti.posisiKursorSetelahnya
+                    val akhirBaru = rentangBerikut?.akhirEksklusif ?: hasilGanti.posisiKursorSetelahnya
+                    val kursorBaru = hitungPosisiKursor(hasilGanti.teksBaru, awalBaru, akhirBaru)
+
+                    perbaruiTab(tabSekarang.idTab) {
+                        it.copy(
+                            isiSaatIni = hasilGanti.teksBaru,
+                            jumlahBaris = hitungJumlahBaris(hasilGanti.teksBaru),
+                            posisiKursor = kursorBaru,
+                            dapatUndo = sejarah.dapatUndo,
+                            dapatRedo = sejarah.dapatRedo,
+                            urutanNavigasiKursor = ++urutanNavigasi
+                        )
+                    }
+
+                    val hasilCariSesudah = withContext(computeDispatcher) {
+                        cariGantiUseCase.cariSemua(hasilGanti.teksBaru, cg.kueriCari, opsi)
+                    }
+                    val daftarSesudah = (hasilCariSesudah as? HasilCariEditor.Sukses)
+                        ?.daftarKecocokan
+                        .orEmpty()
+                    val indeksAktif = if (rentangBerikut != null) {
+                        daftarSesudah.indexOf(rentangBerikut)
+                    } else {
+                        -1
+                    }
+                    _state.update {
+                        it.copy(
+                            cariGanti = it.cariGanti.copy(
+                                daftarKecocokan = daftarSesudah,
+                                indeksKecocokanAktif = indeksAktif,
+                                galatPola = null,
+                                sedangMencari = false
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun mintaGantiSemua() {
+        val tab = _state.value.tabAktif ?: return
+        if (tab.statusMuat != StatusMuatTab.SIAP) return
+        if (tab.modeHanyaBaca) {
+            _state.update { it.copy(pesanInfo = "Berkas sedang dalam mode hanya baca") }
+            return
+        }
+        val cg = _state.value.cariGanti
+        if (cg.kueriCari.isEmpty()) return
+
+        pekerjaanCari?.cancel()
+        val opsi = OpsiCariEditor(cg.pekaHuruf, cg.kataUtuh, cg.gunakanRegex)
+        catatRiwayatPencarian(cg.kueriCari, opsi)
+
+        viewModelScope.launch {
+            val hasil = withContext(computeDispatcher) {
+                cariGantiUseCase.cariSemua(tab.isiSaatIni, cg.kueriCari, opsi)
+            }
+            val tabSekarang = _state.value.tabAktif ?: return@launch
+            if (tabSekarang.idTab != tab.idTab) return@launch
+
+            when (hasil) {
+                is HasilCariEditor.PolaTidakValid -> {
+                    _state.update {
+                        it.copy(
+                            cariGanti = it.cariGanti.copy(
+                                daftarKecocokan = emptyList(),
+                                indeksKecocokanAktif = -1,
+                                galatPola = hasil.pesan,
+                                sedangMencari = false,
+                                konfirmasiGantiSemuaJumlah = null
+                            ),
+                            pesanInfo = hasil.pesan
+                        )
+                    }
+                }
+                is HasilCariEditor.Sukses -> {
+                    if (hasil.daftarKecocokan.isEmpty()) {
+                        _state.update {
+                            it.copy(
+                                cariGanti = it.cariGanti.copy(
+                                    daftarKecocokan = emptyList(),
+                                    indeksKecocokanAktif = -1,
+                                    galatPola = null,
+                                    sedangMencari = false,
+                                    konfirmasiGantiSemuaJumlah = null
+                                ),
+                                pesanInfo = "Tidak ada kecocokan untuk diganti"
+                            )
+                        }
+                    } else {
+                        _state.update {
+                            it.copy(
+                                cariGanti = it.cariGanti.copy(
+                                    daftarKecocokan = hasil.daftarKecocokan,
+                                    galatPola = null,
+                                    sedangMencari = false,
+                                    konfirmasiGantiSemuaJumlah = hasil.daftarKecocokan.size
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun eksekusiGantiSemua() {
+        val tab = _state.value.tabAktif ?: return
+        if (tab.statusMuat != StatusMuatTab.SIAP) return
+        if (tab.modeHanyaBaca) {
+            _state.update {
+                it.copy(
+                    cariGanti = it.cariGanti.copy(konfirmasiGantiSemuaJumlah = null),
+                    pesanInfo = "Berkas sedang dalam mode hanya baca"
+                )
+            }
+            return
+        }
+        val cg = _state.value.cariGanti
+        val opsi = OpsiCariEditor(cg.pekaHuruf, cg.kataUtuh, cg.gunakanRegex)
+
+        viewModelScope.launch {
+            val hasilGanti = withContext(computeDispatcher) {
+                cariGantiUseCase.gantiSemua(
+                    teks = tab.isiSaatIni,
+                    kueri = cg.kueriCari,
+                    teksPengganti = cg.teksPengganti,
+                    opsi = opsi
+                )
+            }
+            val tabSekarang = _state.value.tabAktif ?: return@launch
+            if (tabSekarang.idTab != tab.idTab || tabSekarang.isiSaatIni != tab.isiSaatIni) return@launch
+
+            when (hasilGanti) {
+                is HasilOperasiGanti.PolaTidakValid -> {
+                    _state.update {
+                        it.copy(
+                            cariGanti = it.cariGanti.copy(
+                                galatPola = hasilGanti.pesan,
+                                konfirmasiGantiSemuaJumlah = null
+                            ),
+                            pesanInfo = hasilGanti.pesan
+                        )
+                    }
+                }
+                is HasilOperasiGanti.Sukses -> {
+                    if (hasilGanti.jumlahUbahan > 0) {
+                        val sejarah = sejarahPerTab.getOrPut(tabSekarang.idTab) { SejarahUndo() }
+                        sejarah.catatPerubahan(
+                            teksSebelum = tabSekarang.isiSaatIni,
+                            teksSesudah = hasilGanti.teksBaru,
+                            kursorSebelum = tabSekarang.posisiKursor.indeksKarakter,
+                            kursorSesudah = hasilGanti.posisiKursorSetelahnya
+                        )
+                        val kursorBaru = hitungPosisiKursor(
+                            hasilGanti.teksBaru,
+                            hasilGanti.posisiKursorSetelahnya
+                        )
+                        perbaruiTab(tabSekarang.idTab) {
+                            it.copy(
+                                isiSaatIni = hasilGanti.teksBaru,
+                                jumlahBaris = hitungJumlahBaris(hasilGanti.teksBaru),
+                                posisiKursor = kursorBaru,
+                                dapatUndo = sejarah.dapatUndo,
+                                dapatRedo = sejarah.dapatRedo,
+                                urutanNavigasiKursor = ++urutanNavigasi
+                            )
+                        }
+                    }
+
+                    val hasilCariSesudah = withContext(computeDispatcher) {
+                        cariGantiUseCase.cariSemua(hasilGanti.teksBaru, cg.kueriCari, opsi)
+                    }
+                    val sisaKecocokan = (hasilCariSesudah as? HasilCariEditor.Sukses)
+                        ?.daftarKecocokan
+                        .orEmpty()
+
+                    _state.update {
+                        it.copy(
+                            cariGanti = it.cariGanti.copy(
+                                daftarKecocokan = sisaKecocokan,
+                                indeksKecocokanAktif = -1,
+                                galatPola = null,
+                                sedangMencari = false,
+                                konfirmasiGantiSemuaJumlah = null
+                            ),
+                            pesanInfo = "Berhasil mengganti ${hasilGanti.jumlahUbahan} kecocokan"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun pilihRiwayatPencarian(item: ItemRiwayatPencarianUi) {
+        _state.update { st ->
+            st.copy(
+                cariGanti = st.cariGanti.copy(
+                    kueriCari = item.kueri,
+                    pekaHuruf = item.pekaHuruf,
+                    kataUtuh = item.kataUtuh,
+                    gunakanRegex = item.gunakanRegex,
+                    konfirmasiGantiSemuaJumlah = null
+                )
+            )
+        }
+        if (_state.value.cariGanti.terbuka) {
+            jadwalkanPencarian(pilihTerdekat = true)
+        }
+    }
+
+    private fun catatRiwayatPencarian(kueri: String, opsi: OpsiCariEditor) {
+        val uc = riwayatPencarianUseCase ?: return
+        if (kueri.isEmpty()) return
+        viewModelScope.launch {
+            uc.catat(
+                kueri = kueri,
+                pekaHuruf = opsi.pekaHuruf,
+                kataUtuh = opsi.kataUtuh,
+                gunakanRegex = opsi.gunakanRegex
+            )
+        }
+    }
+
+    private fun hapusItemRiwayatPencarian(kueri: String) {
+        val uc = riwayatPencarianUseCase ?: return
+        viewModelScope.launch {
+            uc.hapusItem(kueri)
+        }
+    }
+
+    private fun bersihkanRiwayatPencarian() {
+        val uc = riwayatPencarianUseCase ?: return
+        viewModelScope.launch {
+            uc.bersihkanSemua()
+        }
+    }
+
+    private fun sorotRentangDiTab(idTab: String, teks: String, rentang: RentangKecocokan) {
+        val kursorBaru = hitungPosisiKursor(teks, rentang.awal, rentang.akhirEksklusif)
+        perbaruiTab(idTab) {
+            it.copy(
+                posisiKursor = kursorBaru,
                 urutanNavigasiKursor = ++urutanNavigasi
             )
         }
@@ -431,6 +1094,8 @@ class ViewModelEditor(
     override fun onCleared() {
         pekerjaanMuat.values.forEach { it.cancel() }
         pekerjaanMuat.clear()
+        pekerjaanCari?.cancel()
+        pekerjaanRiwayat?.cancel()
         sejarahPerTab.clear()
         super.onCleared()
     }
@@ -444,8 +1109,13 @@ class ViewModelEditor(
             return baris
         }
 
-        fun hitungPosisiKursor(teks: String, indeksKarakter: Int): PosisiKursor {
+        fun hitungPosisiKursor(
+            teks: String,
+            indeksKarakter: Int,
+            indeksAkhirSeleksi: Int = indeksKarakter
+        ): PosisiKursor {
             val batas = indeksKarakter.coerceIn(0, teks.length)
+            val akhirAman = indeksAkhirSeleksi.coerceIn(0, teks.length)
             var baris = 1
             var kolom = 1
             for (i in 0 until batas) {
@@ -456,7 +1126,12 @@ class ViewModelEditor(
                     kolom++
                 }
             }
-            return PosisiKursor(baris = baris, kolom = kolom, indeksKarakter = batas)
+            return PosisiKursor(
+                baris = baris,
+                kolom = kolom,
+                indeksKarakter = batas,
+                indeksAkhirSeleksi = akhirAman
+            )
         }
 
         fun hitungKursorUntukBaris(teks: String, targetBaris: Int): PosisiKursor {
@@ -467,7 +1142,12 @@ class ViewModelEditor(
                 if (teks[i] == '\n') {
                     barisSaatIni++
                     if (barisSaatIni == barisAman) {
-                        return PosisiKursor(baris = barisSaatIni, kolom = 1, indeksKarakter = i + 1)
+                        return PosisiKursor(
+                            baris = barisSaatIni,
+                            kolom = 1,
+                            indeksKarakter = i + 1,
+                            indeksAkhirSeleksi = i + 1
+                        )
                     }
                 }
             }
