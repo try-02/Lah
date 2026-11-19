@@ -1,39 +1,28 @@
 package org.fm.com.data.persistensi
 
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.fm.com.domain.model.EntitasRiwayatLokasi
 import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.PenyebabGalat
+import org.fm.com.domain.repository.RepositoriRiwayatLokasi
 
-/** Entitas riwayat lokasi di layer data. */
-data class EntitasRiwayatLokasi(
-    val lokasi: LokasiBerkas,
-    val adalahFolder: Boolean,
-    val waktuTerakhirDibukaEpochMs: Long
-)
-
-/** Kontrak repositori untuk persistensi riwayat lokasi yang dibuka pengguna (PRD §4.1). */
-interface RepositoriRiwayatLokasi {
-    suspend fun catatLokasi(lokasi: LokasiBerkas, adalahFolder: Boolean, waktuEpochMs: Long): HasilOperasi<Unit>
-    fun daftarRiwayat(batas: Long = 50): Flow<List<EntitasRiwayatLokasi>>
-    suspend fun hapus(lokasi: LokasiBerkas): HasilOperasi<Unit>
-    suspend fun hapusSemua(): HasilOperasi<Unit>
-}
-
-/** Implementasi riwayat lokasi menggunakan basis data SQLDelight. */
 class SqlDelightRepositoriRiwayatLokasi(
     private val database: DatabaseAplikasi,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : RepositoriRiwayatLokasi {
-
     override suspend fun catatLokasi(
         lokasi: LokasiBerkas,
         adalahFolder: Boolean,
@@ -48,36 +37,36 @@ class SqlDelightRepositoriRiwayatLokasi(
                 waktu_terakhir_dibuka = waktuEpochMs
             )
             HasilOperasi.Sukses(Unit)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             HasilOperasi.Gagal(e.message ?: "Gagal mencatat riwayat ke basis data", PenyebabGalat.TIDAK_DIKETAHUI)
         }
     }
 
-    override fun daftarRiwayat(batas: Long): Flow<List<EntitasRiwayatLokasi>> = flow {
-        val list = withContext(ioDispatcher) {
-            database.riwayatLokasiEntityQueries
-                .semuaRiwayat(batas)
-                .executeAsList()
-                .mapNotNull { row ->
-                    try {
-                        val jenis = JenisLokasi.valueOf(row.jenis_lokasi)
-                        EntitasRiwayatLokasi(
-                            lokasi = LokasiBerkas(row.pengenal, jenis, row.label),
-                            adalahFolder = row.adalah_folder,
-                            waktuTerakhirDibukaEpochMs = row.waktu_terakhir_dibuka
-                        )
-                    } catch (_: Exception) {
-                        null
-                    }
+    override fun daftarRiwayat(batas: Long): Flow<List<EntitasRiwayatLokasi>> =
+        database.riwayatLokasiEntityQueries
+            .semuaRiwayat(batas)
+            .asFlow()
+            .mapToList(ioDispatcher)
+            .map { rows ->
+                rows.mapNotNull { row ->
+                    val jenis = runCatching { JenisLokasi.valueOf(row.jenis_lokasi) }.getOrNull()
+                        ?: return@mapNotNull null
+                    EntitasRiwayatLokasi(
+                        lokasi = LokasiBerkas(row.pengenal, jenis, row.label),
+                        adalahFolder = row.adalah_folder,
+                        waktuTerakhirDibukaEpochMs = row.waktu_terakhir_dibuka
+                    )
                 }
-        }
-        emit(list)
-    }
+            }
 
     override suspend fun hapus(lokasi: LokasiBerkas): HasilOperasi<Unit> = withContext(ioDispatcher) {
         try {
             database.riwayatLokasiEntityQueries.hapusRiwayat(lokasi.pengenal, lokasi.jenis.name)
             HasilOperasi.Sukses(Unit)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             HasilOperasi.Gagal(e.message ?: "Gagal menghapus riwayat", PenyebabGalat.TIDAK_DIKETAHUI)
         }
@@ -87,42 +76,45 @@ class SqlDelightRepositoriRiwayatLokasi(
         try {
             database.riwayatLokasiEntityQueries.hapusSemuaRiwayat()
             HasilOperasi.Sukses(Unit)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             HasilOperasi.Gagal(e.message ?: "Gagal membersihkan riwayat", PenyebabGalat.TIDAK_DIKETAHUI)
         }
     }
 }
 
-/** Implementasi fake in-memory untuk pengujian unit dan preview pra-DI. */
 class MemoriRepositoriRiwayatLokasi : RepositoriRiwayatLokasi {
     private val mutex = Mutex()
-    private val kaset = mutableMapOf<Pair<String, JenisLokasi>, EntitasRiwayatLokasi>()
+    private val status = MutableStateFlow<Map<Pair<String, JenisLokasi>, EntitasRiwayatLokasi>>(emptyMap())
 
     override suspend fun catatLokasi(
         lokasi: LokasiBerkas,
         adalahFolder: Boolean,
         waktuEpochMs: Long
     ): HasilOperasi<Unit> = mutex.withLock {
-        kaset[lokasi.pengenal to lokasi.jenis] = EntitasRiwayatLokasi(lokasi, adalahFolder, waktuEpochMs)
+        val baru = status.value.toMutableMap()
+        baru[lokasi.pengenal to lokasi.jenis] = EntitasRiwayatLokasi(lokasi, adalahFolder, waktuEpochMs)
+        status.value = baru
         HasilOperasi.Sukses(Unit)
     }
 
-    override fun daftarRiwayat(batas: Long): Flow<List<EntitasRiwayatLokasi>> = flow {
-        val hasil = mutex.withLock {
-            kaset.values
+    override fun daftarRiwayat(batas: Long): Flow<List<EntitasRiwayatLokasi>> =
+        status.map { map ->
+            map.values
                 .sortedByDescending { it.waktuTerakhirDibukaEpochMs }
-                .take(batas.toInt())
+                .take(batas.toInt().coerceAtLeast(0))
         }
-        emit(hasil)
-    }
 
     override suspend fun hapus(lokasi: LokasiBerkas): HasilOperasi<Unit> = mutex.withLock {
-        kaset.remove(lokasi.pengenal to lokasi.jenis)
+        val baru = status.value.toMutableMap()
+        baru.remove(lokasi.pengenal to lokasi.jenis)
+        status.value = baru
         HasilOperasi.Sukses(Unit)
     }
 
     override suspend fun hapusSemua(): HasilOperasi<Unit> = mutex.withLock {
-        kaset.clear()
+        status.value = emptyMap()
         HasilOperasi.Sukses(Unit)
     }
 }

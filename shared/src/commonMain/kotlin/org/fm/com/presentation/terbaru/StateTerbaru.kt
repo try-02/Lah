@@ -1,6 +1,6 @@
 package org.fm.com.presentation.terbaru
 
-import org.fm.com.data.persistensi.EntitasRiwayatLokasi
+import org.fm.com.domain.model.EntitasRiwayatLokasi
 import org.fm.com.domain.model.JenisBerkas
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.presentation.filemanager.PemetaanDomainUi

@@ -13,17 +13,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import org.fm.com.data.DataBerkas
-import org.fm.com.data.SumberMemoriPenyimpanan
-import org.fm.com.data.persistensi.MemoriRepositoriRiwayatLokasi
-import org.fm.com.data.persistensi.RepositoriRiwayatLokasi
-import org.fm.com.domain.model.JenisLokasi
+import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
+import org.fm.com.di.KontainerAplikasi
+import org.fm.com.di.buatKontainerPreview
 import org.fm.com.domain.model.LokasiBerkas
-import org.fm.com.domain.repository.RepositoriBerkas
-import org.fm.com.domain.repository.RepositoriOperasiBerkas
-import org.fm.com.domain.usecase.RiwayatLokasiUseCase
 import org.fm.com.presentation.filemanager.DaftarBerkasLayar
 import org.fm.com.presentation.filemanager.IntentFilemanager
 import org.fm.com.presentation.filemanager.ViewModelFilemanager
@@ -31,45 +28,55 @@ import org.fm.com.presentation.filemanager.ViewModelOperasiMassal
 import org.fm.com.presentation.terbaru.LayarTerbaru
 import org.fm.com.presentation.terbaru.ViewModelTerbaru
 
+data class PermintaanBukaLokasi(
+    val lokasi: LokasiBerkas,
+    val id: Long
+)
+
 @Composable
 fun App(
-    repositori: RepositoriBerkas? = null,
-    repositoriOperasi: RepositoriOperasiBerkas? = null,
-    repositoriRiwayat: RepositoriRiwayatLokasi? = null,
-    lokasiAwal: LokasiBerkas? = null
+    kontainer: KontainerAplikasi = remember { buatKontainerPreview() },
+    permintaanBukaEksternal: PermintaanBukaLokasi? = null,
+    pesanEksternal: Pair<Long, String>? = null,
+    lokasiPintasan: List<LokasiBerkas> = kontainer.lokasiPintasan,
+    onPilihFolder: (() -> Unit)? = null,
+    onSiapkanAksesLokasi: (suspend (LokasiBerkas) -> LokasiBerkas)? = null
 ) {
     MaterialTheme {
-        val storageDefault = remember { SumberMemoriPenyimpanan() }
-        val repoBerkas = repositori ?: storageDefault.berkas
-        val repoOperasi = repositoriOperasi ?: (repositori as? RepositoriOperasiBerkas) ?: storageDefault.operasi
-        val repoRiwayat = remember(repositoriRiwayat) { repositoriRiwayat ?: MemoriRepositoriRiwayatLokasi() }
+        val scope = rememberCoroutineScope()
+        val kunciKontainer = remember(kontainer) { kontainer.hashCode().toString() }
 
-        val riwayatUseCase = remember(repoRiwayat) { RiwayatLokasiUseCase(repoRiwayat) }
-
-        val vmFilemanager = remember(repoBerkas, repoOperasi, riwayatUseCase) {
+        val vmFilemanager: ViewModelFilemanager = viewModel(key = "fm_$kunciKontainer") {
             ViewModelFilemanager(
-                repositoriBerkas = repoBerkas,
-                repositoriOperasi = repoOperasi,
-                riwayatLokasiUseCase = riwayatUseCase
+                repositoriBerkas = kontainer.repositoriBerkas,
+                repositoriOperasi = kontainer.repositoriOperasi,
+                riwayatLokasiUseCase = kontainer.riwayatLokasiUseCase
             )
         }
-        val vmOperasiMassal = remember(repoBerkas, repoOperasi) {
-            ViewModelOperasiMassal(repoBerkas, repoOperasi)
+        val vmOperasiMassal: ViewModelOperasiMassal = viewModel(key = "massal_$kunciKontainer") {
+            ViewModelOperasiMassal(kontainer.repositoriBerkas, kontainer.repositoriOperasi)
         }
-        val vmTerbaru = remember(riwayatUseCase) {
-            ViewModelTerbaru(riwayatUseCase)
+        val vmTerbaru: ViewModelTerbaru = viewModel(key = "terbaru_$kunciKontainer") {
+            ViewModelTerbaru(kontainer.riwayatLokasiUseCase)
         }
 
         var tabTerpilih by remember { mutableIntStateOf(0) }
 
-        LaunchedEffect(Unit) {
-            if (repositori == null) {
-                seedDataAwal(storageDefault)
-                val root = LokasiBerkas("/", JenisLokasi.POSIX, "Penyimpanan")
-                vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(root))
-            } else if (lokasiAwal != null) {
-                vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasiAwal))
-            }
+        LaunchedEffect(kontainer) {
+            val lokasiSiap = onSiapkanAksesLokasi?.invoke(kontainer.lokasiAwal) ?: kontainer.lokasiAwal
+            vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasiSiap))
+        }
+
+        LaunchedEffect(permintaanBukaEksternal?.id) {
+            val lokasi = permintaanBukaEksternal?.lokasi ?: return@LaunchedEffect
+            val lokasiSiap = onSiapkanAksesLokasi?.invoke(lokasi) ?: lokasi
+            tabTerpilih = 0
+            vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasiSiap))
+        }
+
+        LaunchedEffect(pesanEksternal?.first) {
+            val pesan = pesanEksternal?.second ?: return@LaunchedEffect
+            vmFilemanager.prosesIntent(IntentFilemanager.SetPesanInfo(pesan))
         }
 
         Scaffold(
@@ -99,47 +106,34 @@ fun App(
                     DaftarBerkasLayar(
                         viewModel = vmFilemanager,
                         viewModelOperasiMassal = vmOperasiMassal,
+                        aksiPlatform = kontainer.aksiPlatform,
                         onBukaBerkas = { item ->
                             vmFilemanager.prosesIntent(
                                 IntentFilemanager.SetPesanInfo("Membuka ${item.nama} (${item.jenis.name})")
                             )
+                        },
+                        onPilihFolder = onPilihFolder,
+                        lokasiPintasan = lokasiPintasan,
+                        onPilihLokasiPintasan = { lokasi ->
+                            scope.launch {
+                                val lokasiSiap = onSiapkanAksesLokasi?.invoke(lokasi) ?: lokasi
+                                vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasiSiap))
+                            }
                         }
                     )
                 } else {
                     LayarTerbaru(
                         viewModel = vmTerbaru,
                         onBukaLokasi = { lokasi ->
-                            tabTerpilih = 0
-                            vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasi))
+                            scope.launch {
+                                val lokasiSiap = onSiapkanAksesLokasi?.invoke(lokasi) ?: lokasi
+                                tabTerpilih = 0
+                                vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasiSiap))
+                            }
                         }
                     )
                 }
             }
         }
     }
-}
-
-private suspend fun seedDataAwal(storage: SumberMemoriPenyimpanan) {
-    storage.berkas.simpan(DataBerkas("/", "Penyimpanan", JenisLokasi.POSIX, adalahFolder = true))
-    storage.berkas.simpan(DataBerkas("/Dokumen", "Dokumen", JenisLokasi.POSIX, adalahFolder = true))
-    storage.berkas.simpan(
-        DataBerkas("/Dokumen/Catatan.txt", "Catatan.txt", JenisLokasi.POSIX, adalahFolder = false, ukuranByte = 45L),
-        "Rencana pengembangan File Manager & Code Editor".encodeToByteArray()
-    )
-    storage.berkas.simpan(
-        DataBerkas("/Dokumen/Kode.kt", "Kode.kt", JenisLokasi.POSIX, adalahFolder = false, ukuranByte = 52L),
-        "fun main() {\n    println(\"Halo Kotlin Multiplatform!\")\n}".encodeToByteArray()
-    )
-    storage.berkas.simpan(DataBerkas("/Foto", "Foto", JenisLokasi.POSIX, adalahFolder = true))
-    storage.berkas.simpan(
-        DataBerkas("/Foto/Liburan.png", "Liburan.png", JenisLokasi.POSIX, adalahFolder = false, ukuranByte = 204800L)
-    )
-    storage.berkas.simpan(DataBerkas("/Unduhan", "Unduhan", JenisLokasi.POSIX, adalahFolder = true))
-    storage.berkas.simpan(
-        DataBerkas("/Unduhan/Paket.zip", "Paket.zip", JenisLokasi.POSIX, adalahFolder = false, ukuranByte = 1048576L)
-    )
-    storage.berkas.simpan(
-        DataBerkas("/README.md", "README.md", JenisLokasi.POSIX, adalahFolder = false, ukuranByte = 120L),
-        "# File Manager & Code Editor\nAplikasi KMP Clean Architecture lintas platform.".encodeToByteArray()
-    )
 }

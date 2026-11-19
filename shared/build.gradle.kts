@@ -39,6 +39,7 @@ kotlin {
     }
     sourceSets {
         androidMain.dependencies {
+            implementation(libs.androidx.core.ktx)
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.compose.uiTooling)
             implementation(libs.sqldelight.driver.android)
@@ -46,6 +47,8 @@ kotlin {
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.datetime)
+            implementation(libs.okio)
+            implementation(libs.koin.core)
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)

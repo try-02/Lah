@@ -32,6 +32,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.AssistChip
+import org.fm.com.domain.model.LokasiBerkas
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,6 +47,9 @@ fun DaftarBerkasLayar(
     viewModelOperasiMassal: ViewModelOperasiMassal? = null,
     aksiPlatform: AksiPlatformBerkas = remember { AksiPlatformBerkasBawaan() },
     onBukaBerkas: (ItemBerkasUi) -> Unit,
+    onPilihFolder: (() -> Unit)? = null,
+    lokasiPintasan: List<LokasiBerkas> = emptyList(),
+    onPilihLokasiPintasan: ((LokasiBerkas) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.state.collectAsState()
@@ -93,6 +103,14 @@ fun DaftarBerkasLayar(
                 TopAppBar(
                     title = { Text(state.lokasiSaatIni?.label ?: "Penjelajah Berkas") },
                     actions = {
+                        if (onPilihFolder != null) {
+                            TextButton(onClick = onPilihFolder) {
+                                Text("Pilih")
+                            }
+                            TextButton(onClick = onPilihFolder) {
+                                Text("Folder")
+                            }
+                        }
                         IconButton(onClick = {
                             val modeBaru = if (state.modeTampilan == ModeTampilan.DAFTAR) {
                                 ModeTampilan.KISI
@@ -129,6 +147,30 @@ fun DaftarBerkasLayar(
                 .fillMaxSize()
                 .padding(bantalan)
         ) {
+            if (lokasiPintasan.size > 1) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 12.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    lokasiPintasan.forEach { pintasan ->
+                        AssistChip(
+                            onClick = {
+                                if (onPilihLokasiPintasan != null) {
+                                    onPilihLokasiPintasan(pintasan)
+                                } else {
+                                    viewModel.prosesIntent(IntentFilemanager.BukaLokasi(pintasan))
+                                }
+                            },
+                            label = {
+                                Text(pintasan.label ?: pintasan.pengenal.substringAfterLast('/'))
+                            }
+                        )
+                    }
+                }
+            }
             if (state.segmenBreadcrumb.isNotEmpty()) {
                 BreadcrumbLokasi(
                     segmen = state.segmenBreadcrumb,

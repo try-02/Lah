@@ -4,10 +4,10 @@ package org.fm.com.domain.usecase
 
 import kotlin.time.Clock
 import kotlinx.coroutines.flow.Flow
-import org.fm.com.data.persistensi.EntitasRiwayatLokasi
-import org.fm.com.data.persistensi.RepositoriRiwayatLokasi
+import org.fm.com.domain.model.EntitasRiwayatLokasi
 import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.model.LokasiBerkas
+import org.fm.com.domain.repository.RepositoriRiwayatLokasi
 
 class RiwayatLokasiUseCase(
     private val repositoriRiwayat: RepositoriRiwayatLokasi,

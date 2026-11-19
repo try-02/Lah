@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.catch
 import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.usecase.RiwayatLokasiUseCase
@@ -38,16 +39,26 @@ class ViewModelTerbaru(
     private fun muatRiwayat() {
         pekerjaanMuat?.cancel()
         pekerjaanMuat = viewModelScope.launch {
-            _state.update { it.copy(sedangMemuat = true) }
-            riwayatLokasiUseCase.ambilRiwayat().collect { list ->
-                val uiList = list.map { it.keUi() }
-                _state.update {
-                    it.copy(
-                        daftarItem = uiList,
-                        sedangMemuat = false
-                    )
+            _state.update { it.copy(sedangMemuat = true, pesanGalat = null) }
+            riwayatLokasiUseCase.ambilRiwayat()
+                .catch { e ->
+                    _state.update {
+                        it.copy(
+                            sedangMemuat = false,
+                            pesanGalat = e.message ?: "Gagal memuat riwayat lokasi"
+                        )
+                    }
                 }
-            }
+                .collect { list ->
+                    val uiList = list.map { it.keUi() }
+                    _state.update {
+                        it.copy(
+                            daftarItem = uiList,
+                            sedangMemuat = false,
+                            pesanGalat = null
+                        )
+                    }
+                }
         }
     }
 
