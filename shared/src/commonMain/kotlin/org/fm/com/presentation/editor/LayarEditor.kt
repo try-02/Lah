@@ -401,26 +401,6 @@ fun LayarEditor(
         },
         onTutup = { viewModel.prosesIntent(IntentEditor.TutupDialogSimpanSebagai) }
     )
-
-    state.tabMenungguKonfirmasiTutup?.let { tabKotor ->
-        AlertDialog(
-            onDismissRequest = { viewModel.prosesIntent(IntentEditor.BatalTutupTab) },
-            title = { Text("Perubahan Belum Tersimpan") },
-            text = {
-                Text("Berkas '${tabKotor.namaBerkas}' memiliki perubahan yang belum disimpan. Tutup tab dan buang perubahan?")
-            },
-            confirmButton = {
-                TextButton(onClick = { viewModel.prosesIntent(IntentEditor.KonfirmasiBuangDanTutupTab) }) {
-                    Text("Buang", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { viewModel.prosesIntent(IntentEditor.BatalTutupTab) }) {
-                    Text("Batal")
-                }
-            }
-        )
-    }
 }
 
 @Composable
