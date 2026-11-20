@@ -99,7 +99,7 @@ fun StatusEditor(
             )
 
             Text(
-                text = if (wrapAktif) "Wrap" else "NoWrap",
+                text = if (wordWrapAktif) "Wrap" else "NoWrap",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier

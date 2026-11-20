@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,9 +19,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -28,6 +26,8 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -37,7 +37,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,10 +47,12 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.FilterJenisEntitas
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.ModeCocokNama
+import org.fm.com.presentation.komponen.IkonAplikasi
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,21 +68,32 @@ fun LayarPencarian(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
-        val isFilterHighlighted = state.filterTerbuka
             TopAppBar(
-                title = { Text("Pencarian Berkas") },
+                title = {
+                    Column {
+                        Text("Pencarian Berkas")
+                        state.folderAkar?.let { akar ->
+                            Text(
+                                text = "Target: ${akar.label ?: akar.pengenal}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                },
                 actions = {
-                    IconButton(
-                        onClick = { viewModel.prosesIntent(IntentPencarian.ToggleFilterTerbuka) }
-                    ) {
+                    IconButton(onClick = { viewModel.prosesIntent(IntentPencarian.ToggleFilterTerbuka) }) {
                         Icon(
                             imageVector = IkonAplikasi.Filter,
-                            contentDescription = if (state.filterTerbuka) "Tutup Filter" else "Filter",
-                            tint = if (isFilterHighlighted) {
+                            contentDescription = if (state.filterTerbuka) "Tutup filter" else "Buka filter",
+                            tint = if (state.filterTerbuka) {
                                 MaterialTheme.colorScheme.primary
                             } else {
-                                LocalContentColor.current
-                            }
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                            modifier = Modifier.size(21.dp)
                         )
                     }
                 }
@@ -92,19 +104,8 @@ fun LayarPencarian(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(bantalan)
-                .padding(horizontal = 12.dp)
+                .padding(horizontal = 14.dp)
         ) {
-            state.folderAkar?.let { akar ->
-                Text(
-                    text = "Lokasi target: ${akar.label ?: akar.pengenal}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
-            }
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -236,7 +237,7 @@ fun LayarPencarian(
             }
 
             Spacer(modifier = Modifier.height(6.dp))
-            HorizontalDivider()
+            HorizontalDivider(thickness = 0.5.dp)
 
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 val daftarKosong = if (state.modePencarian == ModePencarian.NAMA) {
