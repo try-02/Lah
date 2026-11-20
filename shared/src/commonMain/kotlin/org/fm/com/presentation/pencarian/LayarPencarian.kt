@@ -66,27 +66,26 @@ fun LayarPencarian(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        topBar = {
         val isFilterHighlighted = state.filterTerbuka
-
-        TopAppBar(
-            title = { Text("Pencarian Berkas") },
-            actions = {
-                IconButton(
-                    onClick = { viewModel.prosesIntent(IntentPencarian.ToggleFilterTerbuka) }
-                ) {
-                    Icon(
-                        imageVector = IkonAplikasi.Filter,
-                        contentDescription = if (state.filterTerbuka) "Tutup Filter" else "Filter",
-                        tint = if (isFilterHighlighted) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            LocalContentColor.current
-                        }
-                    )
+            TopAppBar(
+                title = { Text("Pencarian Berkas") },
+                actions = {
+                    IconButton(
+                        onClick = { viewModel.prosesIntent(IntentPencarian.ToggleFilterTerbuka) }
+                    ) {
+                        Icon(
+                            imageVector = IkonAplikasi.Filter,
+                            contentDescription = if (state.filterTerbuka) "Tutup Filter" else "Filter",
+                            tint = if (isFilterHighlighted) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                LocalContentColor.current
+                            }
+                        )
+                    }
                 }
-            }
-        )
-
+            )
         }
     ) { bantalan ->
         Column(
