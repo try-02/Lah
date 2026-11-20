@@ -113,7 +113,7 @@ object PemetaanDomainUi {
         nama = nama,
         jenis = jenis,
         ukuranFormat = formatUkuran(ukuranByte, jenis == JenisBerkas.FOLDER),
-        tanggalFormat = formatTanggal(waktuUbahEpochMs, zonaWaktu),
+        tanggalFormat = PemformatLokasiRamah.formatTanggalPendek(waktuUbahEpochMs, zonaWaktu),
         tersembunyi = tersembunyi,
         adalahFolder = jenis == JenisBerkas.FOLDER,
         dapatDibaca = dapatDibaca,

@@ -16,15 +16,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import org.fm.com.presentation.tema.LocalFontMono
 
 @Composable
 fun LayarStatusFilemanager(
     sedangMemuat: Boolean,
     pesanGalat: String?,
     jumlahItem: Int,
+    promptLokasi: String = "~/$",
     onMuatUlang: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val fontMono = LocalFontMono.current
     Box(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -32,9 +36,13 @@ fun LayarStatusFilemanager(
         when {
             sedangMemuat -> {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Memuat berkas...", style = MaterialTheme.typography.bodyMedium)
+                    CircularProgressIndicator(strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "memuat daftar berkas...",
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = fontMono),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
             pesanGalat != null -> {
@@ -46,9 +54,9 @@ fun LayarStatusFilemanager(
                         text = pesanGalat,
                         color = MaterialTheme.colorScheme.error,
                         textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.bodyLarge
+                        style = MaterialTheme.typography.bodyMedium
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
                     Button(onClick = onMuatUlang) {
                         Text("Coba Lagi")
                     }
@@ -57,18 +65,17 @@ fun LayarStatusFilemanager(
             jumlahItem == 0 -> {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.padding(24.dp)
                 ) {
                     Text(
-                        text = "Folder Kosong",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Tidak ada berkas yang dapat ditampilkan",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline
+                        text = "$promptLokasi ls  // 0 item",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontFamily = fontMono,
+                            fontSize = 13.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
                     )
                 }
             }

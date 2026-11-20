@@ -1,15 +1,15 @@
 package org.fm.com.presentation.filemanager
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -18,25 +18,23 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -58,10 +56,13 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.OperasiBerkas
 import org.fm.com.presentation.komponen.IkonAplikasi
+import org.fm.com.presentation.komponen.PemformatLokasiRamah
+import org.fm.com.presentation.tema.LocalFontMono
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,10 +79,13 @@ fun DaftarBerkasLayar(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val stateMassalState = viewModelOperasiMassal?.state?.collectAsStateWithLifecycle()
     val stateMassal = stateMassalState?.value ?: remember { StateOperasiMassal() }
+    val fontMono = LocalFontMono.current
     @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
     val snackbarHostState = remember { SnackbarHostState() }
+
     var menuKonteksItem by remember { mutableStateOf<ItemBerkasUi?>(null) }
+    var tampilSwitcherLokasi by remember { mutableStateOf(false) }
 
     val onBukaBerkasTerbaru by rememberUpdatedState(onBukaBerkas)
     val sedangMultiSelectTerbaru by rememberUpdatedState(state.sedangMultiSelect)
@@ -91,6 +95,11 @@ fun DaftarBerkasLayar(
             snackbarHostState.showSnackbar(it)
             viewModel.prosesIntent(IntentFilemanager.SetPesanInfo(null))
         }
+    }
+
+    val lokasiAktif = state.lokasiSaatIni
+    val promptRingkas = remember(lokasiAktif) {
+        lokasiAktif?.let { PemformatLokasiRamah.formatRingkas(it) } ?: "~"
     }
 
     Scaffold(
@@ -120,32 +129,45 @@ fun DaftarBerkasLayar(
             } else {
                 TopAppBar(
                     title = {
-                        Column {
+                        Column(
+                            modifier = Modifier
+                                .clip(MaterialTheme.shapes.extraSmall)
+                                .clickable(enabled = lokasiPintasan.isNotEmpty() || onPilihFolder != null) {
+                                    tampilSwitcherLokasi = true
+                                }
+                                .padding(vertical = 2.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = lokasiAktif?.label ?: "Berkas",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                if (lokasiPintasan.isNotEmpty() || onPilihFolder != null) {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(
+                                        imageVector = IkonAplikasi.TukarLokasi,
+                                        contentDescription = "Ganti lokasi penyimpanan",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
                             Text(
-                                text = state.lokasiSaatIni?.label ?: "Penjelajah Berkas",
+                                text = "$promptRingkas · ${state.jumlahItem} item",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = fontMono,
+                                    fontSize = 12.sp
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            state.lokasiSaatIni?.let { lok ->
-                                Text(
-                                    text = "${lok.jenis.name} • ${state.jumlahItem} item",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
                         }
                     },
                     actions = {
-                        if (onPilihFolder != null) {
-                            IconButton(onClick = onPilihFolder) {
-                                Icon(
-                                    imageVector = IkonAplikasi.PilihFolder,
-                                    contentDescription = "Pilih folder penyimpanan",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                        }
                         IconButton(onClick = {
                             val modeBaru = if (state.modeTampilan == ModeTampilan.DAFTAR) {
                                 ModeTampilan.KISI
@@ -160,26 +182,22 @@ fun DaftarBerkasLayar(
                                 } else {
                                     IkonAplikasi.TampilanDaftar
                                 },
-                                contentDescription = if (state.modeTampilan == ModeTampilan.DAFTAR) {
-                                    "Ubah ke tampilan kisi"
-                                } else {
-                                    "Ubah ke tampilan daftar"
-                                },
-                                modifier = Modifier.size(21.dp)
+                                contentDescription = "Ganti tampilan daftar atau kisi",
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                         IconButton(onClick = { viewModel.prosesIntent(IntentFilemanager.SetBukaDialogUrutkan(true)) }) {
                             Icon(
                                 imageVector = IkonAplikasi.Urutkan,
                                 contentDescription = "Urutkan dan saring",
-                                modifier = Modifier.size(21.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                         IconButton(onClick = { viewModel.prosesIntent(IntentFilemanager.Segarkan) }) {
                             Icon(
                                 imageVector = IkonAplikasi.Segarkan,
                                 contentDescription = "Segarkan daftar",
-                                modifier = Modifier.size(21.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
@@ -191,12 +209,13 @@ fun DaftarBerkasLayar(
                 FloatingActionButton(
                     onClick = { viewModel.prosesIntent(IntentFilemanager.SetBukaDialogBuat(true)) },
                     containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 2.dp)
                 ) {
                     Icon(
                         imageVector = IkonAplikasi.Tambah,
-                        contentDescription = "Buat berkas atau folder baru",
-                        modifier = Modifier.size(24.dp)
+                        contentDescription = "Buat baru",
+                        modifier = Modifier.size(22.dp)
                     )
                 }
             }
@@ -207,53 +226,7 @@ fun DaftarBerkasLayar(
                 .fillMaxSize()
                 .padding(bantalan)
         ) {
-            if (lokasiPintasan.size > 1) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 14.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    lokasiPintasan.forEach { pintasan ->
-                        val aktif = state.lokasiSaatIni?.pengenal == pintasan.pengenal &&
-                            state.lokasiSaatIni?.jenis == pintasan.jenis
-                        Surface(
-                            color = if (aktif) {
-                                MaterialTheme.colorScheme.secondaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surfaceContainerLow
-                            },
-                            shape = MaterialTheme.shapes.small,
-                            modifier = Modifier
-                                .clip(MaterialTheme.shapes.small)
-                                .clickable {
-                                    if (onPilihLokasiPintasan != null) {
-                                        onPilihLokasiPintasan(pintasan)
-                                    } else {
-                                        viewModel.prosesIntent(IntentFilemanager.BukaLokasi(pintasan))
-                                    }
-                                }
-                        ) {
-                            Text(
-                                text = pintasan.label ?: pintasan.pengenal.substringAfterLast('/'),
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = if (aktif) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (aktif) {
-                                    MaterialTheme.colorScheme.onSecondaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (state.segmenBreadcrumb.size > 1 ||
-                (state.segmenBreadcrumb.size == 1 && lokasiPintasan.size <= 1)
-            ) {
+            if (state.segmenBreadcrumb.size > 1) {
                 BreadcrumbLokasi(
                     segmen = state.segmenBreadcrumb,
                     onPilihSegmen = { segmen ->
@@ -266,7 +239,7 @@ fun DaftarBerkasLayar(
                 BannerTempelBerkas(
                     apakahPindah = stateMassal.apakahPindah,
                     jumlahItem = stateMassal.daftarSumber.size,
-                    dapatTempel = state.lokasiSaatIni != null && state.kemampuanUi.dapatMembuat,
+                    dapatTempel = lokasiAktif != null && state.kemampuanUi.dapatMembuat,
                     onTempel = { viewModelOperasiMassal?.bukaKonfirmasiTempel() },
                     onBatal = { viewModelOperasiMassal?.batalModeTempel() }
                 )
@@ -277,107 +250,216 @@ fun DaftarBerkasLayar(
                 onUbahKueri = { viewModel.prosesIntent(IntentFilemanager.UbahKataKunciSaring(it)) }
             )
 
+            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
             Box(modifier = Modifier.weight(1f)) {
                 if (state.sedangMemuat || state.pesanGalat != null || state.daftarItem.isEmpty()) {
                     LayarStatusFilemanager(
                         sedangMemuat = state.sedangMemuat,
                         pesanGalat = state.pesanGalat,
                         jumlahItem = state.jumlahItem,
+                        promptLokasi = lokasiAktif?.let { PemformatLokasiRamah.formatPrompt(it) } ?: "~ $",
                         onMuatUlang = { viewModel.prosesIntent(IntentFilemanager.Segarkan) }
                     )
-                } else {
-                    if (state.modeTampilan == ModeTampilan.DAFTAR) {
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(
-                                items = state.daftarItem,
-                                key = { "${it.lokasi.jenis.name}:${it.lokasi.pengenal}" }
-                            ) { item ->
-                                val menuTerbukaUntukItem = menuKonteksItem?.lokasi == item.lokasi
-                                Box {
-                                    ItemBerkasBaris(
+                } else if (state.modeTampilan == ModeTampilan.DAFTAR) {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(
+                            items = state.daftarItem,
+                            key = { "${it.lokasi.jenis.name}:${it.lokasi.pengenal}" }
+                        ) { item ->
+                            val menuTerbukaUntukItem = menuKonteksItem?.lokasi == item.lokasi
+                            Box {
+                                ItemBerkasBaris(
+                                    item = item,
+                                    terpilih = item.lokasi in state.itemTerpilih,
+                                    modeSeleksi = state.sedangMultiSelect,
+                                    onKlik = {
+                                        if (sedangMultiSelectTerbaru) {
+                                            viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi))
+                                        } else if (item.adalahFolder) {
+                                            viewModel.prosesIntent(IntentFilemanager.BukaLokasi(item.lokasi))
+                                        } else {
+                                            onBukaBerkasTerbaru(item)
+                                        }
+                                    },
+                                    onTekanLama = {
+                                        viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi))
+                                    },
+                                    onKlikMenu = { menuKonteksItem = item }
+                                )
+                                if (menuTerbukaUntukItem) {
+                                    MenuKonteksItemBerkas(
                                         item = item,
-                                        terpilih = item.lokasi in state.itemTerpilih,
-                                        modeSeleksi = state.sedangMultiSelect,
-                                        onKlik = {
-                                            if (sedangMultiSelectTerbaru) {
-                                                viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi))
-                                            } else if (item.adalahFolder) {
-                                                viewModel.prosesIntent(IntentFilemanager.BukaLokasi(item.lokasi))
-                                            } else {
-                                                onBukaBerkasTerbaru(item)
-                                            }
-                                        },
-                                        onTekanLama = { menuKonteksItem = item },
-                                        onKlikMenu = { menuKonteksItem = item }
+                                        terbuka = true,
+                                        kemampuan = state.kemampuanUi,
+                                        onTutup = { menuKonteksItem = null },
+                                        onPilih = { viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi)) },
+                                        onSalin = { viewModelOperasiMassal?.inisiasiSalin(listOf(item.lokasi)) },
+                                        onPindah = { viewModelOperasiMassal?.inisiasiPindah(listOf(item.lokasi)) },
+                                        onBukaDengan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBukaDengan(item)) },
+                                        onBagikan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBagikan(item)) },
+                                        onGantiNama = { viewModel.prosesIntent(IntentFilemanager.BukaDialogRename(item)) },
+                                        onProperti = { viewModel.prosesIntent(IntentFilemanager.BukaDialogProperti(item)) },
+                                        onHapus = { viewModel.prosesIntent(IntentFilemanager.BukaDialogHapus(listOf(item.lokasi))) }
                                     )
-                                    if (menuTerbukaUntukItem) {
-                                        MenuKonteksItemBerkas(
-                                            item = item,
-                                            terbuka = true,
-                                            kemampuan = state.kemampuanUi,
-                                            onTutup = { menuKonteksItem = null },
-                                            onPilih = { viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi)) },
-                                            onSalin = { viewModelOperasiMassal?.inisiasiSalin(listOf(item.lokasi)) },
-                                            onPindah = { viewModelOperasiMassal?.inisiasiPindah(listOf(item.lokasi)) },
-                                            onBukaDengan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBukaDengan(item)) },
-                                            onBagikan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBagikan(item)) },
-                                            onGantiNama = { viewModel.prosesIntent(IntentFilemanager.BukaDialogRename(item)) },
-                                            onProperti = { viewModel.prosesIntent(IntentFilemanager.BukaDialogProperti(item)) },
-                                            onHapus = { viewModel.prosesIntent(IntentFilemanager.BukaDialogHapus(listOf(item.lokasi))) }
-                                        )
-                                    }
                                 }
                             }
                         }
-                    } else {
-                        LazyVerticalGrid(
-                            columns = GridCells.Adaptive(minSize = 112.dp),
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 8.dp)
-                        ) {
-                            items(
-                                items = state.daftarItem,
-                                key = { "${it.lokasi.jenis.name}:${it.lokasi.pengenal}" }
-                            ) { item ->
-                                val menuTerbukaUntukItem = menuKonteksItem?.lokasi == item.lokasi
-                                Box {
-                                    ItemBerkasKotak(
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 112.dp),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        items(
+                            items = state.daftarItem,
+                            key = { "${it.lokasi.jenis.name}:${it.lokasi.pengenal}" }
+                        ) { item ->
+                            val menuTerbukaUntukItem = menuKonteksItem?.lokasi == item.lokasi
+                            Box {
+                                ItemBerkasKotak(
+                                    item = item,
+                                    terpilih = item.lokasi in state.itemTerpilih,
+                                    modeSeleksi = state.sedangMultiSelect,
+                                    onKlik = {
+                                        if (sedangMultiSelectTerbaru) {
+                                            viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi))
+                                        } else if (item.adalahFolder) {
+                                            viewModel.prosesIntent(IntentFilemanager.BukaLokasi(item.lokasi))
+                                        } else {
+                                            onBukaBerkasTerbaru(item)
+                                        }
+                                    },
+                                    onTekanLama = {
+                                        viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi))
+                                    },
+                                    onKlikMenu = { menuKonteksItem = item }
+                                )
+                                if (menuTerbukaUntukItem) {
+                                    MenuKonteksItemBerkas(
                                         item = item,
-                                        terpilih = item.lokasi in state.itemTerpilih,
-                                        modeSeleksi = state.sedangMultiSelect,
-                                        onKlik = {
-                                            if (sedangMultiSelectTerbaru) {
-                                                viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi))
-                                            } else if (item.adalahFolder) {
-                                                viewModel.prosesIntent(IntentFilemanager.BukaLokasi(item.lokasi))
-                                            } else {
-                                                onBukaBerkasTerbaru(item)
-                                            }
-                                        },
-                                        onTekanLama = { menuKonteksItem = item }
+                                        terbuka = true,
+                                        kemampuan = state.kemampuanUi,
+                                        onTutup = { menuKonteksItem = null },
+                                        onPilih = { viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi)) },
+                                        onSalin = { viewModelOperasiMassal?.inisiasiSalin(listOf(item.lokasi)) },
+                                        onPindah = { viewModelOperasiMassal?.inisiasiPindah(listOf(item.lokasi)) },
+                                        onBukaDengan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBukaDengan(item)) },
+                                        onBagikan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBagikan(item)) },
+                                        onGantiNama = { viewModel.prosesIntent(IntentFilemanager.BukaDialogRename(item)) },
+                                        onProperti = { viewModel.prosesIntent(IntentFilemanager.BukaDialogProperti(item)) },
+                                        onHapus = { viewModel.prosesIntent(IntentFilemanager.BukaDialogHapus(listOf(item.lokasi))) }
                                     )
-                                    if (menuTerbukaUntukItem) {
-                                        MenuKonteksItemBerkas(
-                                            item = item,
-                                            terbuka = true,
-                                            kemampuan = state.kemampuanUi,
-                                            onTutup = { menuKonteksItem = null },
-                                            onPilih = { viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi)) },
-                                            onSalin = { viewModelOperasiMassal?.inisiasiSalin(listOf(item.lokasi)) },
-                                            onPindah = { viewModelOperasiMassal?.inisiasiPindah(listOf(item.lokasi)) },
-                                            onBukaDengan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBukaDengan(item)) },
-                                            onBagikan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBagikan(item)) },
-                                            onGantiNama = { viewModel.prosesIntent(IntentFilemanager.BukaDialogRename(item)) },
-                                            onProperti = { viewModel.prosesIntent(IntentFilemanager.BukaDialogProperti(item)) },
-                                            onHapus = { viewModel.prosesIntent(IntentFilemanager.BukaDialogHapus(listOf(item.lokasi))) }
-                                        )
-                                    }
                                 }
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+
+    if (tampilSwitcherLokasi) {
+        ModalBottomSheet(
+            onDismissRequest = { tampilSwitcherLokasi = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "Lokasi Penyimpanan",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                lokasiPintasan.forEach { pintasan ->
+                    val aktif = lokasiAktif?.pengenal == pintasan.pengenal &&
+                        lokasiAktif?.jenis == pintasan.jenis
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(MaterialTheme.shapes.small)
+                            .background(
+                                if (aktif) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                            )
+                            .clickable {
+                                tampilSwitcherLokasi = false
+                                if (onPilihLokasiPintasan != null) {
+                                    onPilihLokasiPintasan(pintasan)
+                                } else {
+                                    viewModel.prosesIntent(IntentFilemanager.BukaLokasi(pintasan))
+                                }
+                            }
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = IkonAplikasi.Folder,
+                            contentDescription = null,
+                            tint = if (aktif) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = pintasan.label ?: pintasan.pengenal.substringAfterLast('/'),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (aktif) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = PemformatLokasiRamah.formatRingkas(pintasan),
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = fontMono, fontSize = 12.sp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (aktif) {
+                            Icon(
+                                imageVector = IkonAplikasi.Centang,
+                                contentDescription = "Aktif",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+                if (onPilihFolder != null) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(MaterialTheme.shapes.small)
+                            .clickable {
+                                tampilSwitcherLokasi = false
+                                onPilihFolder()
+                            }
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = IkonAplikasi.PilihFolder,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Tambah / Pilih Folder Lain...",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
@@ -416,7 +498,7 @@ fun DaftarBerkasLayar(
             },
             onSalinPath = { path ->
                 clipboardManager.setText(AnnotatedString(path))
-                viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Lokasi disalin: $path"))
+                viewModel.prosesIntent(IntentFilemanager.SetPesanInfo("Lokasi disalin"))
             },
             onTutup = { viewModel.prosesIntent(IntentFilemanager.BukaDialogProperti(null)) }
         )
@@ -472,9 +554,9 @@ fun DaftarBerkasLayar(
             terbuka = true,
             apakahPindah = stateMassal.apakahPindah,
             jumlahItem = stateMassal.daftarSumber.size,
-            lokasiTujuan = state.lokasiSaatIni,
+            lokasiTujuan = lokasiAktif,
             onKonfirmasi = {
-                state.lokasiSaatIni?.let { tujuan ->
+                lokasiAktif?.let { tujuan ->
                     viewModelOperasiMassal?.eksekusiKeTujuan(tujuan) { hasil ->
                         viewModel.prosesIntent(IntentFilemanager.BersihkanPilihan)
                         viewModel.prosesIntent(IntentFilemanager.Segarkan)
@@ -482,7 +564,7 @@ fun DaftarBerkasLayar(
                         if (!adaKonflik) {
                             val pesan = when {
                                 hasil == null -> "Operasi dibatalkan"
-                                hasil.adaGagal -> "Selesai dengan ${hasil.berhasil.size} berhasil dan ${hasil.gagal.size} gagal"
+                                hasil.adaGagal -> "Selesai: ${hasil.berhasil.size} berhasil, ${hasil.gagal.size} gagal"
                                 else -> "Berhasil memproses ${hasil.berhasil.size} item"
                             }
                             viewModel.prosesIntent(IntentFilemanager.SetPesanInfo(pesan))
@@ -544,56 +626,55 @@ private fun KotakSaringCepat(
     kueri: String,
     onUbahKueri: (String) -> Unit
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = MaterialTheme.shapes.small,
+    val fontMono = LocalFontMono.current
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(MaterialTheme.shapes.small)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .border(0.8.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small)
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = IkonAplikasi.Cari,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.outline,
-                modifier = Modifier.size(18.dp)
+        Icon(
+            imageVector = IkonAplikasi.Cari,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Box(modifier = Modifier.weight(1f)) {
+            if (kueri.isEmpty()) {
+                Text(
+                    text = "saring di folder ini...",
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = fontMono, fontSize = 12.5.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            BasicTextField(
+                value = kueri,
+                onValueChange = onUbahKueri,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = fontMono,
+                    fontSize = 12.5.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                modifier = Modifier.fillMaxWidth()
             )
-            Spacer(modifier = Modifier.width(10.dp))
-            Box(modifier = Modifier.weight(1f)) {
-                if (kueri.isEmpty()) {
-                    Text(
-                        text = "Saring berkas di folder ini...",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                }
-                BasicTextField(
-                    value = kueri,
-                    onValueChange = onUbahKueri,
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-            if (kueri.isNotEmpty()) {
-                Spacer(modifier = Modifier.width(6.dp))
-                Icon(
-                    imageVector = IkonAplikasi.Tutup,
-                    contentDescription = "Bersihkan saringan",
-                    tint = MaterialTheme.colorScheme.outline,
-                    modifier = Modifier
-                        .size(18.dp)
-                        .clickable { onUbahKueri("") }
-                )
-            }
+        }
+        if (kueri.isNotEmpty()) {
+            Spacer(modifier = Modifier.width(6.dp))
+            Icon(
+                imageVector = IkonAplikasi.Tutup,
+                contentDescription = "Bersihkan saringan",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .size(16.dp)
+                    .clickable { onUbahKueri("") }
+            )
         }
     }
 }
@@ -607,31 +688,29 @@ private fun BannerTempelBerkas(
     onBatal: () -> Unit
 ) {
     val kata = if (apakahPindah) "Memindah" else "Menyalin"
-    Card(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 4.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clip(MaterialTheme.shapes.small)
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .border(0.8.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), MaterialTheme.shapes.small)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "$kata $jumlahItem item. Buka folder tujuan lalu tempel.",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.weight(1f)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            OutlinedButton(onClick = onBatal) {
-                Text("Batal")
-            }
-            Spacer(modifier = Modifier.width(6.dp))
-            Button(onClick = onTempel, enabled = dapatTempel) {
-                Text("Tempel")
-            }
+        Text(
+            text = "$kata $jumlahItem item. Buka tujuan lalu tempel.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        OutlinedButton(onClick = onBatal) {
+            Text("Batal")
+        }
+        Spacer(modifier = Modifier.width(6.dp))
+        Button(onClick = onTempel, enabled = dapatTempel) {
+            Text("Tempel")
         }
     }
 }
@@ -680,7 +759,7 @@ private fun MenuKonteksItemBerkas(
     DropdownMenu(
         expanded = terbuka,
         onDismissRequest = onTutup,
-        modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerLowest)
+        modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
         DropdownMenuItem(
             text = { Text("Pilih") },
@@ -701,7 +780,7 @@ private fun MenuKonteksItemBerkas(
             alasan = kemampuan.alasan(OperasiBerkas.MEMINDAHKAN),
             onKlik = { onTutup(); onPindah() }
         )
-        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+        HorizontalDivider(thickness = 0.5.dp, modifier = Modifier.padding(vertical = 2.dp))
         if (!item.adalahFolder) {
             MenuItemDenganAlasan(
                 judul = "Buka Dengan...",
@@ -739,7 +818,7 @@ private fun MenuKonteksItemBerkas(
             leadingIcon = { Icon(IkonAplikasi.Info, contentDescription = null, modifier = Modifier.size(18.dp)) },
             onClick = { onTutup(); onProperti() }
         )
-        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+        HorizontalDivider(thickness = 0.5.dp, modifier = Modifier.padding(vertical = 2.dp))
         MenuItemDenganAlasan(
             judul = "Hapus",
             ikon = IkonAplikasi.Hapus,
@@ -761,7 +840,7 @@ private fun MenuItemDenganAlasan(
     onKlik: () -> Unit
 ) {
     val warnaTeks = when {
-        !didukung -> MaterialTheme.colorScheme.outline
+        !didukung -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
         warnaKhusus != null -> warnaKhusus
         else -> MaterialTheme.colorScheme.onSurface
     }
@@ -781,7 +860,7 @@ private fun MenuItemDenganAlasan(
                     Text(
                         text = alasan,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )

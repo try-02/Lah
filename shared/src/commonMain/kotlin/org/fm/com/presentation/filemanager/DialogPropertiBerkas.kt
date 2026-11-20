@@ -14,8 +14,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.fm.com.domain.model.OperasiBerkas
+import org.fm.com.presentation.komponen.PemformatLokasiRamah
+import org.fm.com.presentation.tema.LocalFontMono
 
 @Composable
 fun DialogPropertiBerkas(
@@ -27,33 +31,38 @@ fun DialogPropertiBerkas(
 ) {
     if (item == null) return
     val dukungPosix = kemampuan.dapatLihatPathPosix
-    val labelLokasi = if (dukungPosix) "Path POSIX" else "Pengenal Lokasi (URI/Sandbox)"
+    val lokasiRamah = PemformatLokasiRamah.formatRingkas(item.lokasi)
+    val labelLokasi = if (dukungPosix) "Path" else "Lokasi (${item.lokasi.jenis.name})"
     val tombolLokasi = if (dukungPosix) "Salin Path" else "Salin Pengenal"
     val alasanPosix = kemampuan.alasan(OperasiBerkas.MELIHAT_PATH_POSIX)
 
     AlertDialog(
         onDismissRequest = onTutup,
-        title = { Text("Properti Berkas") },
+        title = { Text("Properti") },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
-                BarisProperti("Nama", item.nama)
-                BarisProperti("Jenis", item.jenis.name)
-                BarisProperti("Ukuran", item.ukuranFormat)
-                BarisProperti("Tanggal Modifikasi", item.tanggalFormat)
-                BarisProperti("Akses", buildString {
-                    append(if (item.dapatDibaca) "Baca " else "")
-                    append(if (item.dapatDitulis) "Tulis" else "Hanya-Baca")
-                })
-                BarisProperti(labelLokasi, item.lokasi.pengenal)
+                BarisProperti("Nama", item.nama, mono = true)
+                BarisProperti("Jenis", item.jenis.name, mono = false)
+                BarisProperti("Ukuran", item.ukuranFormat, mono = true)
+                BarisProperti("Modifikasi", item.tanggalFormat, mono = true)
+                BarisProperti(
+                    "Akses",
+                    buildString {
+                        append(if (item.dapatDibaca) "Baca " else "")
+                        append(if (item.dapatDitulis) "Tulis" else "Hanya-Baca")
+                    },
+                    mono = false
+                )
+                BarisProperti(labelLokasi, lokasiRamah, mono = true)
                 if (!dukungPosix && alasanPosix != null) {
                     Text(
                         text = alasanPosix,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp)
                     )
                 }
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 Row {
                     TextButton(onClick = { onSalinNama(item.nama) }) {
                         Text("Salin Nama")
@@ -74,9 +83,19 @@ fun DialogPropertiBerkas(
 }
 
 @Composable
-private fun BarisProperti(label: String, nilai: String) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-        Text(nilai, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+private fun BarisProperti(label: String, nilai: String, mono: Boolean) {
+    val fontMono = LocalFontMono.current
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            text = nilai,
+            style = if (mono) {
+                MaterialTheme.typography.bodySmall.copy(fontFamily = fontMono, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
+            } else {
+                MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+            },
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }

@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.repository.HasilMassal
+import org.fm.com.presentation.komponen.PemformatLokasiRamah
 
 @Composable
 fun DialogPindahSalin(
@@ -45,7 +46,7 @@ fun DialogPindahSalin(
                     color = MaterialTheme.colorScheme.primary
                 )
                 Text(
-                    text = lokasiTujuan.pengenal,
+                    text = PemformatLokasiRamah.formatRingkas(lokasiTujuan),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.outline
                 )

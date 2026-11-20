@@ -87,3 +87,9 @@ sqldelight {
 dependencies {
     androidRuntimeClasspath(libs.compose.uiTooling)
 }
+
+compose.resources {
+    publicResClass = false
+    packageOfResClass = "org.fm.com.resources"
+    generateResClass = always
+}

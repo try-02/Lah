@@ -15,11 +15,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.fm.com.presentation.tema.LocalFontMono
 
 private class CachePosisiBaris {
     var teksRef: String = ""
@@ -70,22 +70,23 @@ fun KomponenNomorBaris(
     val textMeasurer = rememberTextMeasurer(cacheSize = 256)
     val density = LocalDensity.current
     val cacheBaris = remember { CachePosisiBaris() }
+    val fontMono = LocalFontMono.current
 
     val warnaLatar = MaterialTheme.colorScheme.surfaceContainerLow
-    val warnaNomorNormal = MaterialTheme.colorScheme.outline
+    val warnaNomorNormal = MaterialTheme.colorScheme.onSurfaceVariant
     val warnaNomorAktif = MaterialTheme.colorScheme.primary
     val warnaSorotBarisAktif = MaterialTheme.colorScheme.primary.copy(alpha = 0.09f)
 
-    val gayaNormal = remember(warnaNomorNormal) {
+    val gayaNormal = remember(warnaNomorNormal, fontMono) {
         TextStyle(
-            fontFamily = FontFamily.Monospace,
+            fontFamily = fontMono,
             fontSize = 12.sp,
             color = warnaNomorNormal
         )
     }
-    val gayaAktif = remember(warnaNomorAktif) {
+    val gayaAktif = remember(warnaNomorAktif, fontMono) {
         TextStyle(
-            fontFamily = FontFamily.Monospace,
+            fontFamily = fontMono,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             color = warnaNomorAktif

@@ -33,7 +33,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -49,13 +48,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
@@ -64,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.fm.com.presentation.komponen.IkonAplikasi
+import org.fm.com.presentation.tema.LocalFontMono
 
 @Immutable
 private data class TabHeaderUi(
@@ -80,6 +80,7 @@ fun LayarEditor(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val fontMono = LocalFontMono.current
 
     LaunchedEffect(state.pesanInfo) {
         state.pesanInfo?.let {
@@ -138,7 +139,7 @@ fun LayarEditor(
                     onTutupTab = remember(viewModel) { { viewModel.prosesIntent(IntentEditor.MintaTutupTab(it)) } },
                     onTabBaru = remember(viewModel) { { viewModel.prosesIntent(IntentEditor.BuatTabKosong()) } }
                 )
-                HorizontalDivider(thickness = 0.5.dp)
+                HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
             }
 
             if (tabAktif == null) {
@@ -148,11 +149,11 @@ fun LayarEditor(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "Belum Ada Berkas Dibuka",
-                            style = MaterialTheme.typography.titleMedium,
+                            text = "// belum ada berkas terbuka",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = fontMono),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                         Button(onClick = { viewModel.prosesIntent(IntentEditor.BuatTabKosong()) }) {
                             Text("Buat Catatan Baru")
                         }
@@ -163,9 +164,13 @@ fun LayarEditor(
                     StatusMuatTab.MEMUAT -> {
                         Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                CircularProgressIndicator()
+                                CircularProgressIndicator(strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.height(12.dp))
-                                Text("Memuat berkas...")
+                                Text(
+                                    text = "memuat berkas...",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = fontMono),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }
@@ -176,7 +181,7 @@ fun LayarEditor(
                         ) {
                             Text(
                                 text = tabAktif.pesanStatus ?: "Berkas tidak dapat dibuka di editor teks",
-                                style = MaterialTheme.typography.bodyLarge,
+                                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = fontMono),
                                 textAlign = TextAlign.Center,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -202,21 +207,24 @@ fun LayarEditor(
                     }
                     StatusMuatTab.SIAP -> {
                         if (tabAktif.modeHanyaBaca) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.tertiaryContainer,
-                                modifier = Modifier.fillMaxWidth()
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                                    .padding(horizontal = 12.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
                                     text = if (tabAktif.hanyaBacaPermanen) {
-                                        "Mode Hanya Baca (penyimpanan terkunci) — seleksi, salin & cari aktif"
+                                        "[RO] penyimpanan terkunci — seleksi, salin & cari tetap aktif"
                                     } else {
-                                        "Mode Hanya Baca aktif — seleksi, salin & cari aktif"
+                                        "[BACA] mode hanya baca aktif — seleksi, salin & cari tetap aktif"
                                     },
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = fontMono),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
+                            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                         }
 
                         val wrapAktif = tabAktif.wordWrapEfektif(state.wordWrapUmum)
@@ -238,7 +246,7 @@ fun LayarEditor(
                             modifier = Modifier.weight(1f).fillMaxWidth()
                         )
 
-                        HorizontalDivider(thickness = 0.5.dp)
+                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                         StatusEditor(
                             baris = tabAktif.posisiKursor.baris,
                             kolom = tabAktif.posisiKursor.kolom,
@@ -367,20 +375,22 @@ private fun TopBarEditor(
     onTutupTab: () -> Unit,
     onTabKosongBaru: () -> Unit
 ) {
+    val fontMono = LocalFontMono.current
     var menuTerbuka by remember { mutableStateOf(false) }
 
     TopAppBar(
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = namaBerkas ?: "Editor Teks",
+                    text = namaBerkas ?: "Editor",
+                    style = MaterialTheme.typography.titleMedium.copy(fontFamily = fontMono),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 if (kotor) {
                     Text(
                         text = " •",
-                        color = MaterialTheme.colorScheme.error,
+                        color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -392,7 +402,7 @@ private fun TopBarEditor(
                     Icon(
                         imageVector = IkonAplikasi.Kembali,
                         contentDescription = "Kembali ke daftar berkas",
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -443,7 +453,7 @@ private fun TopBarEditor(
                     DropdownMenu(
                         expanded = menuTerbuka,
                         onDismissRequest = { menuTerbuka = false },
-                        modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerLowest)
+                        modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow)
                     ) {
                         DropdownMenuItem(
                             text = { Text("Simpan Sebagai...") },
@@ -466,7 +476,7 @@ private fun TopBarEditor(
                             leadingIcon = { Icon(IkonAplikasi.Statistik, contentDescription = null, modifier = Modifier.size(18.dp)) },
                             onClick = { menuTerbuka = false; onStatistik() }
                         )
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                        HorizontalDivider(thickness = 0.5.dp, modifier = Modifier.padding(vertical = 2.dp))
                         DropdownMenuItem(
                             text = { Text(if (wordWrapAktif) "Matikan Word Wrap" else "Aktifkan Word Wrap") },
                             onClick = { menuTerbuka = false; onToggleWrap() }
@@ -479,7 +489,7 @@ private fun TopBarEditor(
                                         Text(
                                             text = "Lokasi tidak memiliki izin tulis",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.outline
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
@@ -487,7 +497,7 @@ private fun TopBarEditor(
                             enabled = !hanyaBacaPermanen,
                             onClick = { menuTerbuka = false; onToggleHanyaBaca() }
                         )
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                        HorizontalDivider(thickness = 0.5.dp, modifier = Modifier.padding(vertical = 2.dp))
                         DropdownMenuItem(
                             text = { Text("Tab Kosong Baru") },
                             leadingIcon = { Icon(IkonAplikasi.Tambah, contentDescription = null, modifier = Modifier.size(18.dp)) },
@@ -517,67 +527,78 @@ private fun BarTabEditor(
     onTutupTab: (String) -> Unit,
     onTabBaru: () -> Unit
 ) {
+    val fontMono = LocalFontMono.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-            .padding(horizontal = 6.dp, vertical = 4.dp),
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         LazyRow(
             modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             items(items = daftarTab, key = { it.idTab }) { tab ->
                 val aktif = tab.idTab == idTabAktif
-                Surface(
-                    color = if (aktif) {
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerLow
-                    },
-                    shape = MaterialTheme.shapes.extraSmall,
-                    modifier = Modifier.clickable { onPilihTab(tab.idTab) }
+                Column(
+                    modifier = Modifier
+                        .width(IntrinsicSize.Max)
+                        .background(
+                            if (aktif) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent
+                        )
+                        .clickable { onPilihTab(tab.idTab) }
                 ) {
                     Row(
-                        modifier = Modifier.padding(start = 10.dp, end = 6.dp, top = 5.dp, bottom = 5.dp),
+                        modifier = Modifier.padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (tab.kotor) {
                             Text(
                                 text = "● ",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.error
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
                         Text(
                             text = tab.namaBerkas,
-                            style = MaterialTheme.typography.labelMedium,
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontFamily = fontMono,
+                                fontSize = 12.sp
+                            ),
                             fontWeight = if (aktif) FontWeight.SemiBold else FontWeight.Normal,
                             color = if (aktif) {
-                                MaterialTheme.colorScheme.onPrimaryContainer
+                                MaterialTheme.colorScheme.onSurface
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             },
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Icon(
                             imageVector = IkonAplikasi.Tutup,
                             contentDescription = "Tutup tab ${tab.namaBerkas}",
-                            tint = MaterialTheme.colorScheme.outline,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
-                                .size(14.dp)
+                                .size(13.dp)
                                 .clickable { onTutupTab(tab.idTab) }
                         )
                     }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(2.dp)
+                            .background(
+                                if (aktif) MaterialTheme.colorScheme.primary else Color.Transparent
+                            )
+                    )
                 }
             }
         }
         IconButton(
             onClick = onTabBaru,
-            modifier = Modifier.size(32.dp)
+            modifier = Modifier.size(34.dp)
         ) {
             Icon(
                 imageVector = IkonAplikasi.Tambah,
@@ -643,11 +664,12 @@ private fun AreaTeksEditor(
 
     val paddingAtasDp = 10.dp
     val paddingAtasPx = with(LocalDensity.current) { paddingAtasDp.toPx() }
+    val fontMono = LocalFontMono.current
     val warnaTeks = MaterialTheme.colorScheme.onSurface
-    val gayaTeks = remember(warnaTeks) {
+    val gayaTeks = remember(warnaTeks, fontMono) {
         TextStyle(
-            fontFamily = FontFamily.Monospace,
-            fontSize = 13.5.sp,
+            fontFamily = fontMono,
+            fontSize = 13.sp,
             lineHeight = 20.sp,
             color = warnaTeks
         )

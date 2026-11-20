@@ -366,4 +366,22 @@ object IkonAplikasi {
         lineTo(9.5f, 17f)
         lineTo(19f, 7.5f)
     }
+
+    val Berkas: ImageVector = ikonGaris("Berkas") {
+        moveTo(6f, 3.5f)
+        lineTo(14f, 3.5f)
+        lineTo(18.5f, 8f)
+        lineTo(18.5f, 20.5f)
+        lineTo(6f, 20.5f)
+        close()
+        moveTo(14f, 3.5f)
+        lineTo(14f, 8f)
+        lineTo(18.5f, 8f)
+    }
+
+    val TukarLokasi: ImageVector = ikonGaris("TukarLokasi") {
+        moveTo(6f, 9f)
+        lineTo(12f, 15f)
+        lineTo(18f, 9f)
+    }
 }

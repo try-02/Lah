@@ -3,7 +3,7 @@ package org.fm.com.presentation.terbaru
 import org.fm.com.domain.model.EntitasRiwayatLokasi
 import org.fm.com.domain.model.JenisBerkas
 import org.fm.com.domain.model.LokasiBerkas
-import org.fm.com.presentation.filemanager.PemetaanDomainUi
+import org.fm.com.presentation.komponen.PemformatLokasiRamah
 
 data class ItemRiwayatUi(
     val lokasi: LokasiBerkas,
@@ -35,7 +35,7 @@ fun EntitasRiwayatLokasi.keUi(): ItemRiwayatUi = ItemRiwayatUi(
     lokasi = lokasi,
     nama = lokasi.label ?: lokasi.pengenal.trimEnd('/').substringAfterLast('/').ifBlank { "Root" },
     jenis = if (adalahFolder) JenisBerkas.FOLDER else JenisBerkas.LAIN,
-    pathFormat = lokasi.pengenal,
-    waktuFormat = PemetaanDomainUi.formatTanggal(waktuTerakhirDibukaEpochMs),
+    pathFormat = PemformatLokasiRamah.formatRingkas(lokasi),
+    waktuFormat = PemformatLokasiRamah.formatWaktuRelatif(waktuTerakhirDibukaEpochMs),
     adalahFolder = adalahFolder
 )

@@ -1,13 +1,17 @@
 package org.fm.com
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -20,6 +24,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -138,56 +143,76 @@ fun App(
         } else {
             Scaffold(
                 bottomBar = {
-                    NavigationBar {
-                        NavigationBarItem(
-                            selected = tabTerpilih == 0,
-                            onClick = { tabTerpilih = 0 },
-                            label = { Text("Berkas") },
-                            icon = {
-                                Icon(
-                                    imageVector = IkonAplikasi.Folder,
-                                    contentDescription = "Berkas",
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
+                    Column {
+                        HorizontalDivider(
+                            thickness = 0.5.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant
                         )
-                        NavigationBarItem(
-                            selected = tabTerpilih == 1,
-                            onClick = { tabTerpilih = 1 },
-                            label = { Text("Terbaru") },
-                            icon = {
-                                Icon(
-                                    imageVector = IkonAplikasi.Jam,
-                                    contentDescription = "Terbaru",
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                        )
-                        NavigationBarItem(
-                            selected = tabTerpilih == 2,
-                            onClick = { tabTerpilih = 2 },
-                            label = { Text("Cari") },
-                            icon = {
-                                Icon(
-                                    imageVector = IkonAplikasi.Cari,
-                                    contentDescription = "Cari",
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                        )
-                        if (jumlahTabEditor > 0) {
+                        NavigationBar(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                            tonalElevation = 0.dp
+                        ) {
+                            val warnaItem = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             NavigationBarItem(
-                                selected = false,
-                                onClick = { ruangEditorTerbuka = true },
-                                label = { Text("Editor ($jumlahTabEditor)") },
+                                selected = tabTerpilih == 0,
+                                onClick = { tabTerpilih = 0 },
+                                colors = warnaItem,
+                                label = { Text("Berkas", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                 icon = {
                                     Icon(
-                                        imageVector = IkonAplikasi.Editor,
-                                        contentDescription = "Buka editor",
-                                        modifier = Modifier.size(22.dp)
+                                        imageVector = IkonAplikasi.Folder,
+                                        contentDescription = "Berkas",
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
                             )
+                            NavigationBarItem(
+                                selected = tabTerpilih == 1,
+                                onClick = { tabTerpilih = 1 },
+                                colors = warnaItem,
+                                label = { Text("Terbaru", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                icon = {
+                                    Icon(
+                                        imageVector = IkonAplikasi.Jam,
+                                        contentDescription = "Terbaru",
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            )
+                            NavigationBarItem(
+                                selected = tabTerpilih == 2,
+                                onClick = { tabTerpilih = 2 },
+                                colors = warnaItem,
+                                label = { Text("Cari", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                icon = {
+                                    Icon(
+                                        imageVector = IkonAplikasi.Cari,
+                                        contentDescription = "Cari",
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            )
+                            if (jumlahTabEditor > 0) {
+                                NavigationBarItem(
+                                    selected = false,
+                                    onClick = { ruangEditorTerbuka = true },
+                                    colors = warnaItem,
+                                    label = { Text("Editor ($jumlahTabEditor)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                    icon = {
+                                        Icon(
+                                            imageVector = IkonAplikasi.Editor,
+                                            contentDescription = "Buka editor",
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -265,7 +290,7 @@ fun LayarMemuatAplikasi() {
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            CircularProgressIndicator()
+            CircularProgressIndicator(strokeWidth = 2.dp)
         }
     }
 }

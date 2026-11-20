@@ -15,11 +15,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.fm.com.domain.usecase.EncodingTeks
 import org.fm.com.domain.usecase.JenisAkhirBaris
+import org.fm.com.presentation.tema.LocalFontMono
 
 @Composable
 fun StatusEditor(
@@ -38,6 +39,12 @@ fun StatusEditor(
     onToggleHanyaBaca: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val fontMono = LocalFontMono.current
+    val gayaMono11 = MaterialTheme.typography.labelSmall.copy(
+        fontFamily = fontMono,
+        fontSize = 11.sp
+    )
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceContainerLow
@@ -46,73 +53,65 @@ fun StatusEditor(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 10.dp, vertical = 5.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Brs $baris/$jumlahBaris · Kol $kolom",
-                style = MaterialTheme.typography.labelSmall,
-                fontFamily = FontFamily.Monospace,
+                text = "L$baris:C$kolom/$jumlahBaris",
+                style = gayaMono11.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
                     .clip(MaterialTheme.shapes.extraSmall)
                     .clickable(enabled = siap, onClick = onKlikPosisiBaris)
-                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                    .padding(horizontal = 3.dp, vertical = 1.dp)
             )
 
             Text(
-                text = if (adaPerubahanBelumTersimpan) "● Diubah" else "Tersimpan",
-                style = MaterialTheme.typography.labelSmall,
+                text = if (adaPerubahanBelumTersimpan) "● diubah" else "tersimpan",
+                style = gayaMono11,
                 color = if (adaPerubahanBelumTersimpan) {
                     MaterialTheme.colorScheme.error
                 } else {
-                    MaterialTheme.colorScheme.secondary
+                    MaterialTheme.colorScheme.onSurfaceVariant
                 }
             )
 
             Text(
                 text = when {
                     hanyaBacaPermanen -> "RO"
-                    modeHanyaBaca -> "Baca"
-                    else -> "Edit"
+                    modeHanyaBaca -> "BACA"
+                    else -> "EDIT"
                 },
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Medium,
-                color = if (modeHanyaBaca) {
-                    MaterialTheme.colorScheme.onTertiaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
+                style = gayaMono11.copy(fontWeight = FontWeight.Medium),
+                color = if (modeHanyaBaca) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier
                     .clip(MaterialTheme.shapes.extraSmall)
                     .background(
                         if (modeHanyaBaca) {
-                            MaterialTheme.colorScheme.tertiaryContainer
+                            MaterialTheme.colorScheme.primaryContainer
                         } else {
                             MaterialTheme.colorScheme.surfaceVariant
                         }
                     )
                     .clickable(onClick = onToggleHanyaBaca)
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                    .padding(horizontal = 6.dp, vertical = 1.dp)
             )
 
             Text(
-                text = if (wordWrapAktif) "Wrap" else "NoWrap",
-                style = MaterialTheme.typography.labelSmall,
+                text = if (wordWrapAktif) "WRAP" else "NOWRAP",
+                style = gayaMono11,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .clip(MaterialTheme.shapes.extraSmall)
                     .clickable(onClick = onToggleWordWrap)
-                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                    .padding(horizontal = 3.dp, vertical = 1.dp)
             )
 
             Text(
                 text = "${encoding.name.replace('_', '-')} · ${akhirBaris.name}",
-                style = MaterialTheme.typography.labelSmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.outline
+                style = gayaMono11,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
