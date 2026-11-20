@@ -18,6 +18,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -34,7 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,20 +61,32 @@ fun LayarPencarian(
     onBukaBerkasDiEditor: (EntitasBerkas, Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
     var tampilDialogGalatBerkas by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        topBar = {
-            TopAppBar(
-                title = { Text("Pencarian Berkas") },
-                actions = {
-                    TextButton(onClick = { viewModel.prosesIntent(IntentPencarian.ToggleFilterTerbuka) }) {
-                        Text(if (state.filterTerbuka) "Tutup Filter" else "Filter")
-                    }
+        val isFilterHighlighted = state.filterTerbuka
+
+        TopAppBar(
+            title = { Text("Pencarian Berkas") },
+            actions = {
+                IconButton(
+                    onClick = { viewModel.prosesIntent(IntentPencarian.ToggleFilterTerbuka) }
+                ) {
+                    Icon(
+                        imageVector = IkonAplikasi.Filter,
+                        contentDescription = if (state.filterTerbuka) "Tutup Filter" else "Filter",
+                        tint = if (isFilterHighlighted) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            LocalContentColor.current
+                        }
+                    )
                 }
-            )
+            }
+        )
+
         }
     ) { bantalan ->
         Column(

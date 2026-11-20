@@ -21,7 +21,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,6 +29,12 @@ import androidx.compose.ui.unit.dp
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.presentation.filemanager.KomponenIkonBerkas
 import org.fm.com.presentation.filemanager.LayarStatusFilemanager
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.fm.com.presentation.komponen.IkonAplikasi
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,7 +43,7 @@ fun LayarTerbaru(
     onBukaLokasi: (LokasiBerkas) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -132,42 +137,58 @@ private fun ItemRiwayatBaris(
     item: ItemRiwayatUi,
     onKlik: () -> Unit,
     onHapus: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    tampilkanDivider: Boolean = true // Parameter opsional untuk mengatur tampil/tidaknya garis
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onKlik)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        KomponenIkonBerkas(jenis = item.jenis, ukuran = 40.dp)
-        Spacer(modifier = Modifier.width(16.dp))
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onKlik)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            KomponenIkonBerkas(jenis = item.jenis, ukuran = 40.dp)
+            Spacer(modifier = Modifier.width(16.dp))
 
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.nama,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = item.pathFormat,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = "Terakhir dibuka: ${item.waktuFormat}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.nama,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = item.pathFormat,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "Terakhir dibuka: ${item.waktuFormat}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+
+            IconButton(onClick = onHapus) {
+                Icon(
+                    imageVector = IkonAplikasi.Tutup,
+                    contentDescription = "Hapus ${item.nama} dari riwayat",
+                    tint = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
 
-        IconButton(onClick = onHapus) {
-            Text("×", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.outline)
+        if (tampilkanDivider) {
+            HorizontalDivider(
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                modifier = Modifier.padding(start = 66.dp)
+            )
         }
     }
 }

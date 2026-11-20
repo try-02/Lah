@@ -9,6 +9,7 @@ import org.fm.com.domain.model.ModeCocokNama
 import org.fm.com.domain.model.ProgresCariIsi
 import org.fm.com.domain.model.ProgresCariNama
 import org.fm.com.presentation.filemanager.PemetaanDomainUi
+import kotlinx.datetime.TimeZone
 
 enum class ModePencarian {
     NAMA,
@@ -123,19 +124,21 @@ sealed interface IntentPencarian {
     data object HapusGalat : IntentPencarian
 }
 
-fun ProgresCariNama.keUiList(): List<ItemHasilCariNamaUi> =
-    daftarTemuan.map { item ->
-        val e = item.entitas
-        val adalahFolder = e.jenis == JenisBerkas.FOLDER
-        ItemHasilCariNamaUi(
-            entitas = e,
-            nama = e.nama,
-            lokasiRelatif = item.lokasiRelatif,
-            jenis = e.jenis,
-            adalahFolder = adalahFolder,
-            ukuranFormat = PemetaanDomainUi.formatUkuran(e.ukuranByte, adalahFolder),
-            tanggalFormat = PemetaanDomainUi.formatTanggal(e.waktuUbahEpochMs)
-        )
+fun ProgresCariNama.keUiList(): List<ItemHasilCariNamaUi> {
+        val zonaWaktu = TimeZone.currentSystemDefault()
+        return daftarTemuan.map { item ->
+            val e = item.entitas
+            val adalahFolder = e.jenis == JenisBerkas.FOLDER
+            ItemHasilCariNamaUi(
+                entitas = e,
+                nama = e.nama,
+                lokasiRelatif = item.lokasiRelatif,
+                jenis = e.jenis,
+                adalahFolder = adalahFolder,
+                ukuranFormat = PemetaanDomainUi.formatUkuran(e.ukuranByte, adalahFolder),
+                tanggalFormat = PemetaanDomainUi.formatTanggal(e.waktuUbahEpochMs, zonaWaktu)
+            )
+        }
     }
 
 fun ProgresCariIsi.keUiList(): List<ItemHasilCariIsiUi> =

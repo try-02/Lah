@@ -780,20 +780,60 @@ class ViewModelEditor(
             _state.update { it.copy(pesanInfo = "Berkas sedang dalam mode hanya baca") }
             return
         }
-        if (teksBaru == tab.isiSaatIni) return
+        val teksLama = tab.isiSaatIni
+        if (teksBaru == teksLama) return
 
         val kursorSesudahIdx = (indeksKursor ?: teksBaru.length).coerceIn(0, teksBaru.length)
         val akhirSeleksiAman = (indeksAkhirSeleksi ?: kursorSesudahIdx).coerceIn(0, teksBaru.length)
+
+        val minLen = minOf(teksLama.length, teksBaru.length)
+        var prefix = 0
+        while (prefix < minLen && teksLama[prefix] == teksBaru[prefix]) {
+            prefix++
+        }
+        var suffix = 0
+        val sisa = minLen - prefix
+        while (
+            suffix < sisa &&
+            teksLama[teksLama.length - 1 - suffix] == teksBaru[teksBaru.length - 1 - suffix]
+        ) {
+            suffix++
+        }
+        val akhirLama = teksLama.length - suffix
+        val akhirBaru = teksBaru.length - suffix
+        val teksDihapus = teksLama.substring(prefix, akhirLama)
+        val teksDisisip = teksBaru.substring(prefix, akhirBaru)
+
         val sejarah = sejarahPerTab.getOrPut(idTab) { SejarahUndo() }
-        sejarah.catatPerubahan(
-            teksSebelum = tab.isiSaatIni,
-            teksSesudah = teksBaru,
+        sejarah.catatDelta(
+            awal = prefix,
+            teksDihapus = teksDihapus,
+            teksDisisip = teksDisisip,
             kursorSebelum = tab.posisiKursor.indeksKarakter,
             kursorSesudah = kursorSesudahIdx
         )
 
-        val jumlahBaris = hitungJumlahBaris(teksBaru)
-        val kursorBaru = hitungPosisiKursor(teksBaru, kursorSesudahIdx, akhirSeleksiAman)
+        val lfDihapus = hitungJumlahLf(teksDihapus)
+        val lfDisisip = hitungJumlahLf(teksDisisip)
+        val jumlahBaris = (tab.jumlahBaris - lfDihapus + lfDisisip).coerceAtLeast(1)
+
+        val kursorLama = tab.posisiKursor
+        val kursorBaru = when {
+            kursorSesudahIdx == akhirBaru && kursorLama.indeksKarakter == prefix -> PosisiKursor(
+                baris = kursorLama.baris + lfDisisip,
+                kolom = hitungKolomPadaIndeks(teksBaru, kursorSesudahIdx),
+                indeksKarakter = kursorSesudahIdx,
+                indeksAkhirSeleksi = akhirSeleksiAman
+            )
+            kursorSesudahIdx == prefix && kursorLama.indeksKarakter == akhirLama -> PosisiKursor(
+                baris = (kursorLama.baris - lfDihapus).coerceAtLeast(1),
+                kolom = hitungKolomPadaIndeks(teksBaru, kursorSesudahIdx),
+                indeksKarakter = kursorSesudahIdx,
+                indeksAkhirSeleksi = akhirSeleksiAman
+            )
+            else -> hitungPosisiKursor(teksBaru, kursorSesudahIdx, akhirSeleksiAman)
+        }
+
         perbaruiTab(idTab) {
             it.copy(
                 isiSaatIni = teksBaru,
@@ -1539,6 +1579,21 @@ class ViewModelEditor(
                 }
             }
             return hitungPosisiKursor(teks, teks.length)
+        }
+
+        private fun hitungJumlahLf(teks: String): Int {
+            var count = 0
+            for (i in 0 until teks.length) {
+                if (teks[i] == '\n') count++
+            }
+            return count
+        }
+
+        private fun hitungKolomPadaIndeks(teks: String, indeksKarakter: Int): Int {
+            val batas = indeksKarakter.coerceIn(0, teks.length)
+            if (batas == 0) return 1
+            val lastNl = teks.lastIndexOf('\n', startIndex = batas - 1)
+            return if (lastNl < 0) batas + 1 else batas - lastNl
         }
     }
 }

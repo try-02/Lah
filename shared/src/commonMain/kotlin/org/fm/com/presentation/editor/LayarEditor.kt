@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -26,6 +27,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -37,8 +39,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -59,17 +62,24 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.fm.com.presentation.komponen.IkonAplikasi
 
-@OptIn(ExperimentalMaterial3Api::class)
+@Immutable
+private data class TabHeaderUi(
+    val idTab: String,
+    val namaBerkas: String,
+    val kotor: Boolean
+)
+
 @Composable
 fun LayarEditor(
     viewModel: ViewModelEditor,
     onKembali: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-    var menuTerbuka by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.pesanInfo) {
         state.pesanInfo?.let {
@@ -79,143 +89,39 @@ fun LayarEditor(
     }
 
     val tabAktif = state.tabAktif
+    val daftarHeaderTab by remember {
+        derivedStateOf {
+            state.daftarTab.map { TabHeaderUi(it.idTab, it.namaBerkas, it.adaPerubahanBelumTersimpan) }
+        }
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = {
-                    val judul = if (tabAktif != null) {
-                        val tanda = if (tabAktif.adaPerubahanBelumTersimpan) " •" else ""
-                        "${tabAktif.namaBerkas}$tanda"
-                    } else {
-                        "Editor Teks"
-                    }
-                    Text(judul, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                },
-                navigationIcon = {
-                    if (onKembali != null) {
-                        TextButton(onClick = onKembali) {
-                            Text("Tutup")
-                        }
-                    }
-                },
-                actions = {
-                    if (tabAktif != null && tabAktif.statusMuat == StatusMuatTab.SIAP) {
-                        TextButton(
-                            onClick = { viewModel.prosesIntent(IntentEditor.SimpanTab(tabAktif.idTab)) },
-                            enabled = tabAktif.dapatDiedit && !state.sedangMenyimpan
-                        ) {
-                            Text(if (state.sedangMenyimpan) "Menyimpan..." else "Simpan")
-                        }
-                        TextButton(
-                            onClick = { viewModel.prosesIntent(IntentEditor.SetBukaDialogCariGanti(true)) }
-                        ) {
-                            Text("Cari")
-                        }
-                        TextButton(
-                            onClick = { viewModel.prosesIntent(IntentEditor.Undo(tabAktif.idTab)) },
-                            enabled = tabAktif.dapatUndo && tabAktif.dapatDiedit
-                        ) {
-                            Text("Undo")
-                        }
-                        TextButton(
-                            onClick = { viewModel.prosesIntent(IntentEditor.Redo(tabAktif.idTab)) },
-                            enabled = tabAktif.dapatRedo && tabAktif.dapatDiedit
-                        ) {
-                            Text("Redo")
-                        }
-                        Box {
-                            IconButton(onClick = { menuTerbuka = true }) {
-                                Text("⋮", style = MaterialTheme.typography.titleLarge)
-                            }
-                            DropdownMenu(
-                                expanded = menuTerbuka,
-                                onDismissRequest = { menuTerbuka = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Simpan Sebagai...") },
-                                    enabled = !state.sedangMenyimpan,
-                                    onClick = {
-                                        menuTerbuka = false
-                                        viewModel.prosesIntent(IntentEditor.BukaDialogSimpanSebagai(tabAktif.idTab))
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Cari & Ganti...") },
-                                    onClick = {
-                                        menuTerbuka = false
-                                        viewModel.prosesIntent(IntentEditor.SetBukaDialogCariGanti(true))
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Lompat ke Baris...") },
-                                    onClick = {
-                                        menuTerbuka = false
-                                        viewModel.prosesIntent(IntentEditor.SetBukaDialogLompatBaris(true))
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Statistik Teks...") },
-                                    onClick = {
-                                        menuTerbuka = false
-                                        viewModel.prosesIntent(IntentEditor.HitungStatistikTab(tabAktif.idTab))
-                                    }
-                                )
-                                val wrapAktif = tabAktif.wordWrapEfektif(state.wordWrapUmum)
-                                DropdownMenuItem(
-                                    text = { Text(if (wrapAktif) "Matikan Word Wrap" else "Aktifkan Word Wrap") },
-                                    onClick = {
-                                        menuTerbuka = false
-                                        viewModel.prosesIntent(IntentEditor.ToggleWordWrapTab(tabAktif.idTab))
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(
-                                                if (tabAktif.modeHanyaBaca) "Nonaktifkan Hanya Baca" else "Mode Hanya Baca"
-                                            )
-                                            if (tabAktif.hanyaBacaPermanen) {
-                                                Text(
-                                                    text = "Berkas atau lokasi tidak memiliki izin tulis",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.outline
-                                                )
-                                            }
-                                        }
-                                    },
-                                    enabled = !tabAktif.hanyaBacaPermanen,
-                                    onClick = {
-                                        menuTerbuka = false
-                                        viewModel.prosesIntent(IntentEditor.ToggleModeHanyaBaca(tabAktif.idTab))
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Tutup Tab") },
-                                    onClick = {
-                                        menuTerbuka = false
-                                        viewModel.prosesIntent(IntentEditor.MintaTutupTab(tabAktif.idTab))
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Tab Kosong Baru") },
-                                    onClick = {
-                                        menuTerbuka = false
-                                        viewModel.prosesIntent(IntentEditor.BuatTabKosong())
-                                    }
-                                )
-                            }
-                        }
-                    } else if (tabAktif != null && tabAktif.statusMuat == StatusMuatTab.BINER) {
-                        TextButton(
-                            onClick = { viewModel.prosesIntent(IntentEditor.HitungStatistikTab(tabAktif.idTab)) }
-                        ) {
-                            Text("Statistik")
-                        }
-                    }
-                }
+            TopBarEditor(
+                namaBerkas = tabAktif?.namaBerkas,
+                kotor = tabAktif?.adaPerubahanBelumTersimpan == true,
+                statusMuat = tabAktif?.statusMuat,
+                dapatSimpan = tabAktif?.dapatDiedit == true && !state.sedangMenyimpan,
+                dapatUndo = tabAktif?.dapatUndo == true && tabAktif.dapatDiedit,
+                dapatRedo = tabAktif?.dapatRedo == true && tabAktif.dapatDiedit,
+                hanyaBacaPermanen = tabAktif?.hanyaBacaPermanen == true,
+                modeHanyaBaca = tabAktif?.modeHanyaBaca == true,
+                wordWrapAktif = tabAktif?.wordWrapEfektif(state.wordWrapUmum) ?: state.wordWrapUmum,
+                sedangMenyimpan = state.sedangMenyimpan,
+                onKembali = onKembali,
+                onSimpan = { tabAktif?.let { viewModel.prosesIntent(IntentEditor.SimpanTab(it.idTab)) } },
+                onSimpanSebagai = { tabAktif?.let { viewModel.prosesIntent(IntentEditor.BukaDialogSimpanSebagai(it.idTab)) } },
+                onCari = { viewModel.prosesIntent(IntentEditor.SetBukaDialogCariGanti(true)) },
+                onUndo = { tabAktif?.let { viewModel.prosesIntent(IntentEditor.Undo(it.idTab)) } },
+                onRedo = { tabAktif?.let { viewModel.prosesIntent(IntentEditor.Redo(it.idTab)) } },
+                onLompatBaris = { viewModel.prosesIntent(IntentEditor.SetBukaDialogLompatBaris(true)) },
+                onStatistik = { tabAktif?.let { viewModel.prosesIntent(IntentEditor.HitungStatistikTab(it.idTab)) } },
+                onToggleWrap = { tabAktif?.let { viewModel.prosesIntent(IntentEditor.ToggleWordWrapTab(it.idTab)) } },
+                onToggleHanyaBaca = { tabAktif?.let { viewModel.prosesIntent(IntentEditor.ToggleModeHanyaBaca(it.idTab)) } },
+                onTutupTab = { tabAktif?.let { viewModel.prosesIntent(IntentEditor.MintaTutupTab(it.idTab)) } },
+                onTabKosongBaru = { viewModel.prosesIntent(IntentEditor.BuatTabKosong()) }
             )
         }
     ) { bantalan ->
@@ -224,14 +130,15 @@ fun LayarEditor(
                 .fillMaxSize()
                 .padding(bantalan)
         ) {
-            if (state.daftarTab.isNotEmpty()) {
+            if (daftarHeaderTab.isNotEmpty()) {
                 BarTabEditor(
-                    daftarTab = state.daftarTab,
+                    daftarTab = daftarHeaderTab,
                     idTabAktif = state.idTabAktif,
-                    onPilihTab = { viewModel.prosesIntent(IntentEditor.PilihTab(it)) },
-                    onTutupTab = { viewModel.prosesIntent(IntentEditor.MintaTutupTab(it)) }
+                    onPilihTab = remember(viewModel) { { viewModel.prosesIntent(IntentEditor.PilihTab(it)) } },
+                    onTutupTab = remember(viewModel) { { viewModel.prosesIntent(IntentEditor.MintaTutupTab(it)) } },
+                    onTabBaru = remember(viewModel) { { viewModel.prosesIntent(IntentEditor.BuatTabKosong()) } }
                 )
-                HorizontalDivider()
+                HorizontalDivider(thickness = 0.5.dp)
             }
 
             if (tabAktif == null) {
@@ -301,36 +208,57 @@ fun LayarEditor(
                             ) {
                                 Text(
                                     text = if (tabAktif.hanyaBacaPermanen) {
-                                        "Mode Hanya Baca (berkas/penyimpanan tak dapat ditulis) — seleksi, salin & cari tetap aktif"
+                                        "Mode Hanya Baca (penyimpanan terkunci) — seleksi, salin & cari aktif"
                                     } else {
-                                        "Mode Hanya Baca aktif — seleksi, salin & cari tetap tersedia"
+                                        "Mode Hanya Baca aktif — seleksi, salin & cari aktif"
                                     },
-                                    style = MaterialTheme.typography.labelMedium,
+                                    style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
                                 )
                             }
                         }
 
+                        val wrapAktif = tabAktif.wordWrapEfektif(state.wordWrapUmum)
+                        val idTabSaatIni = tabAktif.idTab
+
                         AreaTeksEditor(
                             tab = tabAktif,
-                            wordWrapAktif = tabAktif.wordWrapEfektif(state.wordWrapUmum),
-                            onUbahTeks = { teksBaru, awal, akhir ->
-                                viewModel.prosesIntent(IntentEditor.UbahTeks(tabAktif.idTab, teksBaru, awal, akhir))
+                            wordWrapAktif = wrapAktif,
+                            onUbahTeks = remember(viewModel, idTabSaatIni) {
+                                { teksBaru, awal, akhir ->
+                                    viewModel.prosesIntent(IntentEditor.UbahTeks(idTabSaatIni, teksBaru, awal, akhir))
+                                }
                             },
-                            onUbahKursor = { awal, akhir ->
-                                viewModel.prosesIntent(IntentEditor.UbahPosisiKursor(tabAktif.idTab, awal, akhir))
+                            onUbahKursor = remember(viewModel, idTabSaatIni) {
+                                { awal, akhir ->
+                                    viewModel.prosesIntent(IntentEditor.UbahPosisiKursor(idTabSaatIni, awal, akhir))
+                                }
                             },
                             modifier = Modifier.weight(1f).fillMaxWidth()
                         )
 
-                        HorizontalDivider()
+                        HorizontalDivider(thickness = 0.5.dp)
                         StatusEditor(
-                            tab = tabAktif,
-                            wordWrapUmum = state.wordWrapUmum,
-                            onKlikPosisiBaris = { viewModel.prosesIntent(IntentEditor.SetBukaDialogLompatBaris(true)) },
-                            onToggleWordWrap = { viewModel.prosesIntent(IntentEditor.ToggleWordWrapTab(tabAktif.idTab)) },
-                            onToggleHanyaBaca = { viewModel.prosesIntent(IntentEditor.ToggleModeHanyaBaca(tabAktif.idTab)) }
+                            baris = tabAktif.posisiKursor.baris,
+                            kolom = tabAktif.posisiKursor.kolom,
+                            jumlahBaris = tabAktif.jumlahBaris,
+                            adaPerubahanBelumTersimpan = tabAktif.adaPerubahanBelumTersimpan,
+                            hanyaBacaPermanen = tabAktif.hanyaBacaPermanen,
+                            modeHanyaBaca = tabAktif.modeHanyaBaca,
+                            wordWrapAktif = wrapAktif,
+                            encoding = tabAktif.encoding,
+                            akhirBaris = tabAktif.akhirBaris,
+                            siap = true,
+                            onKlikPosisiBaris = remember(viewModel) {
+                                { viewModel.prosesIntent(IntentEditor.SetBukaDialogLompatBaris(true)) }
+                            },
+                            onToggleWordWrap = remember(viewModel, idTabSaatIni) {
+                                { viewModel.prosesIntent(IntentEditor.ToggleWordWrapTab(idTabSaatIni)) }
+                            },
+                            onToggleHanyaBaca = remember(viewModel, idTabSaatIni) {
+                                { viewModel.prosesIntent(IntentEditor.ToggleModeHanyaBaca(idTabSaatIni)) }
+                            }
                         )
                     }
                 }
@@ -338,9 +266,9 @@ fun LayarEditor(
         }
     }
 
-    if (tabAktif != null) {
+    if (tabAktif != null && state.dialogLompatBarisTerbuka) {
         DialogLompatBaris(
-            terbuka = state.dialogLompatBarisTerbuka,
+            terbuka = true,
             jumlahBaris = tabAktif.jumlahBaris,
             barisSaatIni = tabAktif.posisiKursor.baris,
             onLompat = { nomor ->
@@ -348,7 +276,9 @@ fun LayarEditor(
             },
             onTutup = { viewModel.prosesIntent(IntentEditor.SetBukaDialogLompatBaris(false)) }
         )
+    }
 
+    if (tabAktif != null && state.cariGanti.terbuka) {
         DialogCariGanti(
             state = state.cariGanti,
             teksDokumen = tabAktif.isiSaatIni,
@@ -370,7 +300,9 @@ fun LayarEditor(
             onHapusSemuaRiwayat = { viewModel.prosesIntent(IntentEditor.BersihkanRiwayatPencarian) },
             onTutup = { viewModel.prosesIntent(IntentEditor.SetBukaDialogCariGanti(false)) }
         )
+    }
 
+    if (tabAktif != null && state.dialogStatistik.terbuka) {
         DialogStatistik(
             state = state.dialogStatistik,
             namaBerkas = tabAktif.namaBerkas,
@@ -378,78 +310,281 @@ fun LayarEditor(
         )
     }
 
-    DialogTutupTab(
-        tab = state.tabMenungguKonfirmasiTutup,
-        sedangMenyimpan = state.sedangMenyimpan,
-        onSimpanDanTutup = { viewModel.prosesIntent(IntentEditor.KonfirmasiSimpanDanTutupTab) },
-        onBuangDanTutup = { viewModel.prosesIntent(IntentEditor.KonfirmasiBuangDanTutupTab) },
-        onBatal = { viewModel.prosesIntent(IntentEditor.BatalTutupTab) }
-    )
+    if (state.tabMenungguKonfirmasiTutup != null) {
+        DialogTutupTab(
+            tab = state.tabMenungguKonfirmasiTutup,
+            sedangMenyimpan = state.sedangMenyimpan,
+            onSimpanDanTutup = { viewModel.prosesIntent(IntentEditor.KonfirmasiSimpanDanTutupTab) },
+            onBuangDanTutup = { viewModel.prosesIntent(IntentEditor.KonfirmasiBuangDanTutupTab) },
+            onBatal = { viewModel.prosesIntent(IntentEditor.BatalTutupTab) }
+        )
+    }
 
-    DialogKonflikSimpanEksternal(
-        permintaan = state.konfirmasiKonflikSimpan,
-        sedangMenyimpan = state.sedangMenyimpan,
-        onTimpa = { viewModel.prosesIntent(IntentEditor.KonfirmasiTimpaKonflikSimpan) },
-        onBatal = { viewModel.prosesIntent(IntentEditor.BatalKonflikSimpan) }
-    )
+    if (state.konfirmasiKonflikSimpan != null) {
+        DialogKonflikSimpanEksternal(
+            permintaan = state.konfirmasiKonflikSimpan,
+            sedangMenyimpan = state.sedangMenyimpan,
+            onTimpa = { viewModel.prosesIntent(IntentEditor.KonfirmasiTimpaKonflikSimpan) },
+            onBatal = { viewModel.prosesIntent(IntentEditor.BatalKonflikSimpan) }
+        )
+    }
 
-    DialogSimpanSebagai(
-        permintaan = state.dialogSimpanSebagai,
-        sedangMenyimpan = state.sedangMenyimpan,
-        onSimpan = { nama, timpa ->
-            viewModel.prosesIntent(IntentEditor.EksekusiSimpanSebagai(nama, timpa))
+    if (state.dialogSimpanSebagai != null) {
+        DialogSimpanSebagai(
+            permintaan = state.dialogSimpanSebagai,
+            sedangMenyimpan = state.sedangMenyimpan,
+            onSimpan = { nama, timpa ->
+                viewModel.prosesIntent(IntentEditor.EksekusiSimpanSebagai(nama, timpa))
+            },
+            onTutup = { viewModel.prosesIntent(IntentEditor.TutupDialogSimpanSebagai) }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TopBarEditor(
+    namaBerkas: String?,
+    kotor: Boolean,
+    statusMuat: StatusMuatTab?,
+    dapatSimpan: Boolean,
+    dapatUndo: Boolean,
+    dapatRedo: Boolean,
+    hanyaBacaPermanen: Boolean,
+    modeHanyaBaca: Boolean,
+    wordWrapAktif: Boolean,
+    sedangMenyimpan: Boolean,
+    onKembali: (() -> Unit)?,
+    onSimpan: () -> Unit,
+    onSimpanSebagai: () -> Unit,
+    onCari: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+    onLompatBaris: () -> Unit,
+    onStatistik: () -> Unit,
+    onToggleWrap: () -> Unit,
+    onToggleHanyaBaca: () -> Unit,
+    onTutupTab: () -> Unit,
+    onTabKosongBaru: () -> Unit
+) {
+    var menuTerbuka by remember { mutableStateOf(false) }
+
+    TopAppBar(
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = namaBerkas ?: "Editor Teks",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (kotor) {
+                    Text(
+                        text = " •",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         },
-        onTutup = { viewModel.prosesIntent(IntentEditor.TutupDialogSimpanSebagai) }
+        navigationIcon = {
+            if (onKembali != null) {
+                IconButton(onClick = onKembali) {
+                    Icon(
+                        imageVector = IkonAplikasi.Kembali,
+                        contentDescription = "Kembali ke daftar berkas",
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        },
+        actions = {
+            if (statusMuat == StatusMuatTab.SIAP) {
+                IconButton(onClick = onSimpan, enabled = dapatSimpan) {
+                    Icon(
+                        imageVector = IkonAplikasi.Simpan,
+                        contentDescription = if (sedangMenyimpan) "Menyimpan berkas" else "Simpan berkas",
+                        tint = if (dapatSimpan && kotor) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                IconButton(onClick = onCari) {
+                    Icon(
+                        imageVector = IkonAplikasi.Cari,
+                        contentDescription = "Cari dan ganti",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                IconButton(onClick = onUndo, enabled = dapatUndo) {
+                    Icon(
+                        imageVector = IkonAplikasi.Undo,
+                        contentDescription = "Undo",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                IconButton(onClick = onRedo, enabled = dapatRedo) {
+                    Icon(
+                        imageVector = IkonAplikasi.Redo,
+                        contentDescription = "Redo",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Box {
+                    IconButton(onClick = { menuTerbuka = true }) {
+                        Icon(
+                            imageVector = IkonAplikasi.MenuLainnya,
+                            contentDescription = "Menu editor lainnya",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = menuTerbuka,
+                        onDismissRequest = { menuTerbuka = false },
+                        modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerLowest)
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Simpan Sebagai...") },
+                            leadingIcon = { Icon(IkonAplikasi.Simpan, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            enabled = !sedangMenyimpan,
+                            onClick = { menuTerbuka = false; onSimpanSebagai() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Cari & Ganti...") },
+                            leadingIcon = { Icon(IkonAplikasi.Cari, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            onClick = { menuTerbuka = false; onCari() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Lompat ke Baris...") },
+                            leadingIcon = { Icon(IkonAplikasi.Urutkan, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            onClick = { menuTerbuka = false; onLompatBaris() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Statistik Teks...") },
+                            leadingIcon = { Icon(IkonAplikasi.Statistik, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            onClick = { menuTerbuka = false; onStatistik() }
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                        DropdownMenuItem(
+                            text = { Text(if (wordWrapAktif) "Matikan Word Wrap" else "Aktifkan Word Wrap") },
+                            onClick = { menuTerbuka = false; onToggleWrap() }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(if (modeHanyaBaca) "Nonaktifkan Hanya Baca" else "Mode Hanya Baca")
+                                    if (hanyaBacaPermanen) {
+                                        Text(
+                                            text = "Lokasi tidak memiliki izin tulis",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.outline
+                                        )
+                                    }
+                                }
+                            },
+                            enabled = !hanyaBacaPermanen,
+                            onClick = { menuTerbuka = false; onToggleHanyaBaca() }
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                        DropdownMenuItem(
+                            text = { Text("Tab Kosong Baru") },
+                            leadingIcon = { Icon(IkonAplikasi.Tambah, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            onClick = { menuTerbuka = false; onTabKosongBaru() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Tutup Tab") },
+                            leadingIcon = { Icon(IkonAplikasi.Tutup, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            onClick = { menuTerbuka = false; onTutupTab() }
+                        )
+                    }
+                }
+            } else if (statusMuat == StatusMuatTab.BINER) {
+                TextButton(onClick = onStatistik) {
+                    Text("Info")
+                }
+            }
+        }
     )
 }
 
 @Composable
 private fun BarTabEditor(
-    daftarTab: List<ModelTabEditor>,
+    daftarTab: List<TabHeaderUi>,
     idTabAktif: String?,
     onPilihTab: (String) -> Unit,
-    onTutupTab: (String) -> Unit
+    onTutupTab: (String) -> Unit,
+    onTabBaru: () -> Unit
 ) {
-    LazyRow(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        items(items = daftarTab, key = { it.idTab }) { tab ->
-            val aktif = tab.idTab == idTabAktif
-            Surface(
-                color = if (aktif) {
-                    MaterialTheme.colorScheme.primaryContainer
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                },
-                shape = MaterialTheme.shapes.small,
-                modifier = Modifier.clickable { onPilihTab(tab.idTab) }
-            ) {
-                Row(
-                    modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+        LazyRow(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            items(items = daftarTab, key = { it.idTab }) { tab ->
+                val aktif = tab.idTab == idTabAktif
+                Surface(
+                    color = if (aktif) {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerLow
+                    },
+                    shape = MaterialTheme.shapes.extraSmall,
+                    modifier = Modifier.clickable { onPilihTab(tab.idTab) }
                 ) {
-                    val prefiks = if (tab.adaPerubahanBelumTersimpan) "• " else ""
-                    Text(
-                        text = "$prefiks${tab.namaBerkas}",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = if (aktif) FontWeight.SemiBold else FontWeight.Normal,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "×",
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier
-                            .clickable { onTutupTab(tab.idTab) }
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
+                    Row(
+                        modifier = Modifier.padding(start = 10.dp, end = 6.dp, top = 5.dp, bottom = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (tab.kotor) {
+                            Text(
+                                text = "● ",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        Text(
+                            text = tab.namaBerkas,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (aktif) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (aktif) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            imageVector = IkonAplikasi.Tutup,
+                            contentDescription = "Tutup tab ${tab.namaBerkas}",
+                            tint = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier
+                                .size(14.dp)
+                                .clickable { onTutupTab(tab.idTab) }
+                        )
+                    }
                 }
             }
+        }
+        IconButton(
+            onClick = onTabBaru,
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                imageVector = IkonAplikasi.Tambah,
+                contentDescription = "Tab kosong baru",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }
@@ -479,21 +614,12 @@ private fun AreaTeksEditor(
         )
     }
 
-    LaunchedEffect(
-        tab.idTab,
-        tab.isiSaatIni,
-        tab.urutanNavigasiKursor,
-        tab.posisiKursor.indeksKarakter,
-        tab.posisiKursor.indeksAkhirSeleksi
-    ) {
+    LaunchedEffect(tab.idTab, tab.urutanNavigasiKursor) {
         val targetAwal = tab.posisiKursor.indeksKarakter.coerceIn(0, tab.isiSaatIni.length)
         val targetAkhir = tab.posisiKursor.indeksAkhirSeleksi.coerceIn(0, tab.isiSaatIni.length)
         val targetRange = TextRange(targetAwal, targetAkhir)
         if (tfv.text != tab.isiSaatIni) {
-            tfv = TextFieldValue(
-                text = tab.isiSaatIni,
-                selection = targetRange
-            )
+            tfv = TextFieldValue(text = tab.isiSaatIni, selection = targetRange)
         } else if (tab.urutanNavigasiKursor > 0L && tfv.selection != targetRange) {
             tfv = tfv.copy(selection = targetRange)
         }
@@ -517,15 +643,19 @@ private fun AreaTeksEditor(
 
     val paddingAtasDp = 10.dp
     val paddingAtasPx = with(LocalDensity.current) { paddingAtasDp.toPx() }
-    val gayaTeks = TextStyle(
-        fontFamily = FontFamily.Monospace,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-        color = MaterialTheme.colorScheme.onSurface
-    )
+    val warnaTeks = MaterialTheme.colorScheme.onSurface
+    val gayaTeks = remember(warnaTeks) {
+        TextStyle(
+            fontFamily = FontFamily.Monospace,
+            fontSize = 13.5.sp,
+            lineHeight = 20.sp,
+            color = warnaTeks
+        )
+    }
 
     Box(
         modifier = modifier
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
             .onSizeChanged { tinggiViewportPx = it.height }
             .verticalScroll(scrollVertikal)
     ) {
@@ -535,7 +665,6 @@ private fun AreaTeksEditor(
                 .height(IntrinsicSize.Min)
         ) {
             KomponenNomorBaris(
-                teks = tab.isiSaatIni,
                 jumlahBaris = tab.jumlahBaris,
                 barisAktif = tab.posisiKursor.baris,
                 textLayoutResult = textLayoutResult,
@@ -543,7 +672,11 @@ private fun AreaTeksEditor(
                 tinggiViewportPx = tinggiViewportPx,
                 paddingAtasPx = paddingAtasPx
             )
-            VerticalDivider(modifier = Modifier.fillMaxHeight())
+            VerticalDivider(
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+                modifier = Modifier.fillMaxHeight()
+            )
 
             val modifierTeks = if (wordWrapAktif) {
                 Modifier.weight(1f)

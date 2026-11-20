@@ -139,4 +139,40 @@ class SejarahUndo(
             return { awal.elapsedNow().inWholeMilliseconds }
         }
     }
+
+    internal fun catatDelta(
+        awal: Int,
+        teksDihapus: String,
+        teksDisisip: String,
+        kursorSebelum: Int,
+        kursorSesudah: Int
+    ) {
+        if (teksDihapus.isEmpty() && teksDisisip.isEmpty()) return
+        val waktu = waktuSekarangMs()
+        tumpukanRedo.clear()
+
+        val puncak = tumpukanUndo.lastOrNull()
+        if (puncak != null && dapatDigabung(puncak, awal, teksDihapus, teksDisisip, waktu)) {
+            tumpukanUndo[tumpukanUndo.lastIndex] = puncak.copy(
+                teksDisisip = puncak.teksDisisip + teksDisisip,
+                kursorSesudah = kursorSesudah,
+                waktuMs = waktu
+            )
+            return
+        }
+
+        tumpukanUndo.add(
+            DeltaEdit(
+                awal = awal,
+                teksDihapus = teksDihapus,
+                teksDisisip = teksDisisip,
+                kursorSebelum = kursorSebelum,
+                kursorSesudah = kursorSesudah,
+                waktuMs = waktu
+            )
+        )
+        if (tumpukanUndo.size > maksLangkah) {
+            tumpukanUndo.removeAt(0)
+        }
+    }
 }

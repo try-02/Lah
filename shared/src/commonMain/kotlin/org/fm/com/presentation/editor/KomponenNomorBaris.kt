@@ -16,13 +16,49 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+private class CachePosisiBaris {
+    var teksRef: String = ""
+    var offsetTerakhir: Int = 0
+    var nomorTerakhir: Int = 1
+
+    fun nomorUntukOffset(teks: String, targetOffset: Int): Int {
+        val batas = targetOffset.coerceIn(0, teks.length)
+        if (teksRef !== teks) {
+            teksRef = teks
+            offsetTerakhir = 0
+            nomorTerakhir = 1
+        }
+        var nomor = nomorTerakhir
+        val awal = offsetTerakhir
+        if (batas > awal) {
+            for (i in awal until batas) {
+                if (teks[i] == '\n') nomor++
+            }
+        } else if (batas < awal) {
+            if (awal - batas <= batas) {
+                for (i in batas until awal) {
+                    if (teks[i] == '\n') nomor--
+                }
+            } else {
+                nomor = 1
+                for (i in 0 until batas) {
+                    if (teks[i] == '\n') nomor++
+                }
+            }
+        }
+        offsetTerakhir = batas
+        nomorTerakhir = nomor
+        return nomor
+    }
+}
+
 @Composable
 fun KomponenNomorBaris(
-    teks: String,
     jumlahBaris: Int,
     barisAktif: Int,
     textLayoutResult: TextLayoutResult?,
@@ -31,34 +67,44 @@ fun KomponenNomorBaris(
     paddingAtasPx: Float,
     modifier: Modifier = Modifier
 ) {
-    val textMeasurer = rememberTextMeasurer()
+    val textMeasurer = rememberTextMeasurer(cacheSize = 256)
     val density = LocalDensity.current
+    val cacheBaris = remember { CachePosisiBaris() }
+
     val warnaLatar = MaterialTheme.colorScheme.surfaceContainerLow
     val warnaNomorNormal = MaterialTheme.colorScheme.outline
     val warnaNomorAktif = MaterialTheme.colorScheme.primary
-    val warnaSorotBarisAktif = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+    val warnaSorotBarisAktif = MaterialTheme.colorScheme.primary.copy(alpha = 0.09f)
 
-    val gayaNomor = remember(warnaNomorNormal) {
+    val gayaNormal = remember(warnaNomorNormal) {
         TextStyle(
             fontFamily = FontFamily.Monospace,
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             color = warnaNomorNormal
         )
     }
-
-    val indeksAwalBaris = remember(teks) { bangunIndeksAwalBaris(teks) }
-    val jumlahDigit = remember(jumlahBaris) { jumlahBaris.coerceAtLeast(1).toString().length.coerceAtLeast(2) }
-    val lebarTeksMaksPx = remember(jumlahDigit, gayaNomor, textMeasurer) {
-        textMeasurer.measure("8".repeat(jumlahDigit), style = gayaNomor).size.width
+    val gayaAktif = remember(warnaNomorAktif) {
+        TextStyle(
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = warnaNomorAktif
+        )
     }
-    val lebarGutterDp = with(density) { lebarTeksMaksPx.toDp() + 16.dp }
+
+    val jumlahDigit = remember(jumlahBaris) { jumlahBaris.coerceAtLeast(1).toString().length.coerceAtLeast(2) }
+    val lebarTeksMaksPx = remember(jumlahDigit, gayaNormal, textMeasurer) {
+        textMeasurer.measure("8".repeat(jumlahDigit), style = gayaNormal).size.width
+    }
+    val lebarGutterDp = with(density) { lebarTeksMaksPx.toDp() + 20.dp }
+    val paddingKananPx = with(density) { 8.dp.toPx() }
 
     Canvas(
         modifier = modifier
             .width(lebarGutterDp)
             .fillMaxHeight()
             .background(warnaLatar)
-            .padding(horizontal = 4.dp)
+            .padding(horizontal = 2.dp)
     ) {
         val layout = textLayoutResult ?: return@Canvas
         val totalBarisVisual = layout.lineCount
@@ -76,14 +122,25 @@ fun KomponenNomorBaris(
         val visualAwal = layout.getLineForVerticalPosition(awalY).coerceIn(0, totalBarisVisual - 1)
         val visualAkhir = layout.getLineForVerticalPosition(akhirY).coerceIn(visualAwal, totalBarisVisual - 1)
 
+        var nomorBerjalan = cacheBaris.nomorUntukOffset(
+            teksLayout,
+            layout.getLineStart(visualAwal).coerceIn(0, teksLayout.length)
+        )
+        var sudahBarisAwalTerlihat = false
+
         for (barisVisual in visualAwal..visualAkhir) {
             val startOffset = layout.getLineStart(barisVisual).coerceIn(0, teksLayout.length)
             val adalahAwalBarisLogis = barisVisual == 0 ||
                 (startOffset > 0 && teksLayout[startOffset - 1] == '\n')
             if (!adalahAwalBarisLogis) continue
 
-            val nomorLogis = cariNomorBarisLogis(indeksAwalBaris, startOffset)
-            val adalahAktif = nomorLogis == barisAktif
+            if (!sudahBarisAwalTerlihat) {
+                sudahBarisAwalTerlihat = true
+            } else {
+                nomorBerjalan++
+            }
+
+            val adalahAktif = nomorBerjalan == barisAktif
             val topY = layout.getLineTop(barisVisual) + paddingAtasPx
             val bottomY = layout.getLineBottom(barisVisual) + paddingAtasPx
             val tinggiVisual = (bottomY - topY).coerceAtLeast(1f)
@@ -97,12 +154,10 @@ fun KomponenNomorBaris(
             }
 
             val hasilUkur = textMeasurer.measure(
-                text = nomorLogis.toString(),
-                style = gayaNomor.copy(
-                    color = if (adalahAktif) warnaNomorAktif else warnaNomorNormal
-                )
+                text = nomorBerjalan.toString(),
+                style = if (adalahAktif) gayaAktif else gayaNormal
             )
-            val posisiX = (size.width - hasilUkur.size.width - 4f).coerceAtLeast(0f)
+            val posisiX = (size.width - hasilUkur.size.width - paddingKananPx).coerceAtLeast(0f)
             val posisiY = topY + ((tinggiVisual - hasilUkur.size.height) / 2f).coerceAtLeast(0f)
             drawText(
                 textLayoutResult = hasilUkur,

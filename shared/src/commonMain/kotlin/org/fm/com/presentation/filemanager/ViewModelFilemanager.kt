@@ -31,6 +31,7 @@ import org.fm.com.domain.usecase.SegmenLokasi
 import org.fm.com.domain.usecase.TelusuriLokasiUseCase
 import org.fm.com.domain.usecase.UrutkanBerkasUseCase
 import org.fm.com.presentation.filemanager.PemetaanDomainUi.keUi
+import kotlinx.datetime.TimeZone
 
 private const val AMBANG_PEMROSESAN_LATAR = 100
 
@@ -399,6 +400,7 @@ class ViewModelFilemanager(
             arah = st.arahUrutan,
             folderDiAtas = st.folderDiAtas
         )
-        return terurut.map { it.keUi() }
+        val zonaWaktu = TimeZone.currentSystemDefault()
+        return terurut.map { it.keUi(zonaWaktu) }
     }
 }

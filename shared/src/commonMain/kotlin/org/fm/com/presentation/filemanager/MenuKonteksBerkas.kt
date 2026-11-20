@@ -1,12 +1,17 @@
 package org.fm.com.presentation.filemanager
 
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import org.fm.com.presentation.komponen.IkonAplikasi
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,28 +32,46 @@ fun BarAksiSeleksi(
             )
         },
         navigationIcon = {
-            TextButton(onClick = onBersihkanPilihan) {
-                Text("Batal")
+            IconButton(onClick = onBersihkanPilihan) {
+                Icon(
+                    imageVector = IkonAplikasi.Tutup,
+                    contentDescription = "Batalkan pilihan",
+                    modifier = Modifier.size(20.dp)
+                )
             }
         },
         actions = {
-            TextButton(onClick = onPilihSemua) {
-                Text("Semua")
+            IconButton(onClick = onPilihSemua) {
+                Icon(
+                    imageVector = IkonAplikasi.PilihSemua,
+                    contentDescription = "Pilih semua",
+                    modifier = Modifier.size(20.dp)
+                )
             }
-            TextButton(onClick = onAksiSalin, enabled = kemampuan.dapatSalin) {
-                Text("Salin")
+            IconButton(onClick = onAksiSalin, enabled = kemampuan.dapatSalin) {
+                Icon(
+                    imageVector = IkonAplikasi.Salin,
+                    contentDescription = "Salin",
+                    modifier = Modifier.size(20.dp)
+                )
             }
-            TextButton(onClick = onAksiPindah, enabled = kemampuan.dapatPindah) {
-                Text("Pindah")
+            IconButton(onClick = onAksiPindah, enabled = kemampuan.dapatPindah) {
+                Icon(
+                    imageVector = IkonAplikasi.Pindah,
+                    contentDescription = "Pindah",
+                    modifier = Modifier.size(20.dp)
+                )
             }
-            TextButton(onClick = onAksiHapus, enabled = kemampuan.dapatHapus) {
-                Text(
-                    "Hapus",
-                    color = if (kemampuan.dapatHapus) {
+            IconButton(onClick = onAksiHapus, enabled = kemampuan.dapatHapus) {
+                Icon(
+                    imageVector = IkonAplikasi.Hapus,
+                    contentDescription = "Hapus",
+                    tint = if (kemampuan.dapatHapus) {
                         MaterialTheme.colorScheme.error
                     } else {
                         MaterialTheme.colorScheme.outline
-                    }
+                    },
+                    modifier = Modifier.size(20.dp)
                 )
             }
         },

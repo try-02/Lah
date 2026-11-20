@@ -3,15 +3,15 @@ package org.fm.com
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -20,7 +20,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.fm.com.di.KontainerAplikasi
 import org.fm.com.di.buatKontainerPreview
@@ -33,9 +37,11 @@ import org.fm.com.presentation.filemanager.DaftarBerkasLayar
 import org.fm.com.presentation.filemanager.IntentFilemanager
 import org.fm.com.presentation.filemanager.ViewModelFilemanager
 import org.fm.com.presentation.filemanager.ViewModelOperasiMassal
+import org.fm.com.presentation.komponen.IkonAplikasi
 import org.fm.com.presentation.pencarian.IntentPencarian
 import org.fm.com.presentation.pencarian.LayarPencarian
 import org.fm.com.presentation.pencarian.ViewModelPencarian
+import org.fm.com.presentation.tema.TemaAplikasi
 import org.fm.com.presentation.terbaru.LayarTerbaru
 import org.fm.com.presentation.terbaru.ViewModelTerbaru
 
@@ -53,7 +59,7 @@ fun App(
     onPilihFolder: (() -> Unit)? = null,
     onSiapkanAksesLokasi: (suspend (LokasiBerkas) -> LokasiBerkas)? = null
 ) {
-    MaterialTheme {
+    TemaAplikasi {
         val scope = rememberCoroutineScope()
         val kunciKontainer = remember(kontainer) { kontainer.hashCode().toString() }
 
@@ -84,8 +90,14 @@ fun App(
             )
         }
 
-        val stateFm by vmFilemanager.state.collectAsState()
-        val stateEditor by vmEditor.state.collectAsState()
+        val lokasiAktifFm by remember(vmFilemanager) {
+            vmFilemanager.state.map { it.lokasiSaatIni }.distinctUntilChanged()
+        }.collectAsStateWithLifecycle(initialValue = null)
+
+        val jumlahTabEditor by remember(vmEditor) {
+            vmEditor.state.map { it.jumlahTab }.distinctUntilChanged()
+        }.collectAsStateWithLifecycle(initialValue = 0)
+
         var tabTerpilih by remember { mutableIntStateOf(0) }
         var ruangEditorTerbuka by remember { mutableStateOf(false) }
 
@@ -95,11 +107,10 @@ fun App(
             vmPencarian.prosesIntent(IntentPencarian.SetFolderAkar(lokasiSiap))
         }
 
-        LaunchedEffect(stateFm.lokasiSaatIni) {
-            val lokasiAktif = stateFm.lokasiSaatIni
-            vmEditor.prosesIntent(IntentEditor.SetLokasiFolderSimpan(lokasiAktif))
-            if (lokasiAktif != null) {
-                vmPencarian.prosesIntent(IntentPencarian.SetFolderAkar(lokasiAktif))
+        LaunchedEffect(lokasiAktifFm) {
+            vmEditor.prosesIntent(IntentEditor.SetLokasiFolderSimpan(lokasiAktifFm))
+            if (lokasiAktifFm != null) {
+                vmPencarian.prosesIntent(IntentPencarian.SetFolderAkar(lokasiAktifFm))
             }
         }
 
@@ -132,26 +143,50 @@ fun App(
                             selected = tabTerpilih == 0,
                             onClick = { tabTerpilih = 0 },
                             label = { Text("Berkas") },
-                            icon = { Text("📁") }
+                            icon = {
+                                Icon(
+                                    imageVector = IkonAplikasi.Folder,
+                                    contentDescription = "Berkas",
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         )
                         NavigationBarItem(
                             selected = tabTerpilih == 1,
                             onClick = { tabTerpilih = 1 },
                             label = { Text("Terbaru") },
-                            icon = { Text("🕒") }
+                            icon = {
+                                Icon(
+                                    imageVector = IkonAplikasi.Jam,
+                                    contentDescription = "Terbaru",
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         )
                         NavigationBarItem(
                             selected = tabTerpilih == 2,
                             onClick = { tabTerpilih = 2 },
                             label = { Text("Cari") },
-                            icon = { Text("🔍") }
+                            icon = {
+                                Icon(
+                                    imageVector = IkonAplikasi.Cari,
+                                    contentDescription = "Cari",
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         )
-                        if (stateEditor.jumlahTab > 0) {
+                        if (jumlahTabEditor > 0) {
                             NavigationBarItem(
                                 selected = false,
                                 onClick = { ruangEditorTerbuka = true },
-                                label = { Text("Editor (${stateEditor.jumlahTab})") },
-                                icon = { Text("📝") }
+                                label = { Text("Editor ($jumlahTabEditor)") },
+                                icon = {
+                                    Icon(
+                                        imageVector = IkonAplikasi.Editor,
+                                        contentDescription = "Buka editor",
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
                             )
                         }
                     }
@@ -225,7 +260,7 @@ fun App(
 
 @Composable
 fun LayarMemuatAplikasi() {
-    MaterialTheme {
+    TemaAplikasi {
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center

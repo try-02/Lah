@@ -14,88 +14,104 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.fm.com.domain.usecase.EncodingTeks
+import org.fm.com.domain.usecase.JenisAkhirBaris
 
 @Composable
 fun StatusEditor(
-    tab: ModelTabEditor,
-    wordWrapUmum: Boolean,
+    baris: Int,
+    kolom: Int,
+    jumlahBaris: Int,
+    adaPerubahanBelumTersimpan: Boolean,
+    hanyaBacaPermanen: Boolean,
+    modeHanyaBaca: Boolean,
+    wordWrapAktif: Boolean,
+    encoding: EncodingTeks,
+    akhirBaris: JenisAkhirBaris,
+    siap: Boolean,
     onKlikPosisiBaris: () -> Unit,
     onToggleWordWrap: () -> Unit,
     onToggleHanyaBaca: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val wrapAktif = tab.wordWrapEfektif(wordWrapUmum)
     Surface(
         modifier = modifier.fillMaxWidth(),
-        tonalElevation = 2.dp
+        color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                .padding(horizontal = 10.dp, vertical = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Brs ${tab.posisiKursor.baris}/${tab.jumlahBaris}, Kol ${tab.posisiKursor.kolom}",
-                style = MaterialTheme.typography.labelMedium,
+                text = "Brs $baris/$jumlahBaris · Kol $kolom",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
-                    .clickable(enabled = tab.statusMuat == StatusMuatTab.SIAP, onClick = onKlikPosisiBaris)
+                    .clip(MaterialTheme.shapes.extraSmall)
+                    .clickable(enabled = siap, onClick = onKlikPosisiBaris)
                     .padding(horizontal = 4.dp, vertical = 2.dp)
             )
 
             Text(
-                text = if (tab.adaPerubahanBelumTersimpan) "● Belum Tersimpan" else "Tersimpan",
-                style = MaterialTheme.typography.labelMedium,
-                color = if (tab.adaPerubahanBelumTersimpan) {
+                text = if (adaPerubahanBelumTersimpan) "● Diubah" else "Tersimpan",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (adaPerubahanBelumTersimpan) {
                     MaterialTheme.colorScheme.error
                 } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
+                    MaterialTheme.colorScheme.secondary
                 }
             )
 
             Text(
                 text = when {
-                    tab.hanyaBacaPermanen -> "Hanya Baca (Terkunci)"
-                    tab.modeHanyaBaca -> "Hanya Baca"
+                    hanyaBacaPermanen -> "RO"
+                    modeHanyaBaca -> "Baca"
                     else -> "Edit"
                 },
-                style = MaterialTheme.typography.labelMedium,
-                color = if (tab.modeHanyaBaca) {
-                    MaterialTheme.colorScheme.tertiary
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Medium,
+                color = if (modeHanyaBaca) {
+                    MaterialTheme.colorScheme.onTertiaryContainer
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
                 modifier = Modifier
+                    .clip(MaterialTheme.shapes.extraSmall)
                     .background(
-                        color = if (tab.modeHanyaBaca) {
+                        if (modeHanyaBaca) {
                             MaterialTheme.colorScheme.tertiaryContainer
                         } else {
                             MaterialTheme.colorScheme.surfaceVariant
-                        },
-                        shape = MaterialTheme.shapes.small
+                        }
                     )
                     .clickable(onClick = onToggleHanyaBaca)
-                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
             )
 
             Text(
-                text = if (wrapAktif) "Wrap: Aktif" else "Wrap: Mati",
-                style = MaterialTheme.typography.labelMedium,
+                text = if (wrapAktif) "Wrap" else "NoWrap",
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
+                    .clip(MaterialTheme.shapes.extraSmall)
                     .clickable(onClick = onToggleWordWrap)
                     .padding(horizontal = 4.dp, vertical = 2.dp)
             )
 
             Text(
-                text = "${tab.encoding.name} • ${tab.akhirBaris.name}",
-                style = MaterialTheme.typography.labelMedium,
+                text = "${encoding.name.replace('_', '-')} · ${akhirBaris.name}",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.outline
             )
         }
