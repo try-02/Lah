@@ -13,6 +13,7 @@ import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.usecase.ArahUrutan
 import org.fm.com.domain.usecase.KriteriaUrutan
 import org.fm.com.domain.usecase.SegmenLokasi
+import org.fm.com.presentation.komponen.PemformatLokasiRamah
 
 enum class ModeTampilan {
     DAFTAR,
