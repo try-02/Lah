@@ -74,7 +74,8 @@ fun DaftarBerkasLayar(
     onPilihFolder: (() -> Unit)? = null,
     lokasiPintasan: List<LokasiBerkas> = emptyList(),
     onPilihLokasiPintasan: ((LokasiBerkas) -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onBandingkanBerkas: ((ItemBerkasUi, ItemBerkasUi) -> Unit)? = null
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val stateMassalState = viewModelOperasiMassal?.state?.collectAsStateWithLifecycle()
@@ -86,6 +87,15 @@ fun DaftarBerkasLayar(
 
     var menuKonteksItem by remember { mutableStateOf<ItemBerkasUi?>(null) }
     var tampilSwitcherLokasi by remember { mutableStateOf(false) }
+    var itemPembandingAwal by remember { mutableStateOf<ItemBerkasUi?>(null) }
+
+    val duaBerkasTerpilih = remember(state.itemTerpilih, state.daftarItem) {
+        if (state.itemTerpilih.size != 2) null
+        else {
+            val terpilih = state.daftarItem.filter { it.lokasi in state.itemTerpilih && !it.adalahFolder }
+            if (terpilih.size == 2) terpilih[0] to terpilih[1] else null
+        }
+    }
 
     val onBukaBerkasTerbaru by rememberUpdatedState(onBukaBerkas)
     val sedangMultiSelectTerbaru by rememberUpdatedState(state.sedangMultiSelect)
@@ -124,7 +134,13 @@ fun DaftarBerkasLayar(
                         val sumber = state.itemTerpilih.toList()
                         viewModel.prosesIntent(IntentFilemanager.BersihkanPilihan)
                         viewModelOperasiMassal?.inisiasiPindah(sumber)
-                    }
+                    },
+                    onAksiBandingkan = if (duaBerkasTerpilih != null && onBandingkanBerkas != null) {
+                        {
+                            viewModel.prosesIntent(IntentFilemanager.BersihkanPilihan)
+                            onBandingkanBerkas(duaBerkasTerpilih.first, duaBerkasTerpilih.second)
+                        }
+                    } else null
                 )
             } else {
                 TopAppBar(
@@ -245,6 +261,28 @@ fun DaftarBerkasLayar(
                 )
             }
 
+            itemPembandingAwal?.let { pembandingAwal ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .clip(MaterialTheme.shapes.small)
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                        .border(0.8.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), MaterialTheme.shapes.small)
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Pilih berkas kedua untuk dibandingkan dengan '${pembandingAwal.nama}'",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { itemPembandingAwal = null }) {
+                        Text("Batal")
+                    }
+                }
+            }
+
             KotakSaringCepat(
                 kueri = state.kataKunciSaring,
                 onUbahKueri = { viewModel.prosesIntent(IntentFilemanager.UbahKataKunciSaring(it)) }
@@ -274,7 +312,11 @@ fun DaftarBerkasLayar(
                                     terpilih = item.lokasi in state.itemTerpilih,
                                     modeSeleksi = state.sedangMultiSelect,
                                     onKlik = {
-                                        if (sedangMultiSelectTerbaru) {
+                                        val pembandingAwal = itemPembandingAwal
+                                        if (pembandingAwal != null && !item.adalahFolder) {
+                                            onBandingkanBerkas?.invoke(pembandingAwal, item)
+                                            itemPembandingAwal = null
+                                        } else if (sedangMultiSelectTerbaru) {
                                             viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi))
                                         } else if (item.adalahFolder) {
                                             viewModel.prosesIntent(IntentFilemanager.BukaLokasi(item.lokasi))
@@ -297,6 +339,11 @@ fun DaftarBerkasLayar(
                                         onSalin = { viewModelOperasiMassal?.inisiasiSalin(listOf(item.lokasi)) },
                                         onPindah = { viewModelOperasiMassal?.inisiasiPindah(listOf(item.lokasi)) },
                                         onBukaDengan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBukaDengan(item)) },
+                                        onBandingkan = if (onBandingkanBerkas != null) {
+                                            { itemPembandingAwal = item }
+                                        } else {
+                                            null
+                                        },
                                         onBagikan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBagikan(item)) },
                                         onGantiNama = { viewModel.prosesIntent(IntentFilemanager.BukaDialogRename(item)) },
                                         onProperti = { viewModel.prosesIntent(IntentFilemanager.BukaDialogProperti(item)) },
@@ -324,7 +371,11 @@ fun DaftarBerkasLayar(
                                     terpilih = item.lokasi in state.itemTerpilih,
                                     modeSeleksi = state.sedangMultiSelect,
                                     onKlik = {
-                                        if (sedangMultiSelectTerbaru) {
+                                        val pembandingAwal = itemPembandingAwal
+                                        if (pembandingAwal != null && !item.adalahFolder) {
+                                            onBandingkanBerkas?.invoke(pembandingAwal, item)
+                                            itemPembandingAwal = null
+                                        } else if (sedangMultiSelectTerbaru) {
                                             viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi))
                                         } else if (item.adalahFolder) {
                                             viewModel.prosesIntent(IntentFilemanager.BukaLokasi(item.lokasi))
@@ -347,6 +398,11 @@ fun DaftarBerkasLayar(
                                         onSalin = { viewModelOperasiMassal?.inisiasiSalin(listOf(item.lokasi)) },
                                         onPindah = { viewModelOperasiMassal?.inisiasiPindah(listOf(item.lokasi)) },
                                         onBukaDengan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBukaDengan(item)) },
+                                        onBandingkan = if (onBandingkanBerkas != null) {
+                                            { itemPembandingAwal = item }
+                                        } else {
+                                            null
+                                        },
                                         onBagikan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBagikan(item)) },
                                         onGantiNama = { viewModel.prosesIntent(IntentFilemanager.BukaDialogRename(item)) },
                                         onProperti = { viewModel.prosesIntent(IntentFilemanager.BukaDialogProperti(item)) },
@@ -377,8 +433,9 @@ fun DaftarBerkasLayar(
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
                 lokasiPintasan.forEach { pintasan ->
-                    val aktif = lokasiAktif?.pengenal == pintasan.pengenal &&
-                        lokasiAktif?.jenis == pintasan.jenis
+                    val aktif = lokasiAktif != null &&
+                        lokasiAktif.pengenal == pintasan.pengenal &&
+                        lokasiAktif.jenis == pintasan.jenis
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -754,7 +811,8 @@ private fun MenuKonteksItemBerkas(
     onBagikan: () -> Unit,
     onGantiNama: () -> Unit,
     onProperti: () -> Unit,
-    onHapus: () -> Unit
+    onHapus: () -> Unit,
+    onBandingkan: (() -> Unit)? = null
 ) {
     DropdownMenu(
         expanded = terbuka,
@@ -782,6 +840,19 @@ private fun MenuKonteksItemBerkas(
         )
         HorizontalDivider(thickness = 0.5.dp, modifier = Modifier.padding(vertical = 2.dp))
         if (!item.adalahFolder) {
+            if (onBandingkan != null) {
+                DropdownMenuItem(
+                    text = { Text("Bandingkan dengan...") },
+                    leadingIcon = {
+                        Icon(
+                            IkonAplikasi.Bandingkan,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    onClick = { onTutup(); onBandingkan?.invoke() }
+                )
+            }
             MenuItemDenganAlasan(
                 judul = "Buka Dengan...",
                 ikon = IkonAplikasi.BukaDengan,

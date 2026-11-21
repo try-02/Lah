@@ -14,6 +14,7 @@ import org.fm.com.domain.repository.RepositoriBerkas
 import org.fm.com.domain.repository.RepositoriOperasiBerkas
 import org.fm.com.domain.repository.RepositoriRiwayatLokasi
 import org.fm.com.domain.repository.RepositoriRiwayatPencarian
+import org.fm.com.domain.usecase.BandingkanBerkasUseCase
 import org.fm.com.domain.usecase.CariIsiBerkasUseCase
 import org.fm.com.domain.usecase.CariNamaBerkasUseCase
 import org.fm.com.domain.usecase.PelaksanaSimpanTransaksional
@@ -38,6 +39,7 @@ data class KontainerAplikasi(
     val simpanBerkasUseCase: SimpanBerkasUseCase,
     val cariNamaBerkasUseCase: CariNamaBerkasUseCase,
     val cariIsiBerkasUseCase: CariIsiBerkasUseCase,
+    val bandingkanBerkasUseCase: BandingkanBerkasUseCase,
     val lokasiAwal: LokasiBerkas,
     val lokasiPintasan: List<LokasiBerkas> = listOf(lokasiAwal),
     val aksiPlatform: AksiPlatformBerkas = AksiPlatformBerkasBawaan(),
@@ -60,6 +62,7 @@ fun buatKontainerAplikasi(
                 single<PemeriksaKonflikSimpan> { DeteksiKonflik(get()) }
                 single<PelaksanaSimpanTransaksional> { SimpanTransaksional(get()) }
                 single { SimpanBerkasUseCase(get(), get()) }
+                single { BandingkanBerkasUseCase(get()) }
                 single { CariNamaBerkasUseCase(get()) }
                 single<PemindaiIsiBerkas> { PencariIsiBerkas(get()) }
                 single { CariIsiBerkasUseCase(get()) }
@@ -77,6 +80,7 @@ fun buatKontainerAplikasi(
         simpanBerkasUseCase = koin.get(),
         cariNamaBerkasUseCase = koin.get(),
         cariIsiBerkasUseCase = koin.get(),
+        bandingkanBerkasUseCase = koin.get(),
         lokasiAwal = lokasiAwal,
         lokasiPintasan = lokasiPintasan,
         aksiPlatform = aksiPlatform,

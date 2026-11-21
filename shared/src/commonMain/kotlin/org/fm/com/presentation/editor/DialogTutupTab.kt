@@ -157,7 +157,7 @@ fun DialogSimpanSebagai(
                                     color = MaterialTheme.colorScheme.error
                                 )
                             }
-                            namaKonflikSama && pesanKonflik != null -> {
+                            pesanKonflik != null && namaBersih == permintaan.namaKonflik -> {
                                 Text(
                                     pesanKonflik,
                                     color = MaterialTheme.colorScheme.error

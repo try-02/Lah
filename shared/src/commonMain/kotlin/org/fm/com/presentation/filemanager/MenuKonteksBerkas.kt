@@ -22,7 +22,8 @@ fun BarAksiSeleksi(
     onBersihkanPilihan: () -> Unit,
     onAksiHapus: () -> Unit,
     onAksiSalin: () -> Unit,
-    onAksiPindah: () -> Unit
+    onAksiPindah: () -> Unit,
+    onAksiBandingkan: (() -> Unit)? = null
 ) {
     TopAppBar(
         title = {
@@ -41,6 +42,16 @@ fun BarAksiSeleksi(
             }
         },
         actions = {
+            if (jumlahTerpilih == 2 && onAksiBandingkan != null) {
+                IconButton(onClick = onAksiBandingkan) {
+                    Icon(
+                        imageVector = IkonAplikasi.Bandingkan,
+                        contentDescription = "Bandingkan 2 berkas terpilih",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
             IconButton(onClick = onPilihSemua) {
                 Icon(
                     imageVector = IkonAplikasi.PilihSemua,

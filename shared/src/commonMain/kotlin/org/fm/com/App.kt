@@ -35,6 +35,9 @@ import org.fm.com.di.KontainerAplikasi
 import org.fm.com.di.buatKontainerPreview
 import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.LokasiBerkas
+import org.fm.com.presentation.diff.IntentDiff
+import org.fm.com.presentation.diff.LayarDiff
+import org.fm.com.presentation.diff.ViewModelDiff
 import org.fm.com.presentation.editor.IntentEditor
 import org.fm.com.presentation.editor.LayarEditor
 import org.fm.com.presentation.editor.ViewModelEditor
@@ -94,6 +97,9 @@ fun App(
                 simpanBerkasUseCase = kontainer.simpanBerkasUseCase
             )
         }
+        val vmDiff: ViewModelDiff = viewModel(key = "diff_$kunciKontainer") {
+            ViewModelDiff(kontainer.bandingkanBerkasUseCase)
+        }
 
         val lokasiAktifFm by remember(vmFilemanager) {
             vmFilemanager.state.map { it.lokasiSaatIni }.distinctUntilChanged()
@@ -105,6 +111,7 @@ fun App(
 
         var tabTerpilih by remember { mutableIntStateOf(0) }
         var ruangEditorTerbuka by remember { mutableStateOf(false) }
+        var ruangDiffTerbuka by remember { mutableStateOf(false) }
 
         LaunchedEffect(kontainer) {
             val lokasiSiap = onSiapkanAksesLokasi?.invoke(kontainer.lokasiAwal) ?: kontainer.lokasiAwal
@@ -132,7 +139,12 @@ fun App(
             vmFilemanager.prosesIntent(IntentFilemanager.SetPesanInfo(pesan))
         }
 
-        if (ruangEditorTerbuka) {
+        if (ruangDiffTerbuka) {
+            LayarDiff(
+                viewModel = vmDiff,
+                onKembali = { ruangDiffTerbuka = false }
+            )
+        } else if (ruangEditorTerbuka) {
             LayarEditor(
                 viewModel = vmEditor,
                 onKembali = {
@@ -240,6 +252,17 @@ fun App(
                                 )
                                 vmEditor.prosesIntent(IntentEditor.BukaBerkas(entitas))
                                 ruangEditorTerbuka = true
+                            },
+                            onBandingkanBerkas = { itemA, itemB ->
+                                vmDiff.prosesIntent(
+                                    IntentDiff.Bandingkan(
+                                        lokasiA = itemA.lokasi,
+                                        namaA = itemA.nama,
+                                        lokasiB = itemB.lokasi,
+                                        namaB = itemB.nama
+                                    )
+                                )
+                                ruangDiffTerbuka = true
                             },
                             onPilihFolder = onPilihFolder,
                             lokasiPintasan = lokasiPintasan,

@@ -384,4 +384,29 @@ object IkonAplikasi {
         lineTo(12f, 15f)
         lineTo(18f, 9f)
     }
+
+    val Bandingkan: ImageVector = ikonGaris("Bandingkan") {
+        moveTo(4f, 5f)
+        lineTo(10f, 5f)
+        lineTo(10f, 19f)
+        lineTo(4f, 19f)
+        close()
+        moveTo(14f, 5f)
+        lineTo(20f, 5f)
+        lineTo(20f, 19f)
+        lineTo(14f, 19f)
+        close()
+    }
+
+    val Naik: ImageVector = ikonGaris("Naik") {
+        moveTo(6f, 15f)
+        lineTo(12f, 9f)
+        lineTo(18f, 15f)
+    }
+
+    val Turun: ImageVector = ikonGaris("Turun") {
+        moveTo(6f, 9f)
+        lineTo(12f, 15f)
+        lineTo(18f, 9f)
+    }
 }
