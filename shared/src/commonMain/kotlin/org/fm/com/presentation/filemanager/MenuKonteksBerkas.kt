@@ -1,4 +1,4 @@
-}package org.fm.com.presentation.filemanager
+package org.fm.com.presentation.filemanager
 
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ExperimentalMaterial3Api
