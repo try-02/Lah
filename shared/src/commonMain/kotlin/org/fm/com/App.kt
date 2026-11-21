@@ -49,6 +49,7 @@ import org.fm.com.presentation.komponen.IkonAplikasi
 import org.fm.com.presentation.pencarian.IntentPencarian
 import org.fm.com.presentation.pencarian.LayarPencarian
 import org.fm.com.presentation.pencarian.ViewModelPencarian
+import org.fm.com.presentation.rename.ViewModelBulkRename
 import org.fm.com.presentation.tema.TemaAplikasi
 import org.fm.com.presentation.terbaru.LayarTerbaru
 import org.fm.com.presentation.terbaru.ViewModelTerbaru
@@ -99,6 +100,12 @@ fun App(
         }
         val vmDiff: ViewModelDiff = viewModel(key = "diff_$kunciKontainer") {
             ViewModelDiff(kontainer.bandingkanBerkasUseCase)
+        }
+        val vmBulkRename: ViewModelBulkRename = viewModel(key = "rename_$kunciKontainer") {
+            ViewModelBulkRename(
+                repositoriBerkas = kontainer.repositoriBerkas,
+                jalankanRenameMassalUseCase = kontainer.jalankanRenameMassalUseCase
+            )
         }
 
         val lokasiAktifFm by remember(vmFilemanager) {
@@ -238,6 +245,7 @@ fun App(
                         0 -> DaftarBerkasLayar(
                             viewModel = vmFilemanager,
                             viewModelOperasiMassal = vmOperasiMassal,
+                            viewModelBulkRename = vmBulkRename,
                             aksiPlatform = kontainer.aksiPlatform,
                             onBukaBerkas = { item ->
                                 val entitas = EntitasBerkas(

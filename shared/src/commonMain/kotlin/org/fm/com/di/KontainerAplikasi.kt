@@ -6,6 +6,7 @@ import org.fm.com.data.SumberMemoriPenyimpanan
 import org.fm.com.data.pencarian.PencariIsiBerkas
 import org.fm.com.data.persistensi.MemoriRepositoriRiwayatLokasi
 import org.fm.com.data.persistensi.MemoriRepositoriRiwayatPencarian
+import org.fm.com.data.rename.PenerapkanRenameMassal
 import org.fm.com.data.simpan.DeteksiKonflik
 import org.fm.com.data.simpan.SimpanTransaksional
 import org.fm.com.domain.model.JenisLokasi
@@ -17,6 +18,8 @@ import org.fm.com.domain.repository.RepositoriRiwayatPencarian
 import org.fm.com.domain.usecase.BandingkanBerkasUseCase
 import org.fm.com.domain.usecase.CariIsiBerkasUseCase
 import org.fm.com.domain.usecase.CariNamaBerkasUseCase
+import org.fm.com.domain.usecase.JalankanRenameMassalUseCase
+import org.fm.com.domain.usecase.PelaksanaRenameMassal
 import org.fm.com.domain.usecase.PelaksanaSimpanTransaksional
 import org.fm.com.domain.usecase.PemeriksaKonflikSimpan
 import org.fm.com.domain.usecase.PemindaiIsiBerkas
@@ -40,6 +43,7 @@ data class KontainerAplikasi(
     val cariNamaBerkasUseCase: CariNamaBerkasUseCase,
     val cariIsiBerkasUseCase: CariIsiBerkasUseCase,
     val bandingkanBerkasUseCase: BandingkanBerkasUseCase,
+    val jalankanRenameMassalUseCase: JalankanRenameMassalUseCase,
     val lokasiAwal: LokasiBerkas,
     val lokasiPintasan: List<LokasiBerkas> = listOf(lokasiAwal),
     val aksiPlatform: AksiPlatformBerkas = AksiPlatformBerkasBawaan(),
@@ -66,6 +70,8 @@ fun buatKontainerAplikasi(
                 single { CariNamaBerkasUseCase(get()) }
                 single<PemindaiIsiBerkas> { PencariIsiBerkas(get()) }
                 single { CariIsiBerkasUseCase(get()) }
+                single<PelaksanaRenameMassal> { PenerapkanRenameMassal(get()) }
+                single { JalankanRenameMassalUseCase(get()) }
             }
         )
     }
@@ -81,6 +87,7 @@ fun buatKontainerAplikasi(
         cariNamaBerkasUseCase = koin.get(),
         cariIsiBerkasUseCase = koin.get(),
         bandingkanBerkasUseCase = koin.get(),
+        jalankanRenameMassalUseCase = koin.get(),
         lokasiAwal = lokasiAwal,
         lokasiPintasan = lokasiPintasan,
         aksiPlatform = aksiPlatform,

@@ -1,4 +1,4 @@
-package org.fm.com.presentation.filemanager
+}package org.fm.com.presentation.filemanager
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -58,10 +58,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.OperasiBerkas
 import org.fm.com.presentation.komponen.IkonAplikasi
 import org.fm.com.presentation.komponen.PemformatLokasiRamah
+import org.fm.com.presentation.rename.DialogBulkRename
+import org.fm.com.presentation.rename.IntentBulkRename
+import org.fm.com.presentation.rename.ViewModelBulkRename
 import org.fm.com.presentation.tema.LocalFontMono
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,6 +73,7 @@ import org.fm.com.presentation.tema.LocalFontMono
 fun DaftarBerkasLayar(
     viewModel: ViewModelFilemanager,
     viewModelOperasiMassal: ViewModelOperasiMassal? = null,
+    viewModelBulkRename: ViewModelBulkRename? = null,
     aksiPlatform: AksiPlatformBerkas = remember { AksiPlatformBerkasBawaan() },
     onBukaBerkas: (ItemBerkasUi) -> Unit,
     onPilihFolder: (() -> Unit)? = null,
@@ -139,6 +144,33 @@ fun DaftarBerkasLayar(
                         {
                             viewModel.prosesIntent(IntentFilemanager.BersihkanPilihan)
                             onBandingkanBerkas(duaBerkasTerpilih.first, duaBerkasTerpilih.second)
+                        }
+                    } else null,
+                    onAksiRenameMassal = if (viewModelBulkRename != null && lokasiAktif != null) {
+                        {
+                            val entitasTerpilih = state.daftarItem
+                                .filter { it.lokasi in state.itemTerpilih }
+                                .map { item ->
+                                    EntitasBerkas(
+                                        lokasi = item.lokasi,
+                                        nama = item.nama,
+                                        jenis = item.jenis,
+                                        ukuranByte = item.ukuranByte,
+                                        waktuUbahEpochMs = item.waktuUbahEpochMs,
+                                        tersembunyi = item.tersembunyi,
+                                        dapatDibaca = item.dapatDibaca,
+                                        dapatDitulis = item.dapatDitulis
+                                    )
+                                }
+                            if (entitasTerpilih.isNotEmpty()) {
+                                viewModelBulkRename.prosesIntent(
+                                    IntentBulkRename.Buka(
+                                        folderInduk = lokasiAktif,
+                                        daftarItem = entitasTerpilih,
+                                        kemampuanLokasi = state.kemampuanLokasi
+                                    )
+                                )
+                            }
                         }
                     } else null
                 )
@@ -676,7 +708,23 @@ fun DaftarBerkasLayar(
             onBatal = { viewModelOperasiMassal?.batalkanOperasi() }
         )
     }
-}
+
+    if (viewModelBulkRename != null) {
+        DialogBulkRename(
+            viewModel = viewModelBulkRename,
+            onSelesaiSukses = { jumlahBerhasil ->
+                viewModel.prosesIntent(IntentFilemanager.BersihkanPilihan)
+                viewModel.prosesIntent(IntentFilemanager.Segarkan)
+                viewModel.prosesIntent(
+                    IntentFilemanager.SetPesanInfo("Berhasil mengganti nama $jumlahBerhasil item")
+                )
+            },
+            onTutupDenganPerubahan = {
+                viewModel.prosesIntent(IntentFilemanager.BersihkanPilihan)
+                viewModel.prosesIntent(IntentFilemanager.Segarkan)
+            }
+        )
+    }
 
 @Composable
 private fun KotakSaringCepat(

@@ -1,4 +1,4 @@
-package org.fm.com.presentation.filemanager
+}package org.fm.com.presentation.filemanager
 
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -10,6 +10,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.fm.com.presentation.komponen.IkonAplikasi
 
@@ -23,17 +24,20 @@ fun BarAksiSeleksi(
     onAksiHapus: () -> Unit,
     onAksiSalin: () -> Unit,
     onAksiPindah: () -> Unit,
-    onAksiBandingkan: (() -> Unit)? = null
+    onAksiBandingkan: (() -> Unit)? = null,
+    onAksiRenameMassal: (() -> Unit)? = null
 ) {
     TopAppBar(
         title = {
             Text(
                 text = "$jumlahTerpilih dipilih",
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         },
         navigationIcon = {
-            IconButton(onClick = onBersihkanPilihan) {
+            IconButton(onClick = onBersihkanPilihan, modifier = Modifier.size(40.dp)) {
                 Icon(
                     imageVector = IkonAplikasi.Tutup,
                     contentDescription = "Batalkan pilihan",
@@ -43,7 +47,7 @@ fun BarAksiSeleksi(
         },
         actions = {
             if (jumlahTerpilih == 2 && onAksiBandingkan != null) {
-                IconButton(onClick = onAksiBandingkan) {
+                IconButton(onClick = onAksiBandingkan, modifier = Modifier.size(40.dp)) {
                     Icon(
                         imageVector = IkonAplikasi.Bandingkan,
                         contentDescription = "Bandingkan 2 berkas terpilih",
@@ -52,28 +56,53 @@ fun BarAksiSeleksi(
                     )
                 }
             }
-            IconButton(onClick = onPilihSemua) {
+            IconButton(onClick = onPilihSemua, modifier = Modifier.size(40.dp)) {
                 Icon(
                     imageVector = IkonAplikasi.PilihSemua,
                     contentDescription = "Pilih semua",
                     modifier = Modifier.size(20.dp)
                 )
             }
-            IconButton(onClick = onAksiSalin, enabled = kemampuan.dapatSalin) {
+            IconButton(
+                onClick = onAksiSalin,
+                enabled = kemampuan.dapatSalin,
+                modifier = Modifier.size(40.dp)
+            ) {
                 Icon(
                     imageVector = IkonAplikasi.Salin,
                     contentDescription = "Salin",
                     modifier = Modifier.size(20.dp)
                 )
             }
-            IconButton(onClick = onAksiPindah, enabled = kemampuan.dapatPindah) {
+            IconButton(
+                onClick = onAksiPindah,
+                enabled = kemampuan.dapatPindah,
+                modifier = Modifier.size(40.dp)
+            ) {
                 Icon(
                     imageVector = IkonAplikasi.Pindah,
                     contentDescription = "Pindah",
                     modifier = Modifier.size(20.dp)
                 )
             }
-            IconButton(onClick = onAksiHapus, enabled = kemampuan.dapatHapus) {
+            if (onAksiRenameMassal != null) {
+                IconButton(
+                    onClick = onAksiRenameMassal,
+                    enabled = kemampuan.dapatGantiNama,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = IkonAplikasi.GantiNama,
+                        contentDescription = "Ganti nama massal",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            IconButton(
+                onClick = onAksiHapus,
+                enabled = kemampuan.dapatHapus,
+                modifier = Modifier.size(40.dp)
+            ) {
                 Icon(
                     imageVector = IkonAplikasi.Hapus,
                     contentDescription = "Hapus",
@@ -90,4 +119,3 @@ fun BarAksiSeleksi(
             containerColor = MaterialTheme.colorScheme.primaryContainer
         )
     )
-}
