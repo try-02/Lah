@@ -104,12 +104,11 @@ fun PanelBerdampingan(
         with(density) { tinggiTeksPx.toDp() + 5.dp }
     }
 
-    val lebarAngkaDp = remember(jumlahDigit, palet.gayaNomor, density) {
-        val lebarDigitPx = textMeasurer.measure("8".repeat(jumlahDigit), style = palet.gayaNomor, maxLines = 1).size.width
-        with(density) { lebarDigitPx.toDp() + 4.dp }
+    val lebarGutterTotalDp = remember(jumlahDigit, palet.gayaNomor, density) {
+        val contoh = "${"8".repeat(jumlahDigit)} +"
+        val lebarPx = textMeasurer.measure(contoh, style = palet.gayaNomor, maxLines = 1).size.width
+        with(density) { lebarPx.toDp() + 12.dp }
     }
-    // 4.dp padding kiri + lebarAngkaDp + 13.dp simbol + 4.dp padding kanan
-    val lebarGutterTotalDp = lebarAngkaDp + 21.dp
 
     var scrollHorizontalPx by remember(daftarBaris) { mutableFloatStateOf(0f) }
 
@@ -226,7 +225,8 @@ fun PanelBerdampingan(
                                 sel = baris.kiri,
                                 disorotAktif = aktif,
                                 palet = palet,
-                                lebarNomor = lebarAngkaDp,
+                                jumlahDigit = jumlahDigit,
+                                lebarGutter = lebarGutterTotalDp,
                                 bacaScrollHorizontalPx = { scrollHorizontalPx },
                                 modifier = Modifier.weight(1f).fillMaxHeight()
                             )
@@ -239,7 +239,8 @@ fun PanelBerdampingan(
                                 sel = baris.kanan,
                                 disorotAktif = aktif,
                                 palet = palet,
-                                lebarNomor = lebarAngkaDp,
+                                jumlahDigit = jumlahDigit,
+                                lebarGutter = lebarGutterTotalDp,
                                 bacaScrollHorizontalPx = { scrollHorizontalPx },
                                 modifier = Modifier.weight(1f).fillMaxHeight()
                             )
@@ -256,7 +257,8 @@ private fun SelBerdampinganPanel(
     sel: SelBarisDiff,
     disorotAktif: Boolean,
     palet: PaletPanelDiff,
-    lebarNomor: Dp,
+    jumlahDigit: Int,
+    lebarGutter: Dp,
     bacaScrollHorizontalPx: () -> Float,
     modifier: Modifier = Modifier
 ) {
@@ -274,7 +276,8 @@ private fun SelBerdampinganPanel(
             nomorBaris = sel.nomorBaris,
             jenis = sel.jenis,
             palet = palet,
-            lebarNomor = lebarNomor
+            jumlahDigit = jumlahDigit,
+            lebarGutter = lebarGutter
         )
         Box(
             modifier = Modifier

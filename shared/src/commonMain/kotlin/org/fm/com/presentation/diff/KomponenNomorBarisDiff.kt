@@ -1,8 +1,7 @@
 package org.fm.com.presentation.diff
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -22,7 +21,6 @@ import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -144,38 +142,42 @@ fun GutterNomorBarisTunggal(
     nomorBaris: Int?,
     jenis: JenisBarisDiff,
     palet: PaletPanelDiff,
-    lebarNomor: Dp,
+    jumlahDigit: Int,
+    lebarGutter: Dp,
     modifier: Modifier = Modifier
 ) {
-    val adalahSimbolTebal = jenis == JenisBarisDiff.TAMBAH ||
-        jenis == JenisBarisDiff.HAPUS ||
-        jenis == JenisBarisDiff.UBAH
+    val warnaSimbol = palet.warnaSimbol(jenis)
+    val teksGutter = remember(nomorBaris, jenis, jumlahDigit, warnaSimbol) {
+        val angka = nomorBaris?.toString()?.padStart(jumlahDigit, ' ') ?: " ".repeat(jumlahDigit)
+        buildAnnotatedString {
+            append(angka)
+            append(' ')
+            val awalSimbol = length
+            append(jenis.simbol)
+            addStyle(
+                style = SpanStyle(color = warnaSimbol, fontWeight = FontWeight.Bold),
+                start = awalSimbol,
+                end = length
+            )
+        }
+    }
 
-    Row(
+    Box(
         modifier = modifier
+            .width(lebarGutter)
             .fillMaxHeight()
             .background(palet.latarGutter)
-            .padding(horizontal = 4.dp)
+            .padding(horizontal = 5.dp)
             .semantics {
                 contentDescription = "${jenis.labelAksesibilitas} baris ${nomorBaris ?: "-"}"
             },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.End
+        contentAlignment = Alignment.CenterEnd
     ) {
         Text(
-            text = nomorBaris?.toString() ?: "",
+            text = teksGutter,
             style = palet.gayaNomor,
-            textAlign = TextAlign.End,
             maxLines = 1,
-            modifier = Modifier.width(lebarNomor)
-        )
-        Text(
-            text = jenis.simbol,
-            style = if (adalahSimbolTebal) palet.gayaSimbolTebal else palet.gayaSimbolNormal,
-            color = palet.warnaSimbol(jenis),
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            modifier = Modifier.width(13.dp)
+            softWrap = false
         )
     }
 }
@@ -186,44 +188,45 @@ fun GutterNomorBarisUnified(
     nomorBarisB: Int?,
     jenis: JenisBarisDiff,
     palet: PaletPanelDiff,
-    lebarKolomNomor: Dp,
+    jumlahDigit: Int,
+    lebarGutter: Dp,
     modifier: Modifier = Modifier
 ) {
-    val adalahSimbolTebal = jenis == JenisBarisDiff.TAMBAH ||
-        jenis == JenisBarisDiff.HAPUS ||
-        jenis == JenisBarisDiff.UBAH
+    val warnaSimbol = palet.warnaSimbol(jenis)
+    val teksGutter = remember(nomorBarisA, nomorBarisB, jenis, jumlahDigit, warnaSimbol) {
+        val a = nomorBarisA?.toString()?.padStart(jumlahDigit, ' ') ?: " ".repeat(jumlahDigit)
+        val b = nomorBarisB?.toString()?.padStart(jumlahDigit, ' ') ?: " ".repeat(jumlahDigit)
+        buildAnnotatedString {
+            append(a)
+            append(' ')
+            append(b)
+            append(' ')
+            val awalSimbol = length
+            append(jenis.simbol)
+            addStyle(
+                style = SpanStyle(color = warnaSimbol, fontWeight = FontWeight.Bold),
+                start = awalSimbol,
+                end = length
+            )
+        }
+    }
 
-    Row(
+    Box(
         modifier = modifier
+            .width(lebarGutter)
             .fillMaxHeight()
             .background(palet.latarGutter)
-            .padding(horizontal = 4.dp)
+            .padding(horizontal = 6.dp)
             .semantics {
                 contentDescription = "${jenis.labelAksesibilitas} A:${nomorBarisA ?: "-"} B:${nomorBarisB ?: "-"}"
             },
-        verticalAlignment = Alignment.CenterVertically
+        contentAlignment = Alignment.CenterEnd
     ) {
         Text(
-            text = nomorBarisA?.toString() ?: "",
+            text = teksGutter,
             style = palet.gayaNomor,
-            textAlign = TextAlign.End,
             maxLines = 1,
-            modifier = Modifier.width(lebarKolomNomor)
-        )
-        Text(
-            text = nomorBarisB?.toString() ?: "",
-            style = palet.gayaNomor,
-            textAlign = TextAlign.End,
-            maxLines = 1,
-            modifier = Modifier.width(lebarKolomNomor).padding(start = 4.dp)
-        )
-        Text(
-            text = jenis.simbol,
-            style = if (adalahSimbolTebal) palet.gayaSimbolTebal else palet.gayaSimbolNormal,
-            color = palet.warnaSimbol(jenis),
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            modifier = Modifier.width(15.dp)
+            softWrap = false
         )
     }
 }

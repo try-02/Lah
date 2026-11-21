@@ -91,13 +91,27 @@ fun LayarDiff(
         val aktif = state.perubahanAktif ?: return@LaunchedEffect
         when (state.modeTampilan) {
             ModeTampilanDiff.BERDAMPINGAN -> {
-                if (aktif.indeksBarisBerdampinganPertama in state.barisBerdampingan.indices) {
-                    listStateBerdampingan.animateScrollToItem(aktif.indeksBarisBerdampinganPertama)
+                val target = aktif.indeksBarisBerdampinganPertama
+                if (target in state.barisBerdampingan.indices) {
+                    val posisi = (target - 2).coerceAtLeast(0)
+                    val jarak = kotlin.math.abs(posisi - listStateBerdampingan.firstVisibleItemIndex)
+                    if (jarak <= 25) {
+                        listStateBerdampingan.animateScrollToItem(posisi)
+                    } else {
+                        listStateBerdampingan.scrollToItem(posisi)
+                    }
                 }
             }
             ModeTampilanDiff.UNIFIED -> {
-                if (aktif.indeksBarisUnifiedPertama in state.barisUnified.indices) {
-                    listStateUnified.animateScrollToItem(aktif.indeksBarisUnifiedPertama)
+                val target = aktif.indeksBarisUnifiedPertama
+                if (target in state.barisUnified.indices) {
+                    val posisi = (target - 2).coerceAtLeast(0)
+                    val jarak = kotlin.math.abs(posisi - listStateUnified.firstVisibleItemIndex)
+                    if (jarak <= 25) {
+                        listStateUnified.animateScrollToItem(posisi)
+                    } else {
+                        listStateUnified.scrollToItem(posisi)
+                    }
                 }
             }
         }

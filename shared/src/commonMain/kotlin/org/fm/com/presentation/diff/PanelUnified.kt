@@ -84,17 +84,16 @@ fun PanelUnified(
         with(density) { tinggiTeksPx.toDp() + 5.dp }
     }
 
-    val lebarKolomNomorDp = remember(jumlahDigit, palet.gayaNomor, density) {
-        val lebarDigitPx = textMeasurer.measure("8".repeat(jumlahDigit), style = palet.gayaNomor, maxLines = 1).size.width
-        with(density) { lebarDigitPx.toDp() + 4.dp }
+    val lebarGutterTotalDp = remember(jumlahDigit, palet.gayaNomor, density) {
+        val contoh = "${"8".repeat(jumlahDigit)} ${"8".repeat(jumlahDigit)} +"
+        val lebarPx = textMeasurer.measure(contoh, style = palet.gayaNomor, maxLines = 1).size.width
+        with(density) { lebarPx.toDp() + 14.dp }
     }
-    // 4.dp padding kiri + lebarKolomNomorA + 4.dp + lebarKolomNomorB + 15.dp simbol + 4.dp padding kanan + 0.5.dp divider
-    val lebarGutterTotalDp = (lebarKolomNomorDp * 2) + 27.5.dp
 
     var scrollHorizontalPx by remember(daftarBaris) { mutableFloatStateOf(0f) }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val lebarAreaTeksDp = (maxWidth - lebarGutterTotalDp).coerceAtLeast(1.dp)
+        val lebarAreaTeksDp = (maxWidth - lebarGutterTotalDp - 0.5.dp).coerceAtLeast(1.dp)
         val lebarAreaTeksPx = with(density) { lebarAreaTeksDp.toPx() }
         val paddingTeksPx = with(density) { 18.dp.toPx() }
         val maksScrollPx = ((lebarTeksMaksPx + paddingTeksPx) - lebarAreaTeksPx).coerceAtLeast(0f)
@@ -169,7 +168,8 @@ fun PanelUnified(
                             nomorBarisB = baris.nomorBarisB,
                             jenis = baris.jenis,
                             palet = palet,
-                            lebarKolomNomor = lebarKolomNomorDp
+                            jumlahDigit = jumlahDigit,
+                            lebarGutter = lebarGutterTotalDp
                         )
                         VerticalDivider(
                             thickness = 0.5.dp,
