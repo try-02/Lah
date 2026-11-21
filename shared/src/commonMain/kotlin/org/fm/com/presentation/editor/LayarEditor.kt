@@ -9,18 +9,20 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -36,40 +38,85 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import org.fm.com.presentation.komponen.IkonAplikasi
 import org.fm.com.presentation.tema.LocalFontMono
+
+private const val AMBANG_SATU_BLOK_CHAR = 16_384
+private const val AMBANG_SATU_BLOK_BARIS = 350
+private const val MAKS_BARIS_PER_BLOK = 40
+private const val MAKS_CHAR_PER_BLOK = 3_000
+private const val BATAS_PECAH_ULANG_BARIS = 100
+private const val BATAS_PECAH_ULANG_CHAR = 6_000
 
 @Immutable
 private data class TabHeaderUi(
     val idTab: String,
     val namaBerkas: String,
     val kotor: Boolean
+)
+
+private data class BlokTeksEditor(
+    val idLokal: Long,
+    val offsetAwal: Int,
+    val barisAwal: Int,
+    val lanjutanBaris: Boolean,
+    val teks: String,
+    val jumlahLf: Int,
+    val punyaPemisahAkhir: Boolean
+) {
+    val teksTampil: String
+        get() = if (punyaPemisahAkhir && teks.endsWith('\n')) teks.dropLast(1) else teks
+}
+
+private data class PermintaanFokusBlok(
+    val idBlok: Long,
+    val awalLokal: Int,
+    val akhirLokal: Int,
+    val versi: Long
 )
 
 @Composable
@@ -233,9 +280,18 @@ fun LayarEditor(
                         AreaTeksEditor(
                             tab = tabAktif,
                             wordWrapAktif = wrapAktif,
-                            onUbahTeks = remember(viewModel, idTabSaatIni) {
-                                { teksBaru, awal, akhir ->
-                                    viewModel.prosesIntent(IntentEditor.UbahTeks(idTabSaatIni, teksBaru, awal, akhir))
+                            onUbahRentangTeks = remember(viewModel, idTabSaatIni) {
+                                { awalGlobal, panjangDihapus, teksDisisip, kursorGlobal, akhirSeleksiGlobal ->
+                                    viewModel.prosesIntent(
+                                        IntentEditor.UbahRentangTeks(
+                                            idTab = idTabSaatIni,
+                                            awalGlobal = awalGlobal,
+                                            panjangDihapus = panjangDihapus,
+                                            teksDisisip = teksDisisip,
+                                            indeksKursorGlobal = kursorGlobal,
+                                            indeksAkhirSeleksiGlobal = akhirSeleksiGlobal
+                                        )
+                                    )
                                 }
                             },
                             onUbahKursor = remember(viewModel, idTabSaatIni) {
@@ -614,58 +670,72 @@ private fun BarTabEditor(
 private fun AreaTeksEditor(
     tab: ModelTabEditor,
     wordWrapAktif: Boolean,
-    onUbahTeks: (String, Int, Int) -> Unit,
+    onUbahRentangTeks: (awalGlobal: Int, panjangDihapus: Int, teksDisisip: String, kursorGlobal: Int, akhirSeleksiGlobal: Int) -> Unit,
     onUbahKursor: (Int, Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val scrollVertikal = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    val lazyListState = rememberLazyListState()
     val scrollHorizontal = rememberScrollState()
-    var tinggiViewportPx by remember { mutableIntStateOf(0) }
-    var textLayoutResult by remember(tab.idTab) { mutableStateOf<TextLayoutResult?>(null) }
+    val fontMono = LocalFontMono.current
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer(cacheSize = 256)
 
-    var tfv by remember(tab.idTab) {
-        mutableStateOf(
-            TextFieldValue(
-                text = tab.isiSaatIni,
-                selection = TextRange(
-                    tab.posisiKursor.indeksKarakter.coerceIn(0, tab.isiSaatIni.length),
-                    tab.posisiKursor.indeksAkhirSeleksi.coerceIn(0, tab.isiSaatIni.length)
-                )
-            )
-        )
+    val daftarBlok = remember(tab.idTab) { mutableStateListOf<BlokTeksEditor>() }
+    var nextBlokId by remember(tab.idTab) { mutableLongStateOf(1L) }
+    var urutanSinkronTerakhir by remember(tab.idTab) { mutableLongStateOf(-1L) }
+    var panjangTeksLokal by remember(tab.idTab) { mutableIntStateOf(-1) }
+    var permintaanFokus by remember(tab.idTab) { mutableStateOf<PermintaanFokusBlok?>(null) }
+    var versiFokus by remember(tab.idTab) { mutableLongStateOf(0L) }
+
+    fun isiUlangDariTeks(teks: String) {
+        val hasilPecah = pecahMenjadiBlok(teks, nextBlokId)
+        nextBlokId = hasilPecah.nextId
+        daftarBlok.clear()
+        daftarBlok.addAll(hasilPecah.blokList)
+        panjangTeksLokal = teks.length
+    }
+
+    if (daftarBlok.isEmpty() && urutanSinkronTerakhir == -1L) {
+        isiUlangDariTeks(tab.isiSaatIni)
+        urutanSinkronTerakhir = tab.urutanSinkronTeks
+    }
+
+    LaunchedEffect(tab.idTab, tab.urutanSinkronTeks, tab.isiSaatIni.length) {
+        if (tab.urutanSinkronTeks != urutanSinkronTerakhir || tab.isiSaatIni.length != panjangTeksLokal) {
+            isiUlangDariTeks(tab.isiSaatIni)
+            urutanSinkronTerakhir = tab.urutanSinkronTeks
+        }
     }
 
     LaunchedEffect(tab.idTab, tab.urutanNavigasiKursor) {
-        val targetAwal = tab.posisiKursor.indeksKarakter.coerceIn(0, tab.isiSaatIni.length)
-        val targetAkhir = tab.posisiKursor.indeksAkhirSeleksi.coerceIn(0, tab.isiSaatIni.length)
-        val targetRange = TextRange(targetAwal, targetAkhir)
-        if (tfv.text != tab.isiSaatIni) {
-            tfv = TextFieldValue(text = tab.isiSaatIni, selection = targetRange)
-        } else if (tab.urutanNavigasiKursor > 0L && tfv.selection != targetRange) {
-            tfv = tfv.copy(selection = targetRange)
-        }
+        if (tab.urutanNavigasiKursor <= 0L || daftarBlok.isEmpty()) return@LaunchedEffect
+        val awalGlobal = tab.posisiKursor.indeksKarakter.coerceIn(0, tab.isiSaatIni.length)
+        val akhirGlobal = tab.posisiKursor.indeksAkhirSeleksi.coerceIn(0, tab.isiSaatIni.length)
+        val idxBlok = cariIndeksBlokUntukOffset(daftarBlok, awalGlobal)
+        val blok = daftarBlok[idxBlok]
+        val maksLokal = blok.teksTampil.length
+        val awalLokal = (awalGlobal - blok.offsetAwal).coerceIn(0, maksLokal)
+        val akhirLokal = (akhirGlobal - blok.offsetAwal).coerceIn(0, maksLokal)
+
+        lazyListState.scrollToItem(idxBlok)
+        versiFokus++
+        permintaanFokus = PermintaanFokusBlok(
+            idBlok = blok.idLokal,
+            awalLokal = awalLokal,
+            akhirLokal = akhirLokal,
+            versi = versiFokus
+        )
     }
 
-    LaunchedEffect(tab.idTab, tab.urutanNavigasiKursor, textLayoutResult) {
-        if (tab.urutanNavigasiKursor <= 0L) return@LaunchedEffect
-        val layout = textLayoutResult ?: return@LaunchedEffect
-        val offset = tab.posisiKursor.indeksKarakter.coerceIn(0, layout.layoutInput.text.length)
-        val barisVisual = layout.getLineForOffset(offset)
-        val topY = layout.getLineTop(barisVisual).toInt()
-        scrollVertikal.animateScrollTo((topY - 80).coerceAtLeast(0))
-
-        if (!wordWrapAktif) {
-            runCatching {
-                val rect = layout.getCursorRect(offset)
-                scrollHorizontal.animateScrollTo((rect.left - 80f).toInt().coerceAtLeast(0))
-            }
-        }
-    }
-
-    val paddingAtasDp = 10.dp
-    val paddingAtasPx = with(LocalDensity.current) { paddingAtasDp.toPx() }
-    val fontMono = LocalFontMono.current
+    val warnaLatarEditor = MaterialTheme.colorScheme.surfaceContainerLowest
+    val warnaLatarGutter = MaterialTheme.colorScheme.surfaceContainerLow
+    val warnaDivider = MaterialTheme.colorScheme.outlineVariant
     val warnaTeks = MaterialTheme.colorScheme.onSurface
+    val warnaNomorNormal = MaterialTheme.colorScheme.onSurfaceVariant
+    val warnaNomorAktif = MaterialTheme.colorScheme.primary
+    val warnaSorotBarisAktif = MaterialTheme.colorScheme.primary.copy(alpha = 0.09f)
+
     val gayaTeks = remember(warnaTeks, fontMono) {
         TextStyle(
             fontFamily = fontMono,
@@ -674,65 +744,539 @@ private fun AreaTeksEditor(
             color = warnaTeks
         )
     }
+    val gayaNomorNormal = remember(warnaNomorNormal, fontMono) {
+        TextStyle(
+            fontFamily = fontMono,
+            fontSize = 12.sp,
+            color = warnaNomorNormal
+        )
+    }
+    val gayaNomorAktif = remember(warnaNomorAktif, fontMono) {
+        TextStyle(
+            fontFamily = fontMono,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = warnaNomorAktif
+        )
+    }
+
+    val jumlahDigit = remember(tab.jumlahBaris) {
+        tab.jumlahBaris.coerceAtLeast(1).toString().length.coerceAtLeast(2)
+    }
+    val lebarTeksMaksPx = remember(jumlahDigit, gayaNomorNormal, textMeasurer) {
+        textMeasurer.measure("8".repeat(jumlahDigit), style = gayaNomorNormal).size.width
+    }
+    val lebarGutterDp = with(density) { lebarTeksMaksPx.toDp() + 20.dp }
+    val lebarGutterPx = with(density) { lebarGutterDp.toPx() }
+    val paddingKananNomorPx = with(density) { 8.dp.toPx() }
+
+    LazyColumn(
+        state = lazyListState,
+        modifier = modifier.background(warnaLatarEditor)
+    ) {
+        itemsIndexed(
+            items = daftarBlok,
+            key = { _, blok -> blok.idLokal }
+        ) { indeks, blok ->
+            val adalahPertama = indeks == 0
+            val adalahTerakhir = indeks == daftarBlok.lastIndex
+            val paddingAtasDp = if (adalahPertama) 10.dp else 0.dp
+            val paddingBawahDp = if (adalahTerakhir) 48.dp else 0.dp
+
+            BarisBlokEditor(
+                blok = blok,
+                adalahTerakhir = adalahTerakhir,
+                barisAktif = tab.posisiKursor.baris,
+                modeHanyaBaca = tab.modeHanyaBaca,
+                wordWrapAktif = wordWrapAktif,
+                scrollHorizontal = scrollHorizontal,
+                permintaanFokus = if (permintaanFokus?.idBlok == blok.idLokal) permintaanFokus else null,
+                lebarGutterDp = lebarGutterDp,
+                lebarGutterPx = lebarGutterPx,
+                paddingKananNomorPx = paddingKananNomorPx,
+                paddingAtasDp = paddingAtasDp,
+                paddingBawahDp = paddingBawahDp,
+                warnaLatarGutter = warnaLatarGutter,
+                warnaDivider = warnaDivider,
+                warnaCursor = warnaNomorAktif,
+                warnaSorotBarisAktif = warnaSorotBarisAktif,
+                gayaTeks = gayaTeks,
+                gayaNomorNormal = gayaNomorNormal,
+                gayaNomorAktif = gayaNomorAktif,
+                textMeasurer = textMeasurer,
+                onUbahBlok = { teksTampilBaru, kursorLokal, akhirSeleksiLokal ->
+                    val idxSekarang = daftarBlok.indexOfFirst { it.idLokal == blok.idLokal }
+                    if (idxSekarang < 0) return@BarisBlokEditor
+                    val blokSaatIni = daftarBlok[idxSekarang]
+                    val teksTampilLama = blokSaatIni.teksTampil
+                    if (teksTampilBaru == teksTampilLama) return@BarisBlokEditor
+
+                    val minLen = minOf(teksTampilLama.length, teksTampilBaru.length)
+                    var prefix = 0
+                    while (prefix < minLen && teksTampilLama[prefix] == teksTampilBaru[prefix]) {
+                        prefix++
+                    }
+                    var suffix = 0
+                    val sisa = minLen - prefix
+                    while (
+                        suffix < sisa &&
+                        teksTampilLama[teksTampilLama.length - 1 - suffix] == teksTampilBaru[teksTampilBaru.length - 1 - suffix]
+                    ) {
+                        suffix++
+                    }
+                    val panjangDihapus = teksTampilLama.length - prefix - suffix
+                    val teksDisisip = teksTampilBaru.substring(prefix, teksTampilBaru.length - suffix)
+                    val awalGlobal = blokSaatIni.offsetAwal + prefix
+                    val kursorGlobal = blokSaatIni.offsetAwal + kursorLokal
+                    val akhirSeleksiGlobal = blokSaatIni.offsetAwal + akhirSeleksiLokal
+
+                    val teksPenuhBlokBaru = if (blokSaatIni.punyaPemisahAkhir) {
+                        "$teksTampilBaru\n"
+                    } else {
+                        teksTampilBaru
+                    }
+                    val deltaPanjang = teksPenuhBlokBaru.length - blokSaatIni.teks.length
+                    val jumlahLfBaru = hitungLfCepat(teksPenuhBlokBaru)
+                    val deltaLf = jumlahLfBaru - blokSaatIni.jumlahLf
+
+                    panjangTeksLokal = (panjangTeksLokal + deltaPanjang).coerceAtLeast(0)
+
+                    val perluPecahUlang =
+                        jumlahLfBaru > BATAS_PECAH_ULANG_BARIS || teksPenuhBlokBaru.length > BATAS_PECAH_ULANG_CHAR
+
+                    if (perluPecahUlang) {
+                        val sub = pecahMenjadiBlok(
+                            teks = teksPenuhBlokBaru,
+                            idAwal = nextBlokId,
+                            offsetDasar = blokSaatIni.offsetAwal,
+                            barisDasar = blokSaatIni.barisAwal,
+                            lanjutanAwal = blokSaatIni.lanjutanBaris
+                        )
+                        nextBlokId = sub.nextId
+                        daftarBlok.removeAt(idxSekarang)
+                        daftarBlok.addAll(idxSekarang, sub.blokList)
+                        val awalSetelahnya = idxSekarang + sub.blokList.size
+                        for (j in awalSetelahnya until daftarBlok.size) {
+                            val item = daftarBlok[j]
+                            daftarBlok[j] = item.copy(
+                                offsetAwal = item.offsetAwal + deltaPanjang,
+                                barisAwal = (item.barisAwal + deltaLf).coerceAtLeast(1)
+                            )
+                        }
+                        val subIdx = cariIndeksBlokUntukOffset(sub.blokList, kursorGlobal)
+                        val targetSub = sub.blokList[subIdx]
+                        versiFokus++
+                        permintaanFokus = PermintaanFokusBlok(
+                            idBlok = targetSub.idLokal,
+                            awalLokal = (kursorGlobal - targetSub.offsetAwal).coerceIn(0, targetSub.teksTampil.length),
+                            akhirLokal = (akhirSeleksiGlobal - targetSub.offsetAwal).coerceIn(0, targetSub.teksTampil.length),
+                            versi = versiFokus
+                        )
+                    } else {
+                        daftarBlok[idxSekarang] = blokSaatIni.copy(
+                            teks = teksPenuhBlokBaru,
+                            jumlahLf = jumlahLfBaru
+                        )
+                        for (j in (idxSekarang + 1) until daftarBlok.size) {
+                            val item = daftarBlok[j]
+                            daftarBlok[j] = item.copy(
+                                offsetAwal = item.offsetAwal + deltaPanjang,
+                                barisAwal = (item.barisAwal + deltaLf).coerceAtLeast(1)
+                            )
+                        }
+                    }
+
+                    onUbahRentangTeks(
+                        awalGlobal,
+                        panjangDihapus,
+                        teksDisisip,
+                        kursorGlobal,
+                        akhirSeleksiGlobal
+                    )
+                },
+                onUbahKursorBlok = { awalLokal, akhirLokal ->
+                    val idxSekarang = daftarBlok.indexOfFirst { it.idLokal == blok.idLokal }
+                    if (idxSekarang >= 0) {
+                        val b = daftarBlok[idxSekarang]
+                        onUbahKursor(b.offsetAwal + awalLokal, b.offsetAwal + akhirLokal)
+                    }
+                },
+                onBackspaceDiAwalBlok = {
+                    val idxSekarang = daftarBlok.indexOfFirst { it.idLokal == blok.idLokal }
+                    if (idxSekarang <= 0) return@BarisBlokEditor
+                    val blokPrev = daftarBlok[idxSekarang - 1]
+                    val blokIni = daftarBlok[idxSekarang]
+                    if (!blokPrev.punyaPemisahAkhir || blokPrev.teks.isEmpty()) return@BarisBlokEditor
+
+                    val posisiHapusGlobal = blokPrev.offsetAwal + blokPrev.teks.length - 1
+                    val panjangPrevTampil = blokPrev.teksTampil.length
+                    val gabungTeks = blokPrev.teksTampil + blokIni.teks
+                    val jumlahLfGabung = hitungLfCepat(gabungTeks)
+
+                    panjangTeksLokal = (panjangTeksLokal - 1).coerceAtLeast(0)
+                    daftarBlok[idxSekarang - 1] = blokPrev.copy(
+                        teks = gabungTeks,
+                        jumlahLf = jumlahLfGabung,
+                        punyaPemisahAkhir = blokIni.punyaPemisahAkhir
+                    )
+                    daftarBlok.removeAt(idxSekarang)
+                    for (j in idxSekarang until daftarBlok.size) {
+                        val item = daftarBlok[j]
+                        daftarBlok[j] = item.copy(
+                            offsetAwal = item.offsetAwal - 1,
+                            barisAwal = (item.barisAwal - 1).coerceAtLeast(1)
+                        )
+                    }
+
+                    versiFokus++
+                    permintaanFokus = PermintaanFokusBlok(
+                        idBlok = blokPrev.idLokal,
+                        awalLokal = panjangPrevTampil,
+                        akhirLokal = panjangPrevTampil,
+                        versi = versiFokus
+                    )
+                    scope.launch {
+                        lazyListState.scrollToItem(idxSekarang - 1)
+                    }
+                    onUbahRentangTeks(
+                        posisiHapusGlobal,
+                        1,
+                        "",
+                        posisiHapusGlobal,
+                        posisiHapusGlobal
+                    )
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun BarisBlokEditor(
+    blok: BlokTeksEditor,
+    adalahTerakhir: Boolean,
+    barisAktif: Int,
+    modeHanyaBaca: Boolean,
+    wordWrapAktif: Boolean,
+    scrollHorizontal: androidx.compose.foundation.ScrollState,
+    permintaanFokus: PermintaanFokusBlok?,
+    lebarGutterDp: Dp,
+    lebarGutterPx: Float,
+    paddingKananNomorPx: Float,
+    paddingAtasDp: Dp,
+    paddingBawahDp: Dp,
+    warnaLatarGutter: Color,
+    warnaDivider: Color,
+    warnaCursor: Color,
+    warnaSorotBarisAktif: Color,
+    gayaTeks: TextStyle,
+    gayaNomorNormal: TextStyle,
+    gayaNomorAktif: TextStyle,
+    textMeasurer: TextMeasurer,
+    onUbahBlok: (teksTampilBaru: String, kursorLokal: Int, akhirSeleksiLokal: Int) -> Unit,
+    onUbahKursorBlok: (awalLokal: Int, akhirLokal: Int) -> Unit,
+    onBackspaceDiAwalBlok: () -> Unit
+) {
+    val density = LocalDensity.current
+    val paddingAtasPx = with(density) { paddingAtasDp.toPx() }
+    val garisPx = with(density) { 0.5.dp.toPx() }
+    val focusRequester = remember(blok.idLokal) { FocusRequester() }
+    var textLayoutResult by remember(blok.idLokal) { mutableStateOf<TextLayoutResult?>(null) }
+
+    val teksTampil = blok.teksTampil
+    var tfv by remember(blok.idLokal) {
+        mutableStateOf(TextFieldValue(text = teksTampil, selection = TextRange(0)))
+    }
+
+    if (tfv.text != teksTampil) {
+        val maks = teksTampil.length
+        tfv = TextFieldValue(
+            text = teksTampil,
+            selection = TextRange(
+                tfv.selection.start.coerceIn(0, maks),
+                tfv.selection.end.coerceIn(0, maks)
+            )
+        )
+    }
+
+    LaunchedEffect(permintaanFokus?.versi) {
+        val req = permintaanFokus ?: return@LaunchedEffect
+        val maks = teksTampil.length
+        tfv = tfv.copy(
+            selection = TextRange(
+                req.awalLokal.coerceIn(0, maks),
+                req.akhirLokal.coerceIn(0, maks)
+            )
+        )
+        runCatching { focusRequester.requestFocus() }
+    }
 
     Box(
-        modifier = modifier
-            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-            .onSizeChanged { tinggiViewportPx = it.height }
-            .verticalScroll(scrollVertikal)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(IntrinsicSize.Min)
-        ) {
-            KomponenNomorBaris(
-                jumlahBaris = tab.jumlahBaris,
-                barisAktif = tab.posisiKursor.baris,
-                textLayoutResult = textLayoutResult,
-                scrollY = scrollVertikal.value,
-                tinggiViewportPx = tinggiViewportPx,
-                paddingAtasPx = paddingAtasPx
-            )
-            VerticalDivider(
-                thickness = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant,
-                modifier = Modifier.fillMaxHeight()
-            )
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (adalahTerakhir) Modifier.defaultMinSize(minHeight = 280.dp) else Modifier)
+            .clipToBounds()
+            .drawBehind {
+                drawRect(
+                    color = warnaLatarGutter,
+                    topLeft = Offset.Zero,
+                    size = Size(lebarGutterPx, size.height)
+                )
+                drawLine(
+                    color = warnaDivider,
+                    start = Offset(lebarGutterPx, 0f),
+                    end = Offset(lebarGutterPx, size.height),
+                    strokeWidth = garisPx
+                )
 
-            val modifierTeks = if (wordWrapAktif) {
-                Modifier.weight(1f)
-            } else {
-                Modifier.weight(1f).horizontalScroll(scrollHorizontal)
+                val layout = textLayoutResult ?: return@drawBehind
+                val teksLayout = layout.layoutInput.text.text
+                val totalBarisVisual = layout.lineCount
+                if (totalBarisVisual <= 0) return@drawBehind
+
+                var nomorLogis = blok.barisAwal
+                var sudahBarisPertama = false
+
+                for (barisVisual in 0 until totalBarisVisual) {
+                    val startOffset = layout.getLineStart(barisVisual).coerceIn(0, teksLayout.length)
+                    val adalahAwalBarisLogis = barisVisual == 0 ||
+                        (startOffset > 0 && teksLayout[startOffset - 1] == '\n')
+                    if (!adalahAwalBarisLogis) continue
+
+                    val tampilkanNomor = if (!sudahBarisPertama) {
+                        sudahBarisPertama = true
+                        !blok.lanjutanBaris
+                    } else {
+                        nomorLogis++
+                        true
+                    }
+                    if (!tampilkanNomor) continue
+
+                    val topY = layout.getLineTop(barisVisual) + paddingAtasPx
+                    val bottomY = layout.getLineBottom(barisVisual) + paddingAtasPx
+                    val tinggiVisual = (bottomY - topY).coerceAtLeast(1f)
+                    val adalahAktif = nomorLogis == barisAktif
+
+                    if (adalahAktif) {
+                        drawRect(
+                            color = warnaSorotBarisAktif,
+                            topLeft = Offset(0f, topY),
+                            size = Size(size.width, tinggiVisual)
+                        )
+                    }
+
+                    val hasilUkur = textMeasurer.measure(
+                        text = nomorLogis.toString(),
+                        style = if (adalahAktif) gayaNomorAktif else gayaNomorNormal
+                    )
+                    val posisiX = (lebarGutterPx - hasilUkur.size.width - paddingKananNomorPx).coerceAtLeast(0f)
+                    val posisiY = topY + ((tinggiVisual - hasilUkur.size.height) / 2f).coerceAtLeast(0f)
+                    drawText(
+                        textLayoutResult = hasilUkur,
+                        topLeft = Offset(posisiX, posisiY)
+                    )
+                }
+            }
+    ) {
+        val modField = Modifier
+            .focusRequester(focusRequester)
+            .onFocusChanged { focusState ->
+                if (focusState.isFocused) {
+                    onUbahKursorBlok(tfv.selection.start, tfv.selection.end)
+                }
+            }
+            .onPreviewKeyEvent { event ->
+                if (!modeHanyaBaca &&
+                    event.type == KeyEventType.KeyDown &&
+                    event.key == Key.Backspace &&
+                    tfv.selection.start == 0 &&
+                    tfv.selection.end == 0
+                ) {
+                    onBackspaceDiAwalBlok()
+                    true
+                } else {
+                    false
+                }
             }
 
+        if (wordWrapAktif) {
             BasicTextField(
                 value = tfv,
                 onValueChange = { nilaiBaru ->
-                    if (tab.modeHanyaBaca) {
-                        val pilihanBaru = nilaiBaru.selection
-                        if (tfv.selection != pilihanBaru) {
-                            tfv = tfv.copy(selection = pilihanBaru)
-                            onUbahKursor(pilihanBaru.start, pilihanBaru.end)
+                    if (modeHanyaBaca) {
+                        val selBaru = nilaiBaru.selection
+                        if (tfv.selection != selBaru) {
+                            tfv = tfv.copy(selection = selBaru)
+                            onUbahKursorBlok(selBaru.start, selBaru.end)
                         }
                     } else {
                         val teksBerubah = nilaiBaru.text != tfv.text
                         tfv = nilaiBaru
                         if (teksBerubah) {
-                            onUbahTeks(nilaiBaru.text, nilaiBaru.selection.start, nilaiBaru.selection.end)
+                            onUbahBlok(nilaiBaru.text, nilaiBaru.selection.start, nilaiBaru.selection.end)
                         } else {
-                            onUbahKursor(nilaiBaru.selection.start, nilaiBaru.selection.end)
+                            onUbahKursorBlok(nilaiBaru.selection.start, nilaiBaru.selection.end)
                         }
                     }
                 },
-                readOnly = tab.modeHanyaBaca,
+                readOnly = modeHanyaBaca,
                 textStyle = gayaTeks,
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                cursorBrush = SolidColor(warnaCursor),
                 onTextLayout = { textLayoutResult = it },
-                modifier = modifierTeks
-                    .fillMaxHeight()
-                    .padding(horizontal = 10.dp, vertical = paddingAtasDp)
+                modifier = modField
+                    .fillMaxWidth()
+                    .padding(
+                        start = lebarGutterDp + 10.dp,
+                        end = 10.dp,
+                        top = paddingAtasDp,
+                        bottom = paddingBawahDp
+                    )
             )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = lebarGutterDp)
+                    .horizontalScroll(scrollHorizontal)
+            ) {
+                BasicTextField(
+                    value = tfv,
+                    onValueChange = { nilaiBaru ->
+                        if (modeHanyaBaca) {
+                            val selBaru = nilaiBaru.selection
+                            if (tfv.selection != selBaru) {
+                                tfv = tfv.copy(selection = selBaru)
+                                onUbahKursorBlok(selBaru.start, selBaru.end)
+                            }
+                        } else {
+                            val teksBerubah = nilaiBaru.text != tfv.text
+                            tfv = nilaiBaru
+                            if (teksBerubah) {
+                                onUbahBlok(nilaiBaru.text, nilaiBaru.selection.start, nilaiBaru.selection.end)
+                            } else {
+                                onUbahKursorBlok(nilaiBaru.selection.start, nilaiBaru.selection.end)
+                            }
+                        }
+                    },
+                    readOnly = modeHanyaBaca,
+                    textStyle = gayaTeks,
+                    cursorBrush = SolidColor(warnaCursor),
+                    onTextLayout = { textLayoutResult = it },
+                    modifier = modField.padding(
+                        horizontal = 10.dp,
+                        vertical = 0.dp
+                    ).padding(
+                        top = paddingAtasDp,
+                        bottom = paddingBawahDp
+                    )
+                )
+            }
         }
     }
+}
+
+private data class HasilPecahBlok(
+    val blokList: List<BlokTeksEditor>,
+    val nextId: Long
+)
+
+private fun pecahMenjadiBlok(
+    teks: String,
+    idAwal: Long,
+    offsetDasar: Int = 0,
+    barisDasar: Int = 1,
+    lanjutanAwal: Boolean = false
+): HasilPecahBlok {
+    var nextId = idAwal
+    val lfTotal = hitungLfCepat(teks)
+    if (teks.length <= AMBANG_SATU_BLOK_CHAR && lfTotal <= AMBANG_SATU_BLOK_BARIS) {
+        return HasilPecahBlok(
+            blokList = listOf(
+                BlokTeksEditor(
+                    idLokal = nextId++,
+                    offsetAwal = offsetDasar,
+                    barisAwal = barisDasar,
+                    lanjutanBaris = lanjutanAwal,
+                    teks = teks,
+                    jumlahLf = lfTotal,
+                    punyaPemisahAkhir = false
+                )
+            ),
+            nextId = nextId
+        )
+    }
+
+    val hasil = mutableListOf<BlokTeksEditor>()
+    var pos = 0
+    var barisSaatIni = barisDasar
+    var sedangLanjutan = lanjutanAwal
+
+    while (pos < teks.length) {
+        var cur = pos
+        var barisDiBlok = 0
+        var lfDiBlok = 0
+        val batasChar = minOf(teks.length, pos + MAKS_CHAR_PER_BLOK)
+
+        while (barisDiBlok < MAKS_BARIS_PER_BLOK && cur < batasChar) {
+            val idxLf = teks.indexOf('\n', startIndex = cur)
+            if (idxLf < 0 || idxLf >= batasChar) {
+                cur = batasChar
+                break
+            }
+            cur = idxLf + 1
+            barisDiBlok++
+            lfDiBlok++
+        }
+
+        if (cur > pos && cur < teks.length && teks[cur - 1].isHighSurrogate()) {
+            cur = (cur - 1).coerceAtLeast(pos + 1)
+        }
+
+        val isiBlok = teks.substring(pos, cur)
+        val punyaPemisahAkhir = cur < teks.length && isiBlok.endsWith('\n')
+
+        hasil.add(
+            BlokTeksEditor(
+                idLokal = nextId++,
+                offsetAwal = offsetDasar + pos,
+                barisAwal = barisSaatIni,
+                lanjutanBaris = sedangLanjutan,
+                teks = isiBlok,
+                jumlahLf = lfDiBlok,
+                punyaPemisahAkhir = punyaPemisahAkhir
+            )
+        )
+
+        barisSaatIni += lfDiBlok
+        sedangLanjutan = cur < teks.length && !isiBlok.endsWith('\n')
+        pos = cur
+    }
+
+    return HasilPecahBlok(blokList = hasil, nextId = nextId)
+}
+
+private fun cariIndeksBlokUntukOffset(daftar: List<BlokTeksEditor>, offsetGlobal: Int): Int {
+    if (daftar.isEmpty()) return 0
+    var low = 0
+    var high = daftar.lastIndex
+    var ketemu = 0
+    while (low <= high) {
+        val mid = (low + high) ushr 1
+        val b = daftar[mid]
+        if (b.offsetAwal <= offsetGlobal) {
+            ketemu = mid
+            low = mid + 1
+        } else {
+            high = mid - 1
+        }
+    }
+    return ketemu
+}
+
+private fun hitungLfCepat(teks: String): Int {
+    var count = 0
+    for (i in 0 until teks.length) {
+        if (teks[i] == '\n') count++
+    }
+    return count
 }

@@ -443,4 +443,45 @@ class ViewModelEditorTest {
         assertEquals("/dok/catatan_baru.txt", tabTersimpan.lokasi?.pengenal)
         assertEquals("konten baru", repoBaru.isiDari("/dok/catatan_baru.txt")?.decodeToString())
     }
+
+    @Test
+    fun editRentangPadaBerkasSeratusKilobyteMenjagaBarisKursorDanUndo() = runTest {
+        val repo = ImplementasiRepositoriBerkas()
+        val isiBesar = buildString {
+            repeat(3000) { idx ->
+                append("baris ke-$idx: konten uji editor berkapasitas besar untuk verifikasi performa.\n")
+            }
+        }
+        repo.simpan(
+            DataBerkas("/besar_100kb.txt", "besar_100kb.txt", JenisLokasi.POSIX, adalahFolder = false),
+            isiBesar.encodeToByteArray()
+        )
+        val vm = buatVm(repo)
+        vm.prosesIntent(IntentEditor.BukaLokasi(LokasiBerkas("/besar_100kb.txt", JenisLokasi.POSIX, "besar_100kb.txt")))
+        val stSiap = vm.state.first { it.tabAktif?.statusMuat == StatusMuatTab.SIAP }
+        val tab = stSiap.tabAktif!!
+        assertEquals(3001, tab.jumlahBaris)
+
+        val posisiSisip = isiBesar.indexOf("baris ke-2500:")
+        vm.prosesIntent(
+            IntentEditor.UbahRentangTeks(
+                idTab = tab.idTab,
+                awalGlobal = posisiSisip,
+                panjangDihapus = 0,
+                teksDisisip = "// catatan\n",
+                indeksKursorGlobal = posisiSisip + 11,
+                indeksAkhirSeleksiGlobal = posisiSisip + 11
+            )
+        )
+
+        val tabSetelahEdit = vm.state.value.tabAktif!!
+        assertEquals(3002, tabSetelahEdit.jumlahBaris)
+        assertEquals(2502, tabSetelahEdit.posisiKursor.baris)
+        assertEquals(1, tabSetelahEdit.posisiKursor.kolom)
+        assertTrue(tabSetelahEdit.dapatUndo)
+
+        vm.prosesIntent(IntentEditor.Undo(tab.idTab))
+        assertEquals(isiBesar, vm.state.value.tabAktif!!.isiSaatIni)
+        assertEquals(3001, vm.state.value.tabAktif!!.jumlahBaris)
+    }
 }

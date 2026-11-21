@@ -49,7 +49,8 @@ data class ModelTabEditor(
     val posisiKursor: PosisiKursor = PosisiKursor(),
     val dapatUndo: Boolean = false,
     val dapatRedo: Boolean = false,
-    val urutanNavigasiKursor: Long = 0L
+    val urutanNavigasiKursor: Long = 0L,
+    val urutanSinkronTeks: Long = 0L
 ) {
     val adaPerubahanBelumTersimpan: Boolean
         get() = statusMuat == StatusMuatTab.SIAP && isiSaatIni != isiTersimpan

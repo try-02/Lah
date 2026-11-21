@@ -76,6 +76,14 @@ class ViewModelEditor(
                     barisTujuan = intent.barisTujuan
                 )
             }
+            is IntentEditor.UbahRentangTeks -> ubahRentangTeks(
+                idTab = intent.idTab,
+                awalGlobal = intent.awalGlobal,
+                panjangDihapus = intent.panjangDihapus,
+                teksDisisip = intent.teksDisisip,
+                indeksKursorGlobal = intent.indeksKursorGlobal,
+                indeksAkhirSeleksiGlobal = intent.indeksAkhirSeleksiGlobal
+            )
             is IntentEditor.BukaLokasi -> {
                 bukaLokasi(
                     lokasi = intent.lokasi,
@@ -260,6 +268,7 @@ class ViewModelEditor(
                             dapatRedo = false,
                             urutanNavigasiKursor = nav
                         )
+                        it.urutanSinkronTeks + 1
                     }
                     if (_state.value.cariGanti.terbuka && _state.value.idTabAktif == idTab) {
                         jadwalkanPencarian(pilihTerdekat = false)
@@ -864,6 +873,7 @@ class ViewModelEditor(
                 dapatRedo = sejarah.dapatRedo,
                 urutanNavigasiKursor = ++urutanNavigasi
             )
+            it.urutanSinkronTeks + 1
         }
         if (_state.value.cariGanti.terbuka && _state.value.idTabAktif == idTab) {
             jadwalkanPencarian(pilihTerdekat = false)
@@ -886,6 +896,7 @@ class ViewModelEditor(
                 dapatRedo = sejarah.dapatRedo,
                 urutanNavigasiKursor = ++urutanNavigasi
             )
+            it.urutanSinkronTeks + 1
         }
         if (_state.value.cariGanti.terbuka && _state.value.idTabAktif == idTab) {
             jadwalkanPencarian(pilihTerdekat = false)
@@ -1230,6 +1241,7 @@ class ViewModelEditor(
                             dapatRedo = sejarah.dapatRedo,
                             urutanNavigasiKursor = ++urutanNavigasi
                         )
+                        it.urutanSinkronTeks + 1
                     }
 
                     val hasilCariSesudah = withContext(computeDispatcher) {
@@ -1386,6 +1398,7 @@ class ViewModelEditor(
                                 dapatRedo = sejarah.dapatRedo,
                                 urutanNavigasiKursor = ++urutanNavigasi
                             )
+                            it.urutanSinkronTeks + 1
                         }
                     }
 
@@ -1594,6 +1607,102 @@ class ViewModelEditor(
             if (batas == 0) return 1
             val lastNl = teks.lastIndexOf('\n', startIndex = batas - 1)
             return if (lastNl < 0) batas + 1 else batas - lastNl
+        }
+
+        private fun hitungLfRentang(teks: String, awal: Int, akhirEksklusif: Int): Int {
+            var count = 0
+            val a = awal.coerceIn(0, teks.length)
+            val b = akhirEksklusif.coerceIn(a, teks.length)
+            for (i in a until b) {
+                if (teks[i] == '\n') count++
+            }
+            return count
+        }
+    }
+
+    private fun ubahRentangTeks(
+        idTab: String,
+        awalGlobal: Int,
+        panjangDihapus: Int,
+        teksDisisip: String,
+        indeksKursorGlobal: Int,
+        indeksAkhirSeleksiGlobal: Int
+    ) {
+        val tab = _state.value.daftarTab.firstOrNull { it.idTab == idTab } ?: return
+        if (tab.statusMuat != StatusMuatTab.SIAP) return
+        if (tab.modeHanyaBaca) {
+            _state.update { it.copy(pesanInfo = "Berkas sedang dalam mode hanya baca") }
+            return
+        }
+
+        val teksLama = tab.isiSaatIni
+        val awalAman = awalGlobal.coerceIn(0, teksLama.length)
+        val akhirAman = (awalAman + panjangDihapus.coerceAtLeast(0)).coerceIn(awalAman, teksLama.length)
+        val teksDihapus = teksLama.substring(awalAman, akhirAman)
+        if (teksDihapus == teksDisisip) return
+
+        val teksBaru = teksLama.replaceRange(awalAman, akhirAman, teksDisisip)
+        val kursorSesudahIdx = indeksKursorGlobal.coerceIn(0, teksBaru.length)
+        val akhirSeleksiAman = indeksAkhirSeleksiGlobal.coerceIn(0, teksBaru.length)
+
+        val sejarah = sejarahPerTab.getOrPut(idTab) { SejarahUndo() }
+        sejarah.catatDelta(
+            awal = awalAman,
+            teksDihapus = teksDihapus,
+            teksDisisip = teksDisisip,
+            kursorSebelum = tab.posisiKursor.indeksKarakter,
+            kursorSesudah = kursorSesudahIdx
+        )
+
+        val lfDihapus = hitungJumlahLf(teksDihapus)
+        val lfDisisip = hitungJumlahLf(teksDisisip)
+        val jumlahBaris = (tab.jumlahBaris - lfDihapus + lfDisisip).coerceAtLeast(1)
+
+        val kursorLama = tab.posisiKursor
+        val kursorBaru = when {
+            kursorSesudahIdx == awalAman + teksDisisip.length && kursorLama.indeksKarakter == awalAman -> PosisiKursor(
+                baris = kursorLama.baris + lfDisisip,
+                kolom = hitungKolomPadaIndeks(teksBaru, kursorSesudahIdx),
+                indeksKarakter = kursorSesudahIdx,
+                indeksAkhirSeleksi = akhirSeleksiAman
+            )
+            kursorSesudahIdx == awalAman && kursorLama.indeksKarakter == akhirAman -> PosisiKursor(
+                baris = (kursorLama.baris - lfDihapus).coerceAtLeast(1),
+                kolom = hitungKolomPadaIndeks(teksBaru, kursorSesudahIdx),
+                indeksKarakter = kursorSesudahIdx,
+                indeksAkhirSeleksi = akhirSeleksiAman
+            )
+            else -> {
+                val barisPadaAwal = if (awalAman <= kursorLama.indeksKarakter) {
+                    (kursorLama.baris - hitungLfRentang(teksLama, awalAman, kursorLama.indeksKarakter)).coerceAtLeast(1)
+                } else {
+                    kursorLama.baris + hitungLfRentang(teksLama, kursorLama.indeksKarakter, awalAman)
+                }
+                val barisBaru = if (kursorSesudahIdx >= awalAman) {
+                    barisPadaAwal + hitungLfRentang(teksBaru, awalAman, kursorSesudahIdx)
+                } else {
+                    (barisPadaAwal - hitungLfRentang(teksBaru, kursorSesudahIdx, awalAman)).coerceAtLeast(1)
+                }
+                PosisiKursor(
+                    baris = barisBaru,
+                    kolom = hitungKolomPadaIndeks(teksBaru, kursorSesudahIdx),
+                    indeksKarakter = kursorSesudahIdx,
+                    indeksAkhirSeleksi = akhirSeleksiAman
+                )
+            }
+        }
+
+        perbaruiTab(idTab) {
+            it.copy(
+                isiSaatIni = teksBaru,
+                jumlahBaris = jumlahBaris,
+                posisiKursor = kursorBaru,
+                dapatUndo = sejarah.dapatUndo,
+                dapatRedo = sejarah.dapatRedo
+            )
+        }
+        if (_state.value.cariGanti.terbuka && _state.value.idTabAktif == idTab) {
+            jadwalkanPencarian(pilihTerdekat = false)
         }
     }
 }

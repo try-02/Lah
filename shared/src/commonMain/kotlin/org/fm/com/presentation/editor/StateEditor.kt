@@ -166,4 +166,13 @@ sealed interface IntentEditor {
     ) : IntentEditor
 
     data class SetPesanInfo(val pesan: String?) : IntentEditor
+
+    data class UbahRentangTeks(
+        val idTab: String,
+        val awalGlobal: Int,
+        val panjangDihapus: Int,
+        val teksDisisip: String,
+        val indeksKursorGlobal: Int,
+        val indeksAkhirSeleksiGlobal: Int = indeksKursorGlobal
+    ) : IntentEditor
 }
