@@ -29,15 +29,25 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0"
+        ndk {
+            // Hapus "x86" dan "x86_64" jika tidak menargetkan emulator/Chromebook Intel di produksi
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
     packaging {
         resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += listOf(
+                "/META-INF/{AL2.0,LGPL2.1}",
+                "/META-INF/INDEX.LIST",
+                "/META-INF/*.kotlin_module",
+                "DebugProbesKt.bin" // Metadata debugging Kotlin Coroutines
+            )
         }
     }
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -50,5 +60,9 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    androidResources {
+        // Hanya simpan bahasa Inggris dan Indonesia (sesuaikan dengan kebutuhan)
+        localeFilters += listOf("en", "in")
     }
 }
