@@ -725,6 +725,7 @@ fun DaftarBerkasLayar(
             }
         )
     }
+}
 
 @Composable
 private fun KotakSaringCepat(
