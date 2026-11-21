@@ -1,12 +1,13 @@
 package org.fm.com.presentation.diff
 
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.ScrollableDefaults
+import androidx.compose.foundation.gestures.rememberScrollableState
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,22 +15,30 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import org.fm.com.domain.diff.BarisDiffBerdampingan
 import org.fm.com.domain.diff.JenisBarisDiff
 import org.fm.com.domain.diff.SelBarisDiff
@@ -44,18 +53,95 @@ fun PanelBerdampingan(
     listState: LazyListState,
     modifier: Modifier = Modifier
 ) {
-    val scrollHorizontalBersama = rememberScrollState()
+    val palet = ingatPaletPanelDiff(ukuranKodeSp = 12f)
     val fontMono = LocalFontMono.current
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer(cacheSize = 32)
+
+    val nomorMaks = remember(daftarBaris) {
+        var maks = 1
+        for (b in daftarBaris) {
+            b.kiri.nomorBaris?.let { if (it > maks) maks = it }
+            b.kanan.nomorBaris?.let { if (it > maks) maks = it }
+        }
+        maks
+    }
+    val jumlahDigit = remember(nomorMaks) {
+        nomorMaks.toString().length.coerceAtLeast(2)
+    }
+
+    val lebarTeksMaksPx = remember(daftarBaris, palet.gayaKode) {
+        val kandidat = ArrayList<String>(4)
+        var t1 = ""
+        var t2 = ""
+        var t3 = ""
+        for (b in daftarBaris) {
+            val k = b.kiri.teks
+            if (k.length > t1.length) {
+                t3 = t2; t2 = t1; t1 = k
+            } else if (k.length > t2.length) {
+                t3 = t2; t2 = k
+            } else if (k.length > t3.length) {
+                t3 = k
+            }
+            val n = b.kanan.teks
+            if (n.length > t1.length) {
+                t3 = t2; t2 = t1; t1 = n
+            } else if (n.length > t2.length) {
+                t3 = t2; t2 = n
+            } else if (n.length > t3.length) {
+                t3 = n
+            }
+        }
+        kandidat.add(t1)
+        kandidat.add(t2)
+        kandidat.add(t3)
+        hitungLebarMaksTeksPx(kandidat, palet.gayaKode, textMeasurer)
+    }
+
+    val tinggiBarisDp = remember(palet.gayaKode, density) {
+        val tinggiTeksPx = textMeasurer.measure("Mg", style = palet.gayaKode, maxLines = 1).size.height
+        with(density) { tinggiTeksPx.toDp() + 5.dp }
+    }
+
+    val lebarAngkaDp = remember(jumlahDigit, palet.gayaNomor, density) {
+        val lebarDigitPx = textMeasurer.measure("8".repeat(jumlahDigit), style = palet.gayaNomor, maxLines = 1).size.width
+        with(density) { lebarDigitPx.toDp() + 4.dp }
+    }
+    // 4.dp padding kiri + lebarAngkaDp + 13.dp simbol + 4.dp padding kanan
+    val lebarGutterTotalDp = lebarAngkaDp + 21.dp
+
+    var scrollHorizontalPx by remember(daftarBaris) { mutableFloatStateOf(0f) }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val layarSempit = maxWidth < 600.dp
+        val lebarPanelDp = ((maxWidth - 0.5.dp) / 2f).coerceAtLeast(1.dp)
+        val lebarAreaTeksDp = (lebarPanelDp - lebarGutterTotalDp).coerceAtLeast(1.dp)
+        val lebarAreaTeksPx = with(density) { lebarAreaTeksDp.toPx() }
+        val paddingTeksPx = with(density) { 14.dp.toPx() }
+        val maksScrollPx = ((lebarTeksMaksPx + paddingTeksPx) - lebarAreaTeksPx).coerceAtLeast(0f)
+
+        LaunchedEffect(maksScrollPx) {
+            if (scrollHorizontalPx > maksScrollPx) {
+                scrollHorizontalPx = maksScrollPx
+            }
+        }
+
+        val scrollableState = rememberScrollableState { delta ->
+            if (maksScrollPx <= 0f) {
+                0f
+            } else {
+                val lama = scrollHorizontalPx
+                val baru = (lama + delta).coerceIn(0f, maksScrollPx)
+                scrollHorizontalPx = baru
+                baru - lama
+            }
+        }
 
         Column(modifier = Modifier.fillMaxSize()) {
-            // Header nama berkas kiri (A) & kanan (B)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                    .background(palet.latarHeader)
                     .padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -65,7 +151,7 @@ fun PanelBerdampingan(
                         fontFamily = fontMono,
                         fontWeight = FontWeight.SemiBold
                     ),
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = palet.teksUtama,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
@@ -74,7 +160,7 @@ fun PanelBerdampingan(
                 )
                 VerticalDivider(
                     thickness = 0.5.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant,
+                    color = palet.divider,
                     modifier = Modifier.height(16.dp)
                 )
                 Text(
@@ -83,7 +169,7 @@ fun PanelBerdampingan(
                         fontFamily = fontMono,
                         fontWeight = FontWeight.SemiBold
                     ),
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = palet.teksUtama,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
@@ -91,20 +177,24 @@ fun PanelBerdampingan(
                         .padding(horizontal = 10.dp)
                 )
             }
-            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+            HorizontalDivider(thickness = 0.5.dp, color = palet.divider)
 
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+                    .background(palet.latarEditor)
+                    .scrollable(
+                        state = scrollableState,
+                        orientation = Orientation.Horizontal,
+                        reverseDirection = true,
+                        flingBehavior = ScrollableDefaults.flingBehavior()
+                    )
             ) {
                 items(
                     items = daftarBaris,
                     key = { it.indeks }
                 ) { baris ->
-                    val aktif = baris.indeksBlokPerubahan != null &&
-                        baris.indeksBlokPerubahan == indeksPerubahanAktif
                     val adalahPemisahKonteks = baris.kiri.jenis == JenisBarisDiff.KOSONG &&
                         baris.kanan.jenis == JenisBarisDiff.KOSONG &&
                         baris.kiri.teks.startsWith("@@")
@@ -113,39 +203,45 @@ fun PanelBerdampingan(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surfaceContainer)
+                                .background(palet.latarHeader)
                                 .padding(horizontal = 12.dp, vertical = 4.dp)
                         ) {
                             Text(
                                 text = baris.kiri.teks,
                                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = fontMono),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = palet.teksSekunder,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     } else {
+                        val aktif = baris.indeksBlokPerubahan != null &&
+                            baris.indeksBlokPerubahan == indeksPerubahanAktif
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(IntrinsicSize.Min)
+                                .height(tinggiBarisDp)
                         ) {
                             SelBerdampinganPanel(
                                 sel = baris.kiri,
                                 disorotAktif = aktif,
-                                scrollHorizontal = scrollHorizontalBersama,
-                                layarSempit = layarSempit,
-                                modifier = Modifier.weight(1f)
+                                palet = palet,
+                                lebarNomor = lebarAngkaDp,
+                                bacaScrollHorizontalPx = { scrollHorizontalPx },
+                                modifier = Modifier.weight(1f).fillMaxHeight()
                             )
                             VerticalDivider(
                                 thickness = 0.5.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant,
+                                color = palet.divider,
                                 modifier = Modifier.fillMaxHeight()
                             )
                             SelBerdampinganPanel(
                                 sel = baris.kanan,
                                 disorotAktif = aktif,
-                                scrollHorizontal = scrollHorizontalBersama,
-                                layarSempit = layarSempit,
-                                modifier = Modifier.weight(1f)
+                                palet = palet,
+                                lebarNomor = lebarAngkaDp,
+                                bacaScrollHorizontalPx = { scrollHorizontalPx },
+                                modifier = Modifier.weight(1f).fillMaxHeight()
                             )
                         }
                     }
@@ -159,48 +255,46 @@ fun PanelBerdampingan(
 private fun SelBerdampinganPanel(
     sel: SelBarisDiff,
     disorotAktif: Boolean,
-    scrollHorizontal: ScrollState,
-    layarSempit: Boolean,
+    palet: PaletPanelDiff,
+    lebarNomor: Dp,
+    bacaScrollHorizontalPx: () -> Float,
     modifier: Modifier = Modifier
 ) {
-    val fontMono = LocalFontMono.current
-    val warnaLatar = warnaLatarBarisDiff(sel.jenis, disorotAktif)
-    val warnaSorot = warnaSorotKarakterDiff(sel.jenis)
+    val warnaLatar = palet.latarBaris(sel.jenis, disorotAktif)
+    val warnaSorot = palet.sorotKarakter(sel.jenis)
     val annotated = remember(sel.teks, sel.rentangKarakterBeda, warnaSorot) {
         bangunTeksDenganSorotKarakter(sel.teks, sel.rentangKarakterBeda, warnaSorot)
     }
 
     Row(
-        modifier = modifier
-            .fillMaxHeight()
-            .background(warnaLatar),
-        verticalAlignment = Alignment.Top
+        modifier = modifier.background(warnaLatar),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         GutterNomorBarisTunggal(
             nomorBaris = sel.nomorBaris,
             jenis = sel.jenis,
-            lebarNomor = if (layarSempit) 28.dp else 36.dp,
-            modifier = Modifier.fillMaxHeight()
+            palet = palet,
+            lebarNomor = lebarNomor
         )
         Box(
             modifier = Modifier
                 .weight(1f)
-                .horizontalScroll(scrollHorizontal)
-                .padding(horizontal = 6.dp, vertical = 2.dp)
+                .fillMaxHeight()
+                .clipToBounds()
+                .padding(horizontal = 6.dp),
+            contentAlignment = Alignment.CenterStart
         ) {
             Text(
                 text = annotated,
-                style = MaterialTheme.typography.bodySmall.copy(
-                    fontFamily = fontMono,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp
-                ),
+                style = palet.gayaKode,
                 softWrap = false,
-                color = if (sel.jenis == JenisBarisDiff.KOSONG) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                }
+                maxLines = 1,
+                color = if (sel.jenis == JenisBarisDiff.KOSONG) palet.teksSekunder else palet.teksUtama,
+                modifier = Modifier
+                    .wrapContentWidth(align = Alignment.Start, unbounded = true)
+                    .graphicsLayer {
+                        translationX = -bacaScrollHorizontalPx()
+                    }
             )
         }
     }
