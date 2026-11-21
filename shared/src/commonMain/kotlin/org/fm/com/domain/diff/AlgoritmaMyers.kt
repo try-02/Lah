@@ -555,6 +555,17 @@ object AlgoritmaMyers {
             }
         }
 
+        if (diDalamSkip && jumlahTersembunyi > 0) {
+            val info = "@@ $jumlahTersembunyi baris sama disembunyikan @@"
+            hasilBerdampingan.add(
+                BarisDiffBerdampingan(
+                    indeks = hasilBerdampingan.size,
+                    kiri = SelBarisDiff(null, info, JenisBarisDiff.KOSONG),
+                    kanan = SelBarisDiff(null, info, JenisBarisDiff.KOSONG)
+                )
+            )
+        }
+
         val tampilUnified = BooleanArray(unifiedSemua.size)
         for (i in unifiedSemua.indices) {
             if (unifiedSemua[i].indeksBlokPerubahan != null) {
@@ -595,6 +606,19 @@ object AlgoritmaMyers {
                 diDalamSkip = true
                 jumlahTersembunyi++
             }
+        }
+
+        if (diDalamSkip && jumlahTersembunyi > 0) {
+            hasilUnified.add(
+                BarisDiffUnified(
+                    indeks = hasilUnified.size,
+                    nomorBarisA = null,
+                    nomorBarisB = null,
+                    jenis = JenisBarisDiff.KOSONG,
+                    teks = "",
+                    keteranganPemisahKonteks = "@@ $jumlahTersembunyi baris sama disembunyikan @@"
+                )
+            )
         }
 
         val perubahanTersaring = perubahanAwal.map { k ->

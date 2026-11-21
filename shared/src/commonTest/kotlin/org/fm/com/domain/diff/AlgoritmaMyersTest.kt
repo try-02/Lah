@@ -86,8 +86,14 @@ class AlgoritmaMyersTest {
             "1\n2\n3\n4\n5\nbaru\n7\n8\n9\n10",
             OpsiDiff(tampilkanBarisSama = false, jumlahBarisKonteks = 1)
         )
-        // Hanya baris 5 (konteks), baris 6 (ubah), baris 7 (konteks) = 3 baris berdampingan
-        assertEquals(3, hanyaBedaKonteks.barisBerdampingan.size)
+        // 4 baris tersembunyi di awal + baris 5, baris 6 (ubah), baris 7 + 3 baris tersembunyi di akhir
+        val barisIsi = hanyaBedaKonteks.barisBerdampingan.filterNot {
+            it.kiri.jenis == JenisBarisDiff.KOSONG && it.kanan.jenis == JenisBarisDiff.KOSONG
+        }
+        assertEquals(3, barisIsi.size)
+        assertEquals(listOf("5", "lama", "7"), barisIsi.map { it.kiri.teks })
+        assertEquals("@@ 4 baris sama disembunyikan @@", hanyaBedaKonteks.barisBerdampingan.first().kiri.teks)
+        assertEquals("@@ 3 baris sama disembunyikan @@", hanyaBedaKonteks.barisBerdampingan.last().kiri.teks)
     }
 
     @Test

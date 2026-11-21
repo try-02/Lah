@@ -841,16 +841,12 @@ private fun MenuKonteksItemBerkas(
         HorizontalDivider(thickness = 0.5.dp, modifier = Modifier.padding(vertical = 2.dp))
         if (!item.adalahFolder) {
             if (onBandingkan != null) {
-                DropdownMenuItem(
-                    text = { Text("Bandingkan dengan...") },
-                    leadingIcon = {
-                        Icon(
-                            IkonAplikasi.Bandingkan,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
-                    onClick = { onTutup(); onBandingkan?.invoke() }
+                MenuItemDenganAlasan(
+                    judul = "Bandingkan dengan...",
+                    ikon = IkonAplikasi.Bandingkan,
+                    didukung = true,
+                    alasan = null,
+                    onKlik = { onTutup(); onBandingkan() }
                 )
             }
             MenuItemDenganAlasan(
