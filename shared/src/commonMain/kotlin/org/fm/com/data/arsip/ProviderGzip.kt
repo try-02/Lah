@@ -12,6 +12,7 @@ import okio.FileSystem
 import okio.Path
 import okio.Source
 import okio.buffer
+import okio.use
 import org.fm.com.domain.arsip.ArsipProvider
 import org.fm.com.domain.arsip.KapabilitasArsip
 import org.fm.com.domain.arsip.MatriksArsip
@@ -21,7 +22,6 @@ import org.fm.com.domain.model.EntriArsip
 import org.fm.com.domain.model.FormatArsip
 import org.fm.com.domain.model.HasilEkstrakArsip
 import org.fm.com.domain.model.HasilOperasi
-import org.fm.com.domain.model.ItemGagalArsip
 import org.fm.com.domain.model.ItemSumberKompresi
 import org.fm.com.domain.model.KebijakanBatasArsip
 import org.fm.com.domain.model.LokasiBerkas

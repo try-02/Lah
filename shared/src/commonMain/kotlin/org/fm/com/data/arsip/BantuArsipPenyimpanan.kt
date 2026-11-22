@@ -14,6 +14,7 @@ import okio.Path
 import okio.Path.Companion.toPath
 import okio.Source
 import okio.buffer
+import okio.use
 import org.fm.com.domain.io.PotonganIsi
 import org.fm.com.domain.io.SumberIsiBerkas
 import org.fm.com.domain.model.EntitasBerkas

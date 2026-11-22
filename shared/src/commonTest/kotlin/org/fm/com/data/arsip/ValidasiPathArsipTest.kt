@@ -10,6 +10,7 @@ import kotlinx.coroutines.test.runTest
 import okio.Buffer
 import okio.FileSystem
 import okio.buffer
+import okio.use
 import org.fm.com.data.DataBerkas
 import org.fm.com.data.SumberMemoriPenyimpanan
 import org.fm.com.domain.arsip.MatriksArsip
@@ -184,7 +185,7 @@ class ValidasiPathArsipTest {
             val payload = "JAHAT".encodeToByteArray()
             penulis.tulisPotongan(payload, 0, payload.size)
             penulis.tutupEntri()
-            penulis.selesaiDanTutup()
+            penulis.selesaikanDanTutup()
 
             val bytesZipJahat = FileSystem.SYSTEM.source(pathJahat).buffer().use { it.readByteArray() }
             storage.berkas.simpan(

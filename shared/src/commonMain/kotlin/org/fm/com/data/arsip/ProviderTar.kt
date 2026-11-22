@@ -7,6 +7,7 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okio.Buffer
 import okio.BufferedSource
@@ -16,10 +17,10 @@ import okio.Path
 import okio.Source
 import okio.Timeout
 import okio.buffer
+import okio.use
 import org.fm.com.domain.arsip.ArsipProvider
 import org.fm.com.domain.arsip.KapabilitasArsip
 import org.fm.com.domain.arsip.MatriksArsip
-import org.fm.com.domain.io.PotonganIsi
 import org.fm.com.domain.io.SumberIsiBerkas
 import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.EntriArsip
@@ -31,6 +32,7 @@ import org.fm.com.domain.model.ItemSumberKompresi
 import org.fm.com.domain.model.JenisBerkas
 import org.fm.com.domain.model.KebijakanBatasArsip
 import org.fm.com.domain.model.LokasiBerkas
+import org.fm.com.domain.model.OpsiEkstrakArsip
 import org.fm.com.domain.model.PenyebabGalat
 import org.fm.com.domain.model.RingkasanIsiArsip
 import org.fm.com.domain.model.ValidasiNama
@@ -84,7 +86,7 @@ class ProviderTar(
 
             while (true) {
                 currentCoroutineContext().ensureActive()
-                val hdr = when (val bacaHdr = bacaEntriBerikutnya(bufferedTar, batas)) {
+                val hdr = when (val bacaHdr = bacaEntriBerikutnya(bufferedTar)) {
                     is HasilBacaHeaderTar.Akhir -> break
                     is HasilBacaHeaderTar.Galat -> return@withContext HasilOperasi.Gagal(bacaHdr.pesan, PenyebabGalat.VALIDASI)
                     is HasilBacaHeaderTar.Entri -> bacaHdr.data
@@ -196,7 +198,7 @@ class ProviderTar(
             bufferedTar = bukaStreamTar(pathSumber, format)
             while (true) {
                 currentCoroutineContext().ensureActive()
-                val hdr = when (val bacaHdr = bacaEntriBerikutnya(bufferedTar, batas)) {
+                val hdr = when (val bacaHdr = bacaEntriBerikutnya(bufferedTar)) {
                     is HasilBacaHeaderTar.Akhir -> {
                         bufferedTar.close()
                         cleanupTemp()
@@ -275,7 +277,7 @@ class ProviderTar(
         sumber: LokasiBerkas,
         format: FormatArsip,
         folderTujuan: LokasiBerkas,
-        opsi: org.fm.com.domain.model.OpsiEkstrakArsip,
+        opsi: OpsiEkstrakArsip,
         onProgres: (selesai: Int, total: Int, jalurSaatIni: String) -> Unit
     ): HasilOperasi<HasilEkstrakArsip> = withContext(ioDispatcher) {
         if (!opsi.konfirmasiPengguna) {
@@ -316,7 +318,7 @@ class ProviderTar(
 
             while (true) {
                 currentCoroutineContext().ensureActive()
-                val hdr = when (val bacaHdr = bacaEntriBerikutnya(bufferedTar, opsi.batas)) {
+                val hdr = when (val bacaHdr = bacaEntriBerikutnya(bufferedTar)) {
                     is HasilBacaHeaderTar.Akhir -> break
                     is HasilBacaHeaderTar.Galat -> {
                         return@withContext HasilOperasi.Gagal(bacaHdr.pesan, PenyebabGalat.VALIDASI)
@@ -677,8 +679,7 @@ class ProviderTar(
                 return
             }
             hasil.add(ItemSiapTar(lokasi, kunci, true, waktuMs))
-            var anakHasil: HasilOperasi<List<EntitasBerkas>>? = null
-            repositoriBerkas.daftarIsi(lokasi).collect { anakHasil = it }
+            val anakHasil = repositoriBerkas.daftarIsi(lokasi).first()
             val daftarAnak = (anakHasil as? HasilOperasi.Sukses)?.nilai.orEmpty()
             for (anak in daftarAnak) {
                 if (anak.jenis == JenisBerkas.TAUTAN) continue
@@ -701,9 +702,8 @@ class ProviderTar(
         }
     }
 
-    private fun bacaEntriBerikutnya(
-        src: BufferedSource,
-        batas: KebijakanBatasArsip
+    private suspend fun bacaEntriBerikutnya(
+        src: BufferedSource
     ): HasilBacaHeaderTar {
         var paxPath: String? = null
         var paxSize: Long? = null
@@ -881,10 +881,10 @@ class ProviderTar(
         return if (sisa == 0L) 0L else UKURAN_BLOK_TAR - sisa
     }
 
-    private fun lewatiTepat(src: BufferedSource, jumlahByte: Long) {
+    private suspend fun lewatiTepat(src: BufferedSource, jumlahByte: Long) {
         var sisa = jumlahByte
         while (sisa > 0L) {
-            currentCoroutineContext().let { /* no-op, skip langsung di stream */ }
+            currentCoroutineContext().ensureActive()
             val langkah = minOf(sisa, 8192L)
             src.skip(langkah)
             sisa -= langkah

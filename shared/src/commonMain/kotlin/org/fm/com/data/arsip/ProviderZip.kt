@@ -7,6 +7,7 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okio.Buffer
 import okio.FileSystem
@@ -26,6 +27,7 @@ import org.fm.com.domain.model.ItemGagalArsip
 import org.fm.com.domain.model.ItemSumberKompresi
 import org.fm.com.domain.model.KebijakanBatasArsip
 import org.fm.com.domain.model.LokasiBerkas
+import org.fm.com.domain.model.OpsiEkstrakArsip
 import org.fm.com.domain.model.PenyebabGalat
 import org.fm.com.domain.model.RingkasanIsiArsip
 import org.fm.com.domain.model.ValidasiNama
@@ -163,6 +165,10 @@ class ProviderZip(
             val zipTerbuka = adapterPlatform.bukaZipDariPath(pathSumber.fileSystem, pathSumber.path)
             val sourceEntri = try {
                 zipTerbuka.bukaSumberEntri(jalurAman)
+            } catch (e: CancellationException) {
+                zipTerbuka.tutup()
+                cleanupTemp()
+                throw e
             } catch (e: Exception) {
                 zipTerbuka.tutup()
                 cleanupTemp()
@@ -291,13 +297,13 @@ class ProviderZip(
 
                 if (entri.adalahFolder) {
                     when (
-                        val buatDir = BantuArsipPenyimpanan.ensureFolderOrFail(
-                            pathSah.daftarSegmen,
-                            folderTujuan,
-                            repositoriBerkas,
-                            repositoriOperasi,
-                            cacheFolder,
-                            cacheIsiFolder
+                        val buatDir = BantuArsipPenyimpanan.pastikanFolderTujuan(
+                            daftarSegmenFolder = pathSah.daftarSegmen,
+                            folderAkarTujuan = folderTujuan,
+                            repositoriBerkas = repositoriBerkas,
+                            repositoriOperasi = repositoriOperasi,
+                            cacheFolder = cacheFolder,
+                            cacheIsiFolder = cacheIsiFolder
                         )
                     ) {
                         is HasilOperasi.Sukses -> Unit
@@ -457,7 +463,6 @@ class ProviderZip(
 
         try {
             val total = daftarItemSiap.size
-            val buf = ByteArray(8 * 1024)
             for ((idx, item) in daftarItemSiap.withIndex()) {
                 currentCoroutineContext().ensureActive()
                 onProgres(idx + 1, total, item.jalurDalamArsip)
@@ -496,7 +501,7 @@ class ProviderZip(
             }
 
             // Verifikasi jumlah byte tertulis minimal & selesaikan EOCD
-            penulis.selesaiDanTutup()
+            penulis.selesaikanDanTutup()
             penulisanSukses = true
 
             // Verifikasi arsip ZIP hasil bisa dibuka kembali sebelum menyalin ke tujuan akhir
@@ -553,11 +558,7 @@ class ProviderZip(
             }
 
             hasil.add(ItemSiapArsip(lokasi, kunci, true, waktuMs))
-            val anakHasil = repositoriBerkas.daftarIsi(lokasi).let { flow ->
-                var nilai: HasilOperasi<List<EntitasBerkas>>? = null
-                flow.collect { nilai = it }
-                nilai ?: HasilOperasi.Sukses(emptyList())
-            }
+            val anakHasil = repositoriBerkas.daftarIsi(lokasi).first()
             if (anakHasil is HasilOperasi.Sukses) {
                 for (anak in anakHasil.nilai) {
                     if (anak.jenis == org.fm.com.domain.model.JenisBerkas.TAUTAN) continue
@@ -880,19 +881,3 @@ class ProviderZip(
             ((buf[off + 2].toLong() and 0xFFL) shl 16) or
             ((buf[off + 3].toLong() and 0xFFL) shl 24)
 }
-
-private suspend fun BantuArsipPenyimpanan.ensureFolderOrFail(
-    daftarSegmenFolder: List<String>,
-    folderAkarTujuan: LokasiBerkas,
-    repositoriBerkas: RepositoriBerkas,
-    repositoriOperasi: RepositoriOperasiBerkas,
-    cacheFolder: MutableMap<String, LokasiBerkas>,
-    cacheIsiFolder: MutableMap<LokasiBerkas, MutableMap<String, EntitasBerkas>>
-): HasilOperasi<LokasiBerkas> = pastikanFolderTujuan(
-    daftarSegmenFolder = daftarSegmenFolder,
-    folderAkarTujuan = folderAkarTujuan,
-    repositoriBerkas = repositoriBerkas,
-    repositoriOperasi = repositoriOperasi,
-    cacheFolder = cacheFolder,
-    cacheIsiFolder = cacheIsiFolder
-)
