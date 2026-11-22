@@ -96,6 +96,15 @@ composeStabilityAnalyzer {
     }
 }
 
+tasks.matching {
+    it.name == "stabilityDump" ||
+        it.name == "stabilityCheck" ||
+        it.name == "androidStabilityDump" ||
+        it.name == "androidStabilityCheck"
+}.configureEach {
+    dependsOn("compileAndroidMain")
+}
+
 lint {
     htmlReport = true
     textReport = true
