@@ -35,6 +35,9 @@ import org.fm.com.di.KontainerAplikasi
 import org.fm.com.di.buatKontainerPreview
 import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.LokasiBerkas
+import org.fm.com.presentation.arsip.IntentArsip
+import org.fm.com.presentation.arsip.LayarArsip
+import org.fm.com.presentation.arsip.ViewModelArsip
 import org.fm.com.presentation.diff.IntentDiff
 import org.fm.com.presentation.diff.LayarDiff
 import org.fm.com.presentation.diff.ViewModelDiff
@@ -107,6 +110,13 @@ fun App(
                 jalankanRenameMassalUseCase = kontainer.jalankanRenameMassalUseCase
             )
         }
+        val vmArsip: ViewModelArsip = viewModel(key = "arsip_$kunciKontainer") {
+            ViewModelArsip(
+                ekstrakArsipUseCase = kontainer.ekstrakArsipUseCase,
+                kompresArsipUseCase = kontainer.kompresArsipUseCase,
+                lokasiPintasanAwal = lokasiPintasan
+            )
+        }
 
         val lokasiAktifFm by remember(vmFilemanager) {
             vmFilemanager.state.map { it.lokasiSaatIni }.distinctUntilChanged()
@@ -119,6 +129,11 @@ fun App(
         var tabTerpilih by remember { mutableIntStateOf(0) }
         var ruangEditorTerbuka by remember { mutableStateOf(false) }
         var ruangDiffTerbuka by remember { mutableStateOf(false) }
+        var ruangArsipTerbuka by remember { mutableStateOf(false) }
+
+        LaunchedEffect(lokasiPintasan) {
+            vmArsip.prosesIntent(IntentArsip.SetLokasiPintasan(lokasiPintasan))
+        }
 
         LaunchedEffect(kontainer) {
             val lokasiSiap = onSiapkanAksesLokasi?.invoke(kontainer.lokasiAwal) ?: kontainer.lokasiAwal
@@ -137,6 +152,8 @@ fun App(
             val lokasi = permintaanBukaEksternal?.lokasi ?: return@LaunchedEffect
             val lokasiSiap = onSiapkanAksesLokasi?.invoke(lokasi) ?: lokasi
             ruangEditorTerbuka = false
+            ruangArsipTerbuka = false
+            vmArsip.prosesIntent(IntentArsip.TutupBrowser)
             tabTerpilih = 0
             vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasiSiap))
         }
@@ -157,6 +174,19 @@ fun App(
                 onKembali = {
                     ruangEditorTerbuka = false
                     vmFilemanager.prosesIntent(IntentFilemanager.Segarkan)
+                }
+            )
+        } else if (ruangArsipTerbuka) {
+            LayarArsip(
+                viewModel = vmArsip,
+                onKembali = {
+                    vmArsip.prosesIntent(IntentArsip.TutupBrowser)
+                    ruangArsipTerbuka = false
+                    vmFilemanager.prosesIntent(IntentFilemanager.Segarkan)
+                },
+                onBukaBerkasDiEditor = { entitas ->
+                    vmEditor.prosesIntent(IntentEditor.BukaBerkas(entitas))
+                    ruangEditorTerbuka = true
                 }
             )
         } else {
@@ -246,6 +276,7 @@ fun App(
                             viewModel = vmFilemanager,
                             viewModelOperasiMassal = vmOperasiMassal,
                             viewModelBulkRename = vmBulkRename,
+                            viewModelArsip = vmArsip,
                             aksiPlatform = kontainer.aksiPlatform,
                             onBukaBerkas = { item ->
                                 val entitas = EntitasBerkas(
@@ -271,6 +302,15 @@ fun App(
                                     )
                                 )
                                 ruangDiffTerbuka = true
+                            },
+                            onBukaArsip = { item ->
+                                vmArsip.prosesIntent(
+                                    IntentArsip.BukaArsip(
+                                        sumber = item.lokasi,
+                                        folderTujuanDefault = lokasiAktifFm
+                                    )
+                                )
+                                ruangArsipTerbuka = true
                             },
                             onPilihFolder = onPilihFolder,
                             lokasiPintasan = lokasiPintasan,

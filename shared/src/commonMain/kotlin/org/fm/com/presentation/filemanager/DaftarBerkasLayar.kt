@@ -60,8 +60,15 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.fm.com.domain.model.EntitasBerkas
+import org.fm.com.domain.model.FormatArsip
+import org.fm.com.domain.model.ItemSumberKompresi
+import org.fm.com.domain.model.JenisBerkas
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.OperasiBerkas
+import org.fm.com.presentation.arsip.DialogKompres
+import org.fm.com.presentation.arsip.IntentArsip
+import org.fm.com.presentation.arsip.OverlayDialogEkstrakArsip
+import org.fm.com.presentation.arsip.ViewModelArsip
 import org.fm.com.presentation.komponen.IkonAplikasi
 import org.fm.com.presentation.komponen.PemformatLokasiRamah
 import org.fm.com.presentation.rename.DialogBulkRename
@@ -77,11 +84,13 @@ fun DaftarBerkasLayar(
     modifier: Modifier = Modifier,
     viewModelOperasiMassal: ViewModelOperasiMassal? = null,
     viewModelBulkRename: ViewModelBulkRename? = null,
+    viewModelArsip: ViewModelArsip? = null,
     aksiPlatform: AksiPlatformBerkas = remember { AksiPlatformBerkasBawaan() },
     onPilihFolder: (() -> Unit)? = null,
     lokasiPintasan: List<LokasiBerkas> = emptyList(),
     onPilihLokasiPintasan: ((LokasiBerkas) -> Unit)? = null,
-    onBandingkanBerkas: ((ItemBerkasUi, ItemBerkasUi) -> Unit)? = null
+    onBandingkanBerkas: ((ItemBerkasUi, ItemBerkasUi) -> Unit)? = null,
+    onBukaArsip: ((ItemBerkasUi) -> Unit)? = null
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val defaultStateMassal = remember { MutableStateFlow(StateOperasiMassal()) }
@@ -104,6 +113,7 @@ fun DaftarBerkasLayar(
     }
 
     val onBukaBerkasTerbaru by rememberUpdatedState(onBukaBerkas)
+    val onBukaArsipTerbaru by rememberUpdatedState(onBukaArsip)
     val sedangMultiSelectTerbaru by rememberUpdatedState(state.sedangMultiSelect)
 
     LaunchedEffect(state.pesanInfo) {
@@ -169,6 +179,27 @@ fun DaftarBerkasLayar(
                                         folderInduk = lokasiAktif,
                                         daftarItem = entitasTerpilih,
                                         kemampuanLokasi = state.kemampuanLokasi
+                                    )
+                                )
+                            }
+                        }
+                    } else null,
+                    onAksiKompres = if (viewModelArsip != null && lokasiAktif != null) {
+                        {
+                            val sumberKompres = state.daftarItem
+                                .filter { it.lokasi in state.itemTerpilih }
+                                .map { item ->
+                                    ItemSumberKompresi(
+                                        lokasi = item.lokasi,
+                                        namaDalamArsip = item.nama,
+                                        adalahFolder = item.adalahFolder
+                                    )
+                                }
+                            if (sumberKompres.isNotEmpty()) {
+                                viewModelArsip.prosesIntent(
+                                    IntentArsip.BukaDialogKompres(
+                                        daftarSumber = sumberKompres,
+                                        tujuanInduk = lokasiAktif
                                     )
                                 )
                             }
@@ -353,6 +384,11 @@ fun DaftarBerkasLayar(
                                             viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi))
                                         } else if (item.adalahFolder) {
                                             viewModel.prosesIntent(IntentFilemanager.BukaLokasi(item.lokasi))
+                                        } else if (
+                                            onBukaArsipTerbaru != null &&
+                                            (item.jenis == JenisBerkas.ARSIP || FormatArsip.dariNamaBerkas(item.nama) == FormatArsip.JAR)
+                                        ) {
+                                            onBukaArsipTerbaru?.invoke(item)
                                         } else {
                                             onBukaBerkasTerbaru(item)
                                         }
@@ -374,6 +410,41 @@ fun DaftarBerkasLayar(
                                         onBukaDengan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBukaDengan(item)) },
                                         onBandingkan = if (onBandingkanBerkas != null) {
                                             { itemPembandingAwal = item }
+                                        } else {
+                                            null
+                                        },
+                                        onBukaArsip = if (onBukaArsipTerbaru != null) {
+                                            { onBukaArsipTerbaru?.invoke(item) }
+                                        } else {
+                                            null
+                                        },
+                                        onEkstrak = if (viewModelArsip != null && lokasiAktif != null) {
+                                            {
+                                                viewModelArsip.prosesIntent(
+                                                    IntentArsip.EkstrakLangsungDariFileManager(
+                                                        sumber = item.lokasi,
+                                                        folderTujuan = lokasiAktif
+                                                    )
+                                                )
+                                            }
+                                        } else {
+                                            null
+                                        },
+                                        onKompres = if (viewModelArsip != null && lokasiAktif != null) {
+                                            {
+                                                viewModelArsip.prosesIntent(
+                                                    IntentArsip.BukaDialogKompres(
+                                                        daftarSumber = listOf(
+                                                            ItemSumberKompresi(
+                                                                lokasi = item.lokasi,
+                                                                namaDalamArsip = item.nama,
+                                                                adalahFolder = item.adalahFolder
+                                                            )
+                                                        ),
+                                                        tujuanInduk = lokasiAktif
+                                                    )
+                                                )
+                                            }
                                         } else {
                                             null
                                         },
@@ -412,6 +483,11 @@ fun DaftarBerkasLayar(
                                             viewModel.prosesIntent(IntentFilemanager.TogglePilihItem(item.lokasi))
                                         } else if (item.adalahFolder) {
                                             viewModel.prosesIntent(IntentFilemanager.BukaLokasi(item.lokasi))
+                                        } else if (
+                                            onBukaArsipTerbaru != null &&
+                                            (item.jenis == JenisBerkas.ARSIP || FormatArsip.dariNamaBerkas(item.nama) == FormatArsip.JAR)
+                                        ) {
+                                            onBukaArsipTerbaru?.invoke(item)
                                         } else {
                                             onBukaBerkasTerbaru(item)
                                         }
@@ -433,6 +509,41 @@ fun DaftarBerkasLayar(
                                         onBukaDengan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBukaDengan(item)) },
                                         onBandingkan = if (onBandingkanBerkas != null) {
                                             { itemPembandingAwal = item }
+                                        } else {
+                                            null
+                                        },
+                                        onBukaArsip = if (onBukaArsipTerbaru != null) {
+                                            { onBukaArsipTerbaru?.invoke(item) }
+                                        } else {
+                                            null
+                                        },
+                                        onEkstrak = if (viewModelArsip != null && lokasiAktif != null) {
+                                            {
+                                                viewModelArsip.prosesIntent(
+                                                    IntentArsip.EkstrakLangsungDariFileManager(
+                                                        sumber = item.lokasi,
+                                                        folderTujuan = lokasiAktif
+                                                    )
+                                                )
+                                            }
+                                        } else {
+                                            null
+                                        },
+                                        onKompres = if (viewModelArsip != null && lokasiAktif != null) {
+                                            {
+                                                viewModelArsip.prosesIntent(
+                                                    IntentArsip.BukaDialogKompres(
+                                                        daftarSumber = listOf(
+                                                            ItemSumberKompresi(
+                                                                lokasi = item.lokasi,
+                                                                namaDalamArsip = item.nama,
+                                                                adalahFolder = item.adalahFolder
+                                                            )
+                                                        ),
+                                                        tujuanInduk = lokasiAktif
+                                                    )
+                                                )
+                                            }
                                         } else {
                                             null
                                         },
@@ -726,6 +837,32 @@ fun DaftarBerkasLayar(
             }
         )
     }
+
+    if (viewModelArsip != null) {
+        DialogKompres(
+            viewModel = viewModelArsip,
+            onSelesaiKompres = { entitasHasil ->
+                viewModel.prosesIntent(IntentFilemanager.BersihkanPilihan)
+                viewModel.prosesIntent(IntentFilemanager.Segarkan)
+                viewModel.prosesIntent(
+                    IntentFilemanager.SetPesanInfo("Arsip '${entitasHasil.nama}' berhasil dibuat dan diverifikasi")
+                )
+            }
+        )
+
+        OverlayDialogEkstrakArsip(
+            viewModel = viewModelArsip,
+            onEkstrakSelesai = { hasil, _ ->
+                viewModel.prosesIntent(IntentFilemanager.Segarkan)
+                val info = if (!hasil.adaGagal && !hasil.adaKonflik) {
+                    "Berhasil mengekstrak ${hasil.jumlahDiekstrak} berkas"
+                } else {
+                    "Ekstraksi selesai: ${hasil.jumlahDiekstrak} berhasil, ${hasil.daftarGagal.size + hasil.daftarKonflik.size} perlu perhatian"
+                }
+                viewModel.prosesIntent(IntentFilemanager.SetPesanInfo(info))
+            }
+        )
+    }
 }
 
 @Composable
@@ -862,8 +999,14 @@ private fun MenuKonteksItemBerkas(
     onGantiNama: () -> Unit,
     onProperti: () -> Unit,
     onHapus: () -> Unit,
-    onBandingkan: (() -> Unit)? = null
+    onBandingkan: (() -> Unit)? = null,
+    onBukaArsip: (() -> Unit)? = null,
+    onEkstrak: (() -> Unit)? = null,
+    onKompres: (() -> Unit)? = null
 ) {
+    val adalahItemArsip = !item.adalahFolder &&
+        (item.jenis == JenisBerkas.ARSIP || FormatArsip.dariNamaBerkas(item.nama) != null)
+
     DropdownMenu(
         expanded = terbuka,
         onDismissRequest = onTutup,
@@ -889,6 +1032,35 @@ private fun MenuKonteksItemBerkas(
             onKlik = { onTutup(); onPindah() }
         )
         HorizontalDivider(thickness = 0.5.dp, modifier = Modifier.padding(vertical = 2.dp))
+        if (adalahItemArsip) {
+            if (onBukaArsip != null) {
+                MenuItemDenganAlasan(
+                    judul = "Buka sebagai Arsip",
+                    ikon = IkonAplikasi.Arsip,
+                    didukung = true,
+                    alasan = null,
+                    onKlik = { onTutup(); onBukaArsip() }
+                )
+            }
+            if (onEkstrak != null) {
+                MenuItemDenganAlasan(
+                    judul = "Ekstrak ke Sini...",
+                    ikon = IkonAplikasi.Ekstrak,
+                    didukung = kemampuan.dapatEkstrak,
+                    alasan = kemampuan.alasan(OperasiBerkas.MENGEKSTRAK),
+                    onKlik = { onTutup(); onEkstrak() }
+                )
+            }
+        }
+        if (onKompres != null) {
+            MenuItemDenganAlasan(
+                judul = "Kompres...",
+                ikon = IkonAplikasi.Arsip,
+                didukung = kemampuan.dapatKompres,
+                alasan = kemampuan.alasan(OperasiBerkas.MENGKOMPRES),
+                onKlik = { onTutup(); onKompres() }
+            )
+        }
         if (!item.adalahFolder) {
             if (onBandingkan != null) {
                 MenuItemDenganAlasan(

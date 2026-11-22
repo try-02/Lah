@@ -7,6 +7,8 @@ import org.fm.com.data.SumberMemoriPenyimpanan
 import org.fm.com.data.pencarian.PencariIsiBerkas
 import org.fm.com.data.persistensi.MemoriRepositoriRiwayatLokasi
 import org.fm.com.data.persistensi.MemoriRepositoriRiwayatPencarian
+import org.fm.com.data.arsip.EkstraktorArsip
+import org.fm.com.data.arsip.PembuatArsip
 import org.fm.com.data.arsip.ProviderGzip
 import org.fm.com.data.arsip.ProviderTar
 import org.fm.com.data.arsip.ProviderZip
@@ -24,7 +26,11 @@ import org.fm.com.domain.repository.RepositoriRiwayatPencarian
 import org.fm.com.domain.usecase.BandingkanBerkasUseCase
 import org.fm.com.domain.usecase.CariIsiBerkasUseCase
 import org.fm.com.domain.usecase.CariNamaBerkasUseCase
+import org.fm.com.domain.usecase.EkstrakArsipUseCase
 import org.fm.com.domain.usecase.JalankanRenameMassalUseCase
+import org.fm.com.domain.usecase.KompresArsipUseCase
+import org.fm.com.domain.usecase.PelaksanaPembuatanArsip
+import org.fm.com.domain.usecase.PelaksanaPenjelajahanArsip
 import org.fm.com.domain.usecase.PelaksanaRenameMassal
 import org.fm.com.domain.usecase.PelaksanaSimpanTransaksional
 import org.fm.com.domain.usecase.PemeriksaKonflikSimpan
@@ -52,6 +58,8 @@ data class KontainerAplikasi(
     val bandingkanBerkasUseCase: BandingkanBerkasUseCase,
     val jalankanRenameMassalUseCase: JalankanRenameMassalUseCase,
     val registriArsipProvider: RegistriArsipProvider,
+    val ekstrakArsipUseCase: EkstrakArsipUseCase,
+    val kompresArsipUseCase: KompresArsipUseCase,
     val lokasiAwal: LokasiBerkas,
     val lokasiPintasan: List<LokasiBerkas> = listOf(lokasiAwal),
     val aksiPlatform: AksiPlatformBerkas = AksiPlatformBerkasBawaan(),
@@ -94,6 +102,10 @@ fun buatKontainerAplikasi(
                         )
                     )
                 }
+                single<PelaksanaPenjelajahanArsip> { EkstraktorArsip(get()) }
+                single<PelaksanaPembuatanArsip> { PembuatArsip(get(), get()) }
+                single { EkstrakArsipUseCase(get()) }
+                single { KompresArsipUseCase(get()) }
             }
         )
     }
@@ -111,6 +123,8 @@ fun buatKontainerAplikasi(
         bandingkanBerkasUseCase = koin.get(),
         jalankanRenameMassalUseCase = koin.get(),
         registriArsipProvider = koin.get(),
+        ekstrakArsipUseCase = koin.get(),
+        kompresArsipUseCase = koin.get(),
         lokasiAwal = lokasiAwal,
         lokasiPintasan = lokasiPintasan,
         aksiPlatform = aksiPlatform,

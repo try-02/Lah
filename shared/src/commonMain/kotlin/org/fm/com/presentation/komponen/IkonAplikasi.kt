@@ -409,4 +409,30 @@ object IkonAplikasi {
         lineTo(12f, 15f)
         lineTo(18f, 9f)
     }
+
+    val Arsip: ImageVector = ikonGaris("Arsip") {
+        moveTo(4f, 5f)
+        lineTo(20f, 5f)
+        lineTo(20f, 9f)
+        lineTo(4f, 9f)
+        close()
+        moveTo(5.5f, 9f)
+        lineTo(5.5f, 19.5f)
+        lineTo(18.5f, 19.5f)
+        lineTo(18.5f, 9f)
+        moveTo(10f, 13f)
+        lineTo(14f, 13f)
+    }
+
+    val Ekstrak: ImageVector = ikonGaris("Ekstrak") {
+        moveTo(4.5f, 15f)
+        lineTo(4.5f, 19.5f)
+        lineTo(19.5f, 19.5f)
+        lineTo(19.5f, 15f)
+        moveTo(12f, 15f)
+        lineTo(12f, 5f)
+        moveTo(8.5f, 8.5f)
+        lineTo(12f, 5f)
+        lineTo(15.5f, 8.5f)
+    }
 }

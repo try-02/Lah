@@ -14,6 +14,8 @@ data class ModelKemampuanUi(
     val dapatPindah: Boolean = true,
     val dapatBagikan: Boolean = true,
     val dapatBukaDengan: Boolean = true,
+    val dapatKompres: Boolean = true,
+    val dapatEkstrak: Boolean = true,
     val dapatBuatTautanSimbolik: Boolean = true,
     val dapatLihatPathPosix: Boolean = true,
     val alasanTidakDidukung: Map<OperasiBerkas, String> = emptyMap()
@@ -45,6 +47,8 @@ data class ModelKemampuanUi(
                 dapatPindah = statusPerOperasi.getValue(OperasiBerkas.MEMINDAHKAN).didukung,
                 dapatBagikan = statusPerOperasi.getValue(OperasiBerkas.MEMBAGIKAN).didukung,
                 dapatBukaDengan = statusPerOperasi.getValue(OperasiBerkas.MEMBUKA_DENGAN).didukung,
+                dapatKompres = statusPerOperasi.getValue(OperasiBerkas.MENGKOMPRES).didukung,
+                dapatEkstrak = statusPerOperasi.getValue(OperasiBerkas.MENGEKSTRAK).didukung,
                 dapatBuatTautanSimbolik = statusPerOperasi.getValue(OperasiBerkas.MEMBUAT_TAUTAN_SIMBOLIK).didukung,
                 dapatLihatPathPosix = statusPerOperasi.getValue(OperasiBerkas.MELIHAT_PATH_POSIX).didukung,
                 alasanTidakDidukung = alasanMap
