@@ -11,16 +11,18 @@ import platform.UIKit.UISceneActivationStateForegroundActive
 import platform.UIKit.UIViewController
 import platform.UIKit.UIWindow
 import platform.UIKit.UIWindowScene
+import platform.UIKit.popoverPresentationController
 
 class AksiPlatformBerkasIos : AksiPlatformBerkas {
 
     override fun bagikanBerkas(lokasi: LokasiBerkas, nama: String, mimeType: String?) {
         val url = keUrlAman(lokasi) ?: return
         val topVC = cariTopViewController() ?: return
+        val view = topVC.view
         val activityVC = UIActivityViewController(activityItems = listOf(url), applicationActivities = null)
         activityVC.popoverPresentationController?.let { popover ->
-            popover.sourceView = topVC.view
-            popover.sourceRect = topVC.view.bounds
+            popover.sourceView = view
+            popover.sourceRect = view.bounds
         }
         topVC.presentViewController(activityVC, animated = true, completion = null)
     }
@@ -28,7 +30,7 @@ class AksiPlatformBerkasIos : AksiPlatformBerkas {
     override fun bukaDengan(lokasi: LokasiBerkas, nama: String, mimeType: String?) {
         val url = keUrlAman(lokasi) ?: return
         val topVC = cariTopViewController() ?: return
-        val view = topVC.view ?: return
+        val view = topVC.view
         val docController = UIDocumentInteractionController.interactionControllerWithURL(url)
         docController.presentOpenInMenuFromRect(view.bounds, inView = view, animated = true)
     }
