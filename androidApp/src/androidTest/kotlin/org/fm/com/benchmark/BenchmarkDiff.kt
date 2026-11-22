@@ -46,8 +46,11 @@ class BenchmarkDiff {
             val bukaUseCase = BukaBerkasTeksUseCase(storage, batasMaksimalByte = 3L * 1024 * 1024)
             val diffUseCase = BandingkanBerkasUseCase(storage, bukaUseCase)
 
-            // Warmup
-            runBlocking { bukaUseCase(lokA) }
+            // Warmup penuh untuk buka teks dan algoritme diff
+            runBlocking {
+                bukaUseCase(lokA)
+                diffUseCase.muatDanBandingkan(lokA, "a.txt", lokB, "b.txt")
+            }
 
             // 1. Ukur Buka Berkas Teks 1 MiB dari disk Android (Target <= 500 ms)
             val durasiBuka = mutableListOf<Long>()

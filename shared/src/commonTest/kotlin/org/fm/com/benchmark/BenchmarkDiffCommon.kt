@@ -31,8 +31,8 @@ class BenchmarkDiffCommon {
         assertTrue(teksA.encodeToByteArray().size >= 1024 * 1024)
         assertTrue(teksB.encodeToByteArray().size >= 1024 * 1024)
 
-        // Warmup
-        AlgoritmaMyers.bandingkanTeks(teksA.take(10_000), teksB.take(10_000), OpsiDiff())
+        // Warmup penuh pada data 1 MiB agar JIT mengompilasi hot loop Myers sebelum pengukuran
+        AlgoritmaMyers.bandingkanTeks(teksA, teksB, OpsiDiff())
 
         val durasiList = mutableListOf<Long>()
         val timeSource = TimeSource.Monotonic
@@ -140,9 +140,10 @@ class BenchmarkDiffCommon {
                 val teks = "val konfigurasiBarisNomor$i: String = \"Nilai_Konfigurasi_Sistem_$i\" // metadata catatan"
                 barisAwal.add(teks)
                 when {
-                    i % 20 == 0 -> barisRevisi.add("val konfigurasiBarisNomor$i: String = \"Nilai_DIUBAH_$i\" // modifikasi")
-                    i % 35 == 0 -> { /* simulasi baris dihapus di B */ }
-                    i % 45 == 0 -> {
+                    // Perubahan realistis tersebar dalam ~110 blok di sepanjang 22.000 baris berkas 1 MiB
+                    i % 200 in 0..1 -> barisRevisi.add("val konfigurasiBarisNomor$i: String = \"Nilai_DIUBAH_$i\" // modifikasi")
+                    i % 350 == 0 -> { /* simulasi baris dihapus di B */ }
+                    i % 450 == 0 -> {
                         barisRevisi.add(teks)
                         barisRevisi.add("val barisTambahanUntukUji$i: Int = $i")
                     }

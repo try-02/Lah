@@ -683,15 +683,18 @@ object AlgoritmaMyers {
             return listOf(RentangKarakterBeda(prefix, akhirA)) to listOf(RentangKarakterBeda(prefix, akhirB))
         }
 
-        // LCS DP untuk rentang tengah yang pendek
-        val lcs = Array(lenA + 1) { IntArray(lenB + 1) }
+        // LCS DP untuk rentang tengah yang pendek memakai larik datar 1D (nol alokasi bersarang)
+        val pitch = lenB + 1
+        val lcs = IntArray((lenA + 1) * pitch)
         for (i in lenA - 1 downTo 0) {
             val chA = teksA[prefix + i]
+            val barisSekarang = i * pitch
+            val barisBawah = (i + 1) * pitch
             for (j in lenB - 1 downTo 0) {
-                lcs[i][j] = if (samaChar(chA, teksB[prefix + j])) {
-                    1 + lcs[i + 1][j + 1]
+                lcs[barisSekarang + j] = if (samaChar(chA, teksB[prefix + j])) {
+                    1 + lcs[barisBawah + (j + 1)]
                 } else {
-                    maxOf(lcs[i + 1][j], lcs[i][j + 1])
+                    maxOf(lcs[barisBawah + j], lcs[barisSekarang + (j + 1)])
                 }
             }
         }
@@ -705,7 +708,7 @@ object AlgoritmaMyers {
                 i < lenA && j < lenB && samaChar(teksA[prefix + i], teksB[prefix + j]) -> {
                     i++; j++
                 }
-                j < lenB && (i == lenA || lcs[i][j + 1] >= lcs[i + 1][j]) -> {
+                j < lenB && (i == lenA || lcs[i * pitch + (j + 1)] >= lcs[(i + 1) * pitch + j]) -> {
                     tambahAtauGabungRentang(bedaB, prefix + j, prefix + j + 1)
                     j++
                 }
