@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Folder outline -->
+    <path
+        android:pathData="M32,39 a4,4 0 0 1 4,-4 h9 l5,6 h22 a4,4 0 0 1 4,4 v24 a4,4 0 0 1 -4,4 h-36 a4,4 0 0 1 -4,-4 z"
+        android:fillColor="#00000000"
+        android:strokeColor="#00E676"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+    <!-- Prompt > -->
+    <path
+        android:pathData="M43,50 l7,7 -7,7"
+        android:fillColor="#00000000"
+        android:strokeColor="#00E676"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+    <!-- Prompt _ -->
+    <path
+        android:pathData="M57,64 h8"
+        android:fillColor="#00000000"
+        android:strokeColor="#00E676"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"/>
+</vector>
