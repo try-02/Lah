@@ -3,8 +3,10 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidMultiplatformLibrary)
+    alias(libs.plugins.androidLint)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
+    alias(libs.plugins.composeStabilityAnalyzer)
     alias(libs.plugins.sqldelight)
 }
 
@@ -69,11 +71,38 @@ kotlin {
         }
         getByName("androidHostTest").dependencies {
             implementation(libs.sqldelight.driver.sqlite)
+            implementation(libs.konsist)
         }
         getByName("androidDeviceTest").dependencies {
             implementation(libs.androidx.testRunner)
         }
     }
+}
+
+composeCompiler {
+    if (providers.gradleProperty("enableComposeCompilerReports").orNull == "true") {
+        reportsDestination = layout.buildDirectory.dir("compose_compiler")
+        metricsDestination = layout.buildDirectory.dir("compose_compiler")
+    }
+}
+
+composeStabilityAnalyzer {
+    stabilityValidation {
+        enabled.set(true)
+        outputDir.set(layout.projectDirectory.dir("stability"))
+        includeTests.set(false)
+        failOnStabilityChange.set(false)
+        allowMissingBaseline.set(true)
+    }
+}
+
+lint {
+    htmlReport = true
+    textReport = true
+    absolutePaths = false
+    ignoreTestSources = true
+    abortOnError = false
+    lintConfig = rootProject.file("lint.xml")
 }
 
 sqldelight {
@@ -86,6 +115,7 @@ sqldelight {
 
 dependencies {
     androidRuntimeClasspath(libs.compose.uiTooling)
+    lintChecks(libs.compose.lint.checks)
 }
 
 compose.resources {

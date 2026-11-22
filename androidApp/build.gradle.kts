@@ -17,6 +17,7 @@ dependencies {
 
     implementation(libs.compose.uiToolingPreview)
     debugImplementation(libs.compose.uiTooling)
+    lintChecks(libs.compose.lint.checks)
 }
 
 android {
@@ -60,6 +61,14 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    lint {
+        checkDependencies = true
+        htmlReport = true
+        textReport = true
+        absolutePaths = false
+        abortOnError = false
+        lintConfig = rootProject.file("lint.xml")
     }
     androidResources {
         // Hanya simpan bahasa Inggris dan Indonesia (sesuaikan dengan kebutuhan)

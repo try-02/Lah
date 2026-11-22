@@ -1,54 +1,149 @@
-name: Test & Build
+name: CI Test
 
 on:
   workflow_dispatch:
+    inputs:
+      run_ios:
+        description: 'Jalankan job iOS?'
+        required: true
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - always
+          - never
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  build:
-    name: Build & Test
+  android:
+    name: Android
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           java-version: '21'
           distribution: 'temurin'
 
-      # Setup Gradle dengan build-root-directory mengarah ke coba9
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
         with:
-          cache-encryption-key: ${{ secrets.GRADLE_CACHE_ENCRYPTION_KEY }}
-          cache-read-only: false 
-          add-job-summary: 'always'
+          cache-cleanup: always
 
-      - name: Make gradlew executable
-        run: chmod +x ./gradlew
+      - name: Build Android & host tests
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :shared:testAndroidHostTest --stacktrace --console=plain
 
-      # 1. (Opsional) Sinkronisasi eksplisit dependensi
-      - name: Gradle Sync & Dependencies
-        run: ./gradlew help --dry-run
+      - name: Build Android & host tests
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :shared:stabilityDump :shared:compileAndroidMain -PenableComposeCompilerReports=true --stacktrace --console=plain
 
-      # 2. Menjalankan commonTest
-      # Pilih salah satu task sesuai konfigurasi KMP Anda:
-      # - 'allTests' untuk semua target KMP
-      # - 'jvmTest' khusus target JVM
-      # - 'testDebugUnitTest' khusus target Android
-      - name: Run Unit Tests (commonTest)
-        run: ./gradlew allTests
+      - name: Build Android & host tests
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :shared:lint :androidApp:lintDebug --stacktrace --console=plain
 
-      # 3. Build APK
-      # - name: Build Release APK
-      #  run: ./gradlew assembleRelease
-
-      # 4. Upload laporan test jika terjadi kegagalan (opsional tapi disarankan)
-      - name: Upload Test Results
-        if: failure()
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports
-          path: */**/build/reports/tests/
+          name: pos-offline-release-signed-apk
+          path: |
+            shared/stability/
+            shared/build/compose_compiler/
+            shared/build/reports/
+          retention-days: 1
+          if-no-files-found: error
+
+  deteksios:
+    name: Deteksi pemicu iOS
+    runs-on: ubuntu-latest
+    outputs:
+      jalankan: ${{ steps.gate.outputs.jalankan }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Evaluasi pemicu
+        id: gate
+        shell: bash
+        env:
+          NAMA_EVENT: ${{ github.event_name }}
+          INPUT_IOS: ${{ inputs.run_ios || 'auto' }}
+          PESAN_COMMIT: ${{ github.event.head_commit.message }}
+          SHA_SEBELUM: ${{ github.event.before }}
+          SHA_SEKARANG: ${{ github.sha }}
+        run: |
+          if [ "$NAMA_EVENT" = "workflow_dispatch" ]; then
+            if [ "$INPUT_IOS" = "always" ]; then
+              echo "jalankan=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            elif [ "$INPUT_IOS" = "never" ]; then
+              echo "jalankan=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          if [ -z "$PESAN_COMMIT" ]; then
+            PESAN_COMMIT=$(git log -1 --pretty=%B "$SHA_SEKARANG" 2>/dev/null || echo "")
+          fi
+          if printf '%s\n' "$PESAN_COMMIT" | grep -q '\[ios\]'; then
+            echo "jalankan=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -z "$SHA_SEBELUM" ] || [ "$SHA_SEBELUM" = "0000000000000000000000000000000000000000" ]; then
+            SHA_SEBELUM=$(git rev-parse "$SHA_SEKARANG^" 2>/dev/null || echo "")
+          fi
+
+          berubah=$(git diff --name-only "$SHA_SEBELUM" "$SHA_SEKARANG" 2>/dev/null || true)
+          if printf '%s\n' "$berubah" | grep -Eq '^(shared/src/(iosMain|appleMain|iosTest|nativeMain)/|iosApp/|gradle/|(.*/)?[^/]*\.gradle\.kts$|gradle\.properties$|\.github/workflows/ci\.yml$)'; then
+            echo "jalankan=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "jalankan=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  ios:
+    name: iOS
+    needs: deteksios
+    if: needs.deteksios.outputs.jalankan == 'true'
+    runs-on: macos-26
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-cleanup: always
+
+      - name: Cache Kotlin/Native (.konan)
+        uses: actions/cache@v6
+        with:
+          path: ~/.konan
+          key: ${{ runner.os }}-konan-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-konan-
+
+      - name: Jalankan tes simulator iOS
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :shared:iosSimulatorArm64Test --stacktrace --console=plain
