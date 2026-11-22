@@ -2,6 +2,7 @@ package org.fm.com
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -71,7 +72,7 @@ class DiffModeTest {
         composeRule.onNodeWithText("baris tambahan").assertIsDisplayed()
 
         // Penanda non-warna di aksesibilitas gutter & navigasi blok perubahan (1/2 -> 2/2)
-        composeRule.onNodeWithContentDescription("Diubah baris 2").assertExists()
+        composeRule.onAllNodesWithContentDescription("Diubah baris 2")[0].assertExists()
         composeRule.onNodeWithContentDescription("Ditambah baris 4").assertExists()
         composeRule.onNodeWithText("1/2").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Perubahan berikutnya").performClick()

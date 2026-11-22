@@ -100,9 +100,13 @@ class BenchmarkDiffCommon {
         val daftarUseCase = DaftarFolderUseCase(storage)
         val filterUseCase = FilterBerkasUseCase()
         val urutkanUseCase = UrutkanBerkasUseCase()
+        val zonaWaktu = kotlinx.datetime.TimeZone.currentSystemDefault()
 
-        // Warmup
-        daftarUseCase(root, true).first()
+        // Warmup penuh
+        val mentahWarmup = (daftarUseCase(root, true).first() as org.fm.com.domain.model.HasilOperasi.Sukses<List<EntitasBerkas>>).nilai
+        val tersaringWarmup = filterUseCase(mentahWarmup, tampilkanTersembunyi = true, kataKunci = "item")
+        val terurutWarmup = urutkanUseCase(tersaringWarmup, KriteriaUrutan.NAMA)
+        terurutWarmup.map { it.keUi(zonaWaktu) }
 
         val durasiList = mutableListOf<Long>()
         val timeSource = TimeSource.Monotonic
@@ -112,7 +116,7 @@ class BenchmarkDiffCommon {
             val list = (mentah as org.fm.com.domain.model.HasilOperasi.Sukses<List<EntitasBerkas>>).nilai
             val tersaring = filterUseCase(list, tampilkanTersembunyi = true, kataKunci = "item")
             val terurut = urutkanUseCase(tersaring, KriteriaUrutan.NAMA)
-            val uiList = terurut.map { it.keUi() }
+            val uiList = terurut.map { it.keUi(zonaWaktu) }
             durasiList.add(mark.elapsedNow().inWholeMilliseconds)
             assertTrue(uiList.size == 1000)
         }

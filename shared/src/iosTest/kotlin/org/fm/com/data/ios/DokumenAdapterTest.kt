@@ -23,6 +23,7 @@ import org.fm.com.domain.model.EntitasBookmark
 import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.model.JenisBerkas
 import org.fm.com.domain.model.JenisLokasi
+import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.OperasiBerkas
 import org.fm.com.domain.model.PenyebabGalat
 import org.fm.com.domain.model.StatusKetersediaanBookmark

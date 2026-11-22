@@ -8,6 +8,7 @@ import java.io.File
 import kotlin.time.TimeSource
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.datetime.TimeZone
 import okio.FileSystem
 import org.fm.com.data.posix.PosixSumberDataPenyimpanan
 import org.fm.com.domain.model.HasilOperasi
@@ -49,9 +50,15 @@ class BenchmarkDaftarBerkas {
             val daftarFolder = DaftarFolderUseCase(storagePosix)
             val filter = FilterBerkasUseCase()
             val urutkan = UrutkanBerkasUseCase()
+            val zonaWaktu = TimeZone.currentSystemDefault()
 
-            // Warmup
-            runBlocking { daftarFolder(lokasi, true).first() }
+            // Warmup penuh pemuatan, filter, pengurutan, dan pemetaan UI
+            runBlocking {
+                val mentah = (daftarFolder(lokasi, true).first() as HasilOperasi.Sukses).nilai
+                val tersaring = filter(mentah, tampilkanTersembunyi = true, kataKunci = "")
+                val terurut = urutkan(tersaring, KriteriaUrutan.NAMA)
+                terurut.map { it.keUi(zonaWaktu) }
+            }
 
             val timeSource = TimeSource.Monotonic
             val durasiList = mutableListOf<Long>()
@@ -62,7 +69,7 @@ class BenchmarkDaftarBerkas {
                     val mentah = (daftarFolder(lokasi, true).first() as HasilOperasi.Sukses).nilai
                     val tersaring = filter(mentah, tampilkanTersembunyi = true, kataKunci = "")
                     val terurut = urutkan(tersaring, KriteriaUrutan.NAMA)
-                    terurut.map { it.keUi() }
+                    terurut.map { it.keUi(zonaWaktu) }
                 }
                 durasiList.add(mark.elapsedNow().inWholeMilliseconds)
                 assertTrue(hasil.size == 1000)
