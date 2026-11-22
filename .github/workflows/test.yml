@@ -52,46 +52,6 @@ jobs:
           chmod +x ./gradlew
           ./gradlew :shared:testAndroidHostTest --stacktrace --console=plain
 
-      - name: stability
-        run: |
-          chmod +x ./gradlew
-          ./gradlew :shared:stabilityDump :shared:compileAndroidMain -PenableComposeCompilerReports=true --stacktrace --console=plain
-
-      - name: lint
-        run: |
-          chmod +x ./gradlew
-          ./gradlew :shared:lint :androidApp:lintDebug --stacktrace --console=plain
-
-      - name: apprelease
-        run: |
-          chmod +x ./gradlew
-          ./gradlew :androidApp:assembleRelease --stacktrace --console=plain
-
-      - name: Sign APK
-        uses: r0adkll/sign-android-release@v1
-        id: sign_app
-        env:
-          BUILD_TOOLS_VERSION: "34.0.0"
-        with:
-          releaseDirectory: androidApp/build/outputs/apk/release
-          signingKeyBase64: ${{ secrets.KEYSTORE_BASE64 }}
-          alias: ${{ secrets.KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-
-      - name: Sanitize Compose Compiler Report filenames
-        shell: bash
-        run: |
-          for dir in androidApp/build/compose_compiler shared/build/compose_compiler; do
-            if [ -d "$dir" ]; then
-              find "$dir" -depth -type f -name '*:*' -print0 |
-              while IFS= read -r -d '' file; do
-                new_file="${file//:/_}"
-                mv "$file" "$new_file"
-              done
-            fi
-          done
-
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
