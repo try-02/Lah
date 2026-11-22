@@ -102,7 +102,7 @@ fun buatKontainerAplikasi(
                         )
                     )
                 }
-                single<PelaksanaPenjelajahanArsip> { EkstraktorArsip(get()) }
+                single<PelaksanaPenjelajahanArsip> { EkstraktorArsip(get(), get()) }
                 single<PelaksanaPembuatanArsip> { PembuatArsip(get(), get()) }
                 single { EkstrakArsipUseCase(get()) }
                 single { KompresArsipUseCase(get()) }

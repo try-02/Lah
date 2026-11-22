@@ -14,7 +14,10 @@ import okio.FileSystem
 import okio.Path
 import okio.buffer
 import okio.use
+import okio.Path.Companion.toPath
+import org.fm.com.domain.arsip.ArsipProvider
 import org.fm.com.domain.arsip.RegistriArsipProvider
+import org.fm.com.domain.io.PotonganIsi
 import org.fm.com.domain.io.SumberIsiBerkas
 import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.FormatArsip
@@ -27,7 +30,10 @@ import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.OpsiEkstrakArsip
 import org.fm.com.domain.model.PenyebabGalat
 import org.fm.com.domain.model.RingkasanIsiArsip
+import org.fm.com.domain.repository.RepositoriBerkas
 import org.fm.com.domain.usecase.EkstrakArsipUseCase
+import org.fm.com.domain.usecase.HasilSiapkanEditArsip
+import org.fm.com.domain.usecase.KonteksEditArsip
 import org.fm.com.domain.usecase.LapisanJejakArsip
 import org.fm.com.domain.usecase.PelaksanaPenjelajahanArsip
 import org.fm.com.domain.usecase.StatusLapisanArsip
@@ -36,6 +42,7 @@ private const val NAMA_DIR_PRATINJAU_ARSIP = "fm_arsip_pratinjau"
 
 class EkstraktorArsip(
     private val registriArsipProvider: RegistriArsipProvider,
+    private val repositoriBerkas: RepositoriBerkas? = null,
     private val adapterPlatform: AdapterArsipPlatform = buatAdapterArsipPlatform(),
     private val direktoriTemp: Path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
@@ -44,6 +51,7 @@ class EkstraktorArsip(
     private data class LapisanInternal(
         val jejak: LapisanJejakArsip,
         val lokasiFisik: LokasiBerkas,
+        val jalurDalamInduk: String?,
         val ringkasan: RingkasanIsiArsip,
         val pathTempUntukDihapus: Path?
     )
@@ -93,6 +101,7 @@ class EkstraktorArsip(
                 kedalaman = 1
             ),
             lokasiFisik = sumber,
+            jalurDalamInduk = null,
             ringkasan = ringkasan,
             pathTempUntukDihapus = null
         )
@@ -203,6 +212,7 @@ class EkstraktorArsip(
                 kedalaman = kedalamanBaru
             ),
             lokasiFisik = lokasiSementara,
+            jalurDalamInduk = jalurAman.jalurNormal,
             ringkasan = ringkasanAnak,
             pathTempUntukDihapus = pathTemp
         )
@@ -295,14 +305,17 @@ class EkstraktorArsip(
     override suspend fun siapkanPratinjauBerkas(
         idSesi: String,
         jalurInternal: String,
+        untukEdit: Boolean,
         kataSandi: String?,
         batas: KebijakanBatasArsip
-    ): HasilOperasi<EntitasBerkas> = withContext(ioDispatcher) {
-        val lapisanAktif = mutex.withLock { sesiAktif[idSesi]?.lastOrNull() }
+    ): HasilOperasi<HasilSiapkanEditArsip> = withContext(ioDispatcher) {
+        val stack = mutex.withLock { sesiAktif[idSesi]?.toList() }
             ?: return@withContext HasilOperasi.Gagal(
                 "Sesi arsip belum dibuka",
                 PenyebabGalat.TIDAK_DITEMUKAN
             )
+        val lapisanAktif = stack.lastOrNull()
+            ?: return@withContext HasilOperasi.Gagal("Sesi arsip kosong", PenyebabGalat.TIDAK_DITEMUKAN)
 
         val valJalur = ValidasiPathArsip.validasi(jalurInternal, adalahFolder = false)
         val jalurAman = when (valJalur) {
@@ -344,27 +357,417 @@ class EkstraktorArsip(
             return@withContext salin
         }
 
+        val bolehEdit = untukEdit && stack.all { it.jejak.kapabilitas.dapatBuat } &&
+            !lapisanAktif.ringkasan.daftarEntri.any { it.terenkripsi || it.adalahTautanSimbolik }
         val ukuran = (salin as HasilOperasi.Sukses).nilai
-        HasilOperasi.Sukses(
-            EntitasBerkas(
-                lokasi = LokasiBerkas(
-                    pengenal = pathTemp.toString(),
-                    jenis = JenisLokasi.POSIX,
-                    label = jalurAman.namaSegmenAkhir
-                ),
-                nama = jalurAman.namaSegmenAkhir,
-                jenis = JenisBerkas.BERKAS_TEKS,
-                ukuranByte = ukuran,
-                dapatDibaca = true,
-                dapatDitulis = false
-            )
+        val entitas = EntitasBerkas(
+            lokasi = LokasiBerkas(
+                pengenal = pathTemp.toString(),
+                jenis = JenisLokasi.POSIX,
+                label = jalurAman.namaSegmenAkhir
+            ),
+            nama = jalurAman.namaSegmenAkhir,
+            jenis = JenisBerkas.BERKAS_TEKS,
+            ukuranByte = ukuran,
+            dapatDibaca = true,
+            dapatDitulis = bolehEdit
         )
+        val konteks = KonteksEditArsip(
+            sumberArsipAkar = stack.first().lokasiFisik,
+            namaArsipTampilan = stack.last().jejak.namaArsip,
+            formatArsipAktif = lapisanAktif.jejak.format,
+            rantaiJalurArsipBersarang = stack.drop(1).mapNotNull { it.jalurDalamInduk },
+            jalurEntriTarget = jalurAman.jalurNormal,
+            idSesiArsip = idSesi
+        )
+        HasilOperasi.Sukses(HasilSiapkanEditArsip(entitasSementara = entitas, konteks = konteks))
+    }
+
+    override suspend fun perbaruiBerkasDalamArsip(
+        konteks: KonteksEditArsip,
+        lokasiBerkasEdit: LokasiBerkas,
+        batas: KebijakanBatasArsip
+    ): HasilOperasi<StatusLapisanArsip?> = withContext(ioDispatcher) {
+        val repo = repositoriBerkas
+            ?: return@withContext HasilOperasi.Gagal(
+                "Repositori berkas belum terhubung untuk menulis ulang arsip",
+                PenyebabGalat.TIDAK_DIDUKUNG
+            )
+        val fs = adapterPlatform.sistemBerkasLokal
+
+        val sumberEdit = when (
+            val siap = BantuArsipPenyimpanan.siapkanPathLokalUntukBaca(
+                sumber = lokasiBerkasEdit,
+                repositoriBerkas = repo,
+                fileSystemLokal = fs,
+                direktoriTemp = direktoriTemp
+            )
+        ) {
+            is SumberPathLokal.Tersedia -> siap
+            is SumberPathLokal.Gagal -> return@withContext HasilOperasi.Gagal(siap.pesan, siap.penyebab)
+        }
+
+        val tempUntukBersih = mutableListOf<Path>()
+        if (sumberEdit.harusDihapusSetelahnya) tempUntukBersih.add(sumberEdit.path)
+
+        try {
+            // Bangun rantai lapisan dari akar hingga lapisan terdalam tempat berkas diedit
+            val namaAkar = konteks.sumberArsipAkar.label?.takeIf { it.isNotBlank() }
+                ?: konteks.sumberArsipAkar.pengenal.trimEnd('/').substringAfterLast('/').ifBlank { "arsip" }
+            val formatAkar = when (val det = registriArsipProvider.deteksiDanCekDukungan(namaAkar)) {
+                is HasilOperasi.Sukses -> det.nilai
+                is HasilOperasi.Gagal -> return@withContext det
+            }
+
+            val sumberAkarLokal = when (
+                val siapAkar = BantuArsipPenyimpanan.siapkanPathLokalUntukBaca(
+                    sumber = konteks.sumberArsipAkar,
+                    repositoriBerkas = repo,
+                    fileSystemLokal = fs,
+                    direktoriTemp = direktoriTemp
+                )
+            ) {
+                is SumberPathLokal.Tersedia -> siapAkar
+                is SumberPathLokal.Gagal -> return@withContext HasilOperasi.Gagal(siapAkar.pesan, siapAkar.penyebab)
+            }
+            if (sumberAkarLokal.harusDihapusSetelahnya) tempUntukBersih.add(sumberAkarLokal.path)
+
+            data class InfoLapisanBangun(
+                val pathLama: Path,
+                val format: FormatArsip,
+                val jalurDiganti: String
+            )
+
+            val rantai = mutableListOf<InfoLapisanBangun>()
+            var pathLapisanSekarang = sumberAkarLokal.path
+            var formatLapisanSekarang = formatAkar
+
+            for (jalurNested in konteks.rantaiJalurArsipBersarang) {
+                currentCoroutineContext().ensureActive()
+                val kap = registriArsipProvider.kapabilitas(formatLapisanSekarang)
+                if (!kap.dapatBuat) {
+                    return@withContext HasilOperasi.Gagal(
+                        kap.catatan ?: "Format ${formatLapisanSekarang.namaTampilan} tidak mendukung penulisan ulang",
+                        PenyebabGalat.TIDAK_DIDUKUNG
+                    )
+                }
+                rantai.add(
+                    InfoLapisanBangun(
+                        pathLama = pathLapisanSekarang,
+                        format = formatLapisanSekarang,
+                        jalurDiganti = jalurNested
+                    )
+                )
+
+                val providerInduk = registriArsipProvider.providerUntuk(formatLapisanSekarang)
+                    ?: return@withContext HasilOperasi.Gagal("Provider arsip tidak tersedia", PenyebabGalat.TIDAK_DIDUKUNG)
+                val namaNested = jalurNested.substringAfterLast('/')
+                val formatAnak = when (val det = registriArsipProvider.deteksiDanCekDukungan(namaNested)) {
+                    is HasilOperasi.Sukses -> det.nilai
+                    is HasilOperasi.Gagal -> return@withContext det
+                }
+                val pathNestedTemp = BantuArsipPenyimpanan.buatPathCacheSementara(
+                    awalan = "edit_nested",
+                    ekstensi = "_$namaNested",
+                    direktoriTemp = direktoriTemp
+                )
+                tempUntukBersih.add(pathNestedTemp)
+
+                val lokasiLapisanSekarang = LokasiBerkas(pathLapisanSekarang.toString(), JenisLokasi.POSIX, namaNested)
+                when (
+                    val salinNested = salinEntriKePathTemp(
+                        providerInduk = providerInduk,
+                        lokasiArsipInduk = lokasiLapisanSekarang,
+                        formatInduk = formatLapisanSekarang,
+                        jalurEntri = jalurNested,
+                        kataSandi = null,
+                        batas = batas,
+                        pathTujuan = pathNestedTemp,
+                        batasByte = batas.batasUkuranSatuEntriByte
+                    )
+                ) {
+                    is HasilOperasi.Sukses -> Unit
+                    is HasilOperasi.Gagal -> return@withContext salinNested
+                }
+                pathLapisanSekarang = pathNestedTemp
+                formatLapisanSekarang = formatAnak
+            }
+
+            val kapTerdalam = registriArsipProvider.kapabilitas(formatLapisanSekarang)
+            if (!kapTerdalam.dapatBuat) {
+                return@withContext HasilOperasi.Gagal(
+                    kapTerdalam.catatan ?: "Format ${formatLapisanSekarang.namaTampilan} tidak mendukung penulisan ulang",
+                    PenyebabGalat.TIDAK_DIDUKUNG
+                )
+            }
+            rantai.add(
+                InfoLapisanBangun(
+                    pathLama = pathLapisanSekarang,
+                    format = formatLapisanSekarang,
+                    jalurDiganti = konteks.jalurEntriTarget
+                )
+            )
+
+            // Tulis ulang dari lapisan terdalam menuju arsip akar
+            var pathPenggantiSekarang = sumberEdit.path
+            for (idx in rantai.lastIndex downTo 0) {
+                currentCoroutineContext().ensureActive()
+                val lapis = rantai[idx]
+                val pathOutTemp = BantuArsipPenyimpanan.buatPathCacheSementara(
+                    awalan = "rebuild_$idx",
+                    ekstensi = ".${lapis.format.ekstensiUtama}",
+                    direktoriTemp = direktoriTemp
+                )
+                tempUntukBersih.add(pathOutTemp)
+
+                val hasilUbah = tulisUlangSatuLapisan(
+                    pathArsipLama = lapis.pathLama,
+                    format = lapis.format,
+                    jalurTarget = lapis.jalurDiganti,
+                    pathFilePengganti = pathPenggantiSekarang,
+                    pathTempOut = pathOutTemp,
+                    batas = batas
+                )
+                if (hasilUbah is HasilOperasi.Gagal) return@withContext hasilUbah
+                pathPenggantiSekarang = pathOutTemp
+            }
+
+            // Tulis arsip akar baru yang sudah terverifikasi ke penyimpanan tujuan secara transaksional
+            val tulisKeDisk = tulisArsipHasilKeTargetAsli(
+                repo = repo,
+                fs = fs,
+                pathTempArsipBaru = pathPenggantiSekarang,
+                lokasiTargetAsli = konteks.sumberArsipAkar
+            )
+            if (tulisKeDisk is HasilOperasi.Gagal) return@withContext tulisKeDisk
+
+            // Verifikasi akhir arsip di penyimpanan asli
+            val providerAkar = registriArsipProvider.providerUntuk(formatAkar)
+                ?: return@withContext HasilOperasi.Gagal("Provider arsip tidak tersedia", PenyebabGalat.TIDAK_DIDUKUNG)
+            when (val cekAkhir = providerAkar.daftarEntri(konteks.sumberArsipAkar, formatAkar, batas = batas)) {
+                is HasilOperasi.Sukses -> Unit
+                is HasilOperasi.Gagal -> return@withContext HasilOperasi.Gagal(
+                    "Verifikasi arsip setelah pembaruan gagal: ${cekAkhir.pesan}",
+                    cekAkhir.penyebab
+                )
+            }
+
+            // Segarkan sesi browser bila masih terbuka
+            val idSesi = konteks.idSesiArsip
+            val statusBaru = if (idSesi != null) {
+                segarkanSesiSetelahEdit(idSesi, konteks, batas)
+            } else {
+                null
+            }
+            HasilOperasi.Sukses(statusBaru)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            HasilOperasi.Gagal(e.message ?: "Gagal memperbarui arsip", PenyebabGalat.TIDAK_DIKETAHUI)
+        } finally {
+            withContext(NonCancellable) {
+                for (p in tempUntukBersih.asReversed()) {
+                    hapusFileTempAman(p)
+                }
+            }
+        }
+    }
+
+    override suspend fun ambilStatusSesi(idSesi: String): StatusLapisanArsip? =
+        mutex.withLock { sesiAktif[idSesi]?.let { bentukStatus(it.toList()) } }
+
+    override suspend fun bersihkanBerkasSementara(lokasi: LokasiBerkas) {
+        if (lokasi.jenis != JenisLokasi.POSIX) return
+        val path = runCatching { lokasi.pengenal.toPath(normalize = true) }.getOrNull() ?: return
+        val dirPratinjau = (direktoriTemp / NAMA_DIR_PRATINJAU_ARSIP).toString()
+        if (path.toString().startsWith(dirPratinjau)) {
+            withContext(ioDispatcher + NonCancellable) {
+                hapusFileTempAman(path)
+            }
+        }
     }
 
     override suspend fun tutupSesi(idSesi: String) {
         val stack = mutex.withLock { sesiAktif.remove(idSesi) } ?: return
         withContext(ioDispatcher + NonCancellable) {
             bersihkanDaftarLapisan(stack)
+        }
+    }
+
+    private suspend fun tulisUlangSatuLapisan(
+        pathArsipLama: Path,
+        format: FormatArsip,
+        jalurTarget: String,
+        pathFilePengganti: Path,
+        pathTempOut: Path,
+        batas: KebijakanBatasArsip
+    ): HasilOperasi<Unit> {
+        val provider = registriArsipProvider.providerUntuk(format)
+            ?: return HasilOperasi.Gagal(
+                "Penyedia arsip untuk format ${format.namaTampilan} belum tersedia",
+                PenyebabGalat.TIDAK_DIDUKUNG
+            )
+        return when (format) {
+            FormatArsip.ZIP -> {
+                val p = provider as? ProviderZip
+                    ?: return HasilOperasi.Gagal("Provider ZIP tidak cocok", PenyebabGalat.TIDAK_DIDUKUNG)
+                p.tulisUlangDenganPengganti(pathArsipLama, format, jalurTarget, pathFilePengganti, pathTempOut, batas = batas)
+            }
+            FormatArsip.JAR -> {
+                val fs = adapterPlatform.sistemBerkasLokal
+                val repo = repositoriBerkas ?: return HasilOperasi.Gagal("Repositori berkas kosong", PenyebabGalat.TIDAK_DIDUKUNG)
+                // ProviderZipBased membungkus ProviderZip; gunakan instance ProviderZip langsung atau buat sementara
+                val pZip = registriArsipProvider.providerUntuk(FormatArsip.ZIP) as? ProviderZip
+                if (pZip != null) {
+                    pZip.tulisUlangDenganPengganti(pathArsipLama, format, jalurTarget, pathFilePengganti, pathTempOut, batas = batas)
+                } else {
+                    HasilOperasi.Gagal("Provider ZIP untuk menulis ulang JAR belum tersedia", PenyebabGalat.TIDAK_DIDUKUNG)
+                }
+            }
+            FormatArsip.TAR, FormatArsip.TGZ -> {
+                val p = provider as? ProviderTar
+                    ?: return HasilOperasi.Gagal("Provider TAR tidak cocok", PenyebabGalat.TIDAK_DIDUKUNG)
+                p.tulisUlangDenganPengganti(pathArsipLama, format, jalurTarget, pathFilePengganti, pathTempOut, batas = batas)
+            }
+            FormatArsip.GZIP -> {
+                val p = provider as? ProviderGzip
+                    ?: return HasilOperasi.Gagal("Provider GZIP tidak cocok", PenyebabGalat.TIDAK_DIDUKUNG)
+                p.tulisUlangDenganPengganti(pathArsipLama, jalurTarget, pathFilePengganti, pathTempOut)
+            }
+            FormatArsip.ZIP_LAIN -> HasilOperasi.Gagal(
+                "Format ${format.namaTampilan} tidak mendukung penulisan ulang",
+                PenyebabGalat.TIDAK_DIDUKUNG
+            )
+        }
+    }
+
+    private suspend fun tulisArsipHasilKeTargetAsli(
+        repo: RepositoriBerkas,
+        fs: FileSystem,
+        pathTempArsipBaru: Path,
+        lokasiTargetAsli: LokasiBerkas
+    ): HasilOperasi<Unit> {
+        val writer = when (val buka = repo.bukaUntukTulis(lokasiTargetAsli, timpa = true)) {
+            is HasilOperasi.Sukses -> buka.nilai
+            is HasilOperasi.Gagal -> return buka
+        }
+        var selesaiSukses = false
+        try {
+            val buf = ByteArray(8 * 1024)
+            fs.source(pathTempArsipBaru).buffer().use { src ->
+                while (true) {
+                    currentCoroutineContext().ensureActive()
+                    val n = src.read(buf)
+                    if (n == -1) break
+                    val data = if (n == buf.size) buf else buf.copyOf(n)
+                    when (val tulis = writer.tulis(PotonganIsi(data, selesai = false))) {
+                        is HasilOperasi.Sukses -> Unit
+                        is HasilOperasi.Gagal -> return tulis
+                    }
+                }
+            }
+            when (val hasilSelesai = writer.selesai()) {
+                is HasilOperasi.Sukses -> {
+                    selesaiSukses = true
+                    return HasilOperasi.Sukses(Unit)
+                }
+                is HasilOperasi.Gagal -> return hasilSelesai
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return HasilOperasi.Gagal(e.message ?: "Gagal menyimpan arsip yang diperbarui", PenyebabGalat.TIDAK_DIKETAHUI)
+        } finally {
+            withContext(NonCancellable) {
+                if (!selesaiSukses) {
+                    writer.batalkan()
+                }
+            }
+        }
+    }
+
+    private suspend fun segarkanSesiSetelahEdit(
+        idSesi: String,
+        konteks: KonteksEditArsip,
+        batas: KebijakanBatasArsip
+    ): StatusLapisanArsip? {
+        val stackLama = mutex.withLock { sesiAktif[idSesi]?.toList() } ?: return null
+        if (stackLama.isEmpty()) return null
+
+        val akarLama = stackLama.first()
+        val providerAkar = registriArsipProvider.providerUntuk(akarLama.jejak.format) ?: return null
+        val ringkasanAkarBaru = (providerAkar.daftarEntri(konteks.sumberArsipAkar, akarLama.jejak.format, batas = batas)
+            as? HasilOperasi.Sukses)?.nilai ?: return null
+
+        val stackBaru = mutableListOf(
+            akarLama.copy(ringkasan = ringkasanAkarBaru)
+        )
+        val tempBaru = mutableListOf<Path>()
+
+        for (i in 1 until stackLama.size) {
+            val lama = stackLama[i]
+            val indukBaru = stackBaru[i - 1]
+            val jalur = lama.jalurDalamInduk ?: break
+            val provInduk = registriArsipProvider.providerUntuk(indukBaru.jejak.format) ?: break
+            val provAnak = registriArsipProvider.providerUntuk(lama.jejak.format) ?: break
+
+            val pathTempBaru = BantuArsipPenyimpanan.buatPathCacheSementara(
+                awalan = "nested_${lama.jejak.kedalaman}",
+                ekstensi = "_${lama.jejak.namaArsip}",
+                direktoriTemp = direktoriTemp
+            )
+            val salin = salinEntriKePathTemp(
+                providerInduk = provInduk,
+                lokasiArsipInduk = indukBaru.lokasiFisik,
+                formatInduk = indukBaru.jejak.format,
+                jalurEntri = jalur,
+                kataSandi = null,
+                batas = batas,
+                pathTujuan = pathTempBaru,
+                batasByte = batas.batasUkuranSatuEntriByte
+            )
+            if (salin is HasilOperasi.Gagal) {
+                hapusFileTempAman(pathTempBaru)
+                break
+            }
+            val lokBaru = LokasiBerkas(pathTempBaru.toString(), JenisLokasi.POSIX, lama.jejak.namaArsip)
+            val ringkasanAnak = (provAnak.daftarEntri(lokBaru, lama.jejak.format, batas = batas)
+                as? HasilOperasi.Sukses)?.nilai
+            if (ringkasanAnak == null) {
+                hapusFileTempAman(pathTempBaru)
+                break
+            }
+            tempBaru.add(pathTempBaru)
+            stackBaru.add(
+                lama.copy(
+                    lokasiFisik = lokBaru,
+                    ringkasan = ringkasanAnak,
+                    pathTempUntukDihapus = pathTempBaru
+                )
+            )
+        }
+
+        val diganti = mutex.withLock {
+            val sekarang = sesiAktif[idSesi]
+            if (sekarang == null) {
+                false
+            } else {
+                sesiAktif[idSesi] = stackBaru
+                true
+            }
+        }
+        if (diganti) {
+            withContext(NonCancellable) {
+                for (l in stackLama.asReversed()) {
+                    l.pathTempUntukDihapus?.let { hapusFileTempAman(it) }
+                }
+            }
+            return bentukStatus(stackBaru)
+        } else {
+            withContext(NonCancellable) {
+                for (p in tempBaru) hapusFileTempAman(p)
+            }
+            return null
         }
     }
 

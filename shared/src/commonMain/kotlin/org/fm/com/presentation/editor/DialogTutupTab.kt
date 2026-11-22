@@ -191,3 +191,56 @@ fun DialogSimpanSebagai(
         }
     )
 }
+
+@Composable
+fun DialogKonfirmasiPerbaruiArsip(
+    permintaan: PermintaanKonfirmasiPerbaruiArsip?,
+    sedangMenyimpan: Boolean,
+    onPerbaruiArsip: () -> Unit,
+    onBatalkanEdit: () -> Unit,
+    onKembali: () -> Unit
+) {
+    if (permintaan == null) return
+
+    AlertDialog(
+        onDismissRequest = { if (!sedangMenyimpan) onKembali() },
+        title = { Text("Perbarui Arsip?") },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    "Berkas '${permintaan.namaBerkas}' telah diedit. Perbarui isi arsip '${permintaan.namaArsip}' sekarang?"
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Jika Anda memilih 'Batalkan Edit', perubahan pada berkas akan dibatalkan dan arsip tetap seperti semula.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onPerbaruiArsip,
+                enabled = !sedangMenyimpan
+            ) {
+                Text(if (sedangMenyimpan) "Memperbarui..." else "Perbarui Arsip")
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(
+                    onClick = onKembali,
+                    enabled = !sedangMenyimpan
+                ) {
+                    Text("Kembali")
+                }
+                TextButton(
+                    onClick = onBatalkanEdit,
+                    enabled = !sedangMenyimpan
+                ) {
+                    Text("Batalkan Edit", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+    )
+}

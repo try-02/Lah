@@ -49,7 +49,7 @@ class EkstraktorDanPembuatArsipTest {
 
         val pembuat = PembuatArsip(storage, registri)
         val kompresUseCase = KompresArsipUseCase(pembuat)
-        val ekstraktor = EkstraktorArsip(registri, adapter)
+        val ekstraktor = EkstraktorArsip(registri, storage, adapter)
         val ekstrakUseCase = EkstrakArsipUseCase(ekstraktor)
 
         val dirKerja = LokasiBerkas("/kerja", JenisLokasi.POSIX, "kerja")
@@ -135,14 +135,25 @@ class EkstraktorDanPembuatArsipTest {
         assertEquals(3, lapis3.kedalamanSaatIni)
         assertTrue(lapis3.ringkasan.daftarEntri.any { it.jalurInternal == "app.json" })
 
-        // Pratinjau file dari kedalaman 3
-        val pratinjau = assertIs<HasilOperasi.Sukses<*>>(
-            ekstrakUseCase.siapkanPratinjauBerkas(idSesi, "app.json")
-        ).nilai as org.fm.com.domain.model.EntitasBerkas
-        assertEquals(false, pratinjau.dapatDitulis)
-        val pathPratinjau = pratinjau.lokasi.pengenal.toPath()
+        // Pratinjau & edit file dari kedalaman 3
+        val hasilSiapEdit = assertIs<HasilOperasi.Sukses<*>>(
+            ekstrakUseCase.siapkanPratinjauBerkas(idSesi, "app.json", untukEdit = true)
+        ).nilai as org.fm.com.domain.usecase.HasilSiapkanEditArsip
+        assertTrue(hasilSiapEdit.entitasSementara.dapatDitulis)
+        val pathPratinjau = hasilSiapEdit.entitasSementara.lokasi.pengenal.toPath()
         try {
             assertTrue(FileSystem.SYSTEM.exists(pathPratinjau))
+            // Simpan suntingan ke file sementara lalu perbarui arsip bertingkat proyek.zip
+            FileSystem.SYSTEM.write(pathPratinjau) {
+                writeUtf8("{\"versi\":2,\"diedit\":true}")
+            }
+            val statusSetelahEdit = assertIs<HasilOperasi.Sukses<*>>(
+                ekstrakUseCase.perbaruiBerkasDalamArsip(
+                    konteks = hasilSiapEdit.konteks,
+                    lokasiBerkasEdit = hasilSiapEdit.entitasSementara.lokasi
+                )
+            )
+            assertIs<org.fm.com.domain.usecase.StatusLapisanArsip>(statusSetelahEdit.nilai)
         } finally {
             runCatching { FileSystem.SYSTEM.delete(pathPratinjau, mustExist = false) }
         }
@@ -164,7 +175,7 @@ class EkstraktorDanPembuatArsipTest {
             )
         ).nilai as org.fm.com.domain.model.HasilEkstrakArsip
         assertEquals(1, hasilEkstrak.jumlahDiekstrak)
-        assertEquals("{\"versi\":1}", storage.berkas.isiDari("/keluar/app.json")?.decodeToString())
+        assertEquals("{\"versi\":2,\"diedit\":true}", storage.berkas.isiDari("/keluar/app.json")?.decodeToString())
 
         // Kembali ke lapisan 1 & tutup sesi membersihkan cache sementara
         val balikLapis1 = assertIs<HasilOperasi.Sukses<*>>(

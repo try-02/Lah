@@ -30,6 +30,7 @@ import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.model.ItemGagalArsip
 import org.fm.com.domain.model.ItemSumberKompresi
 import org.fm.com.domain.model.JenisBerkas
+import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.KebijakanBatasArsip
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.OpsiEkstrakArsip
@@ -612,6 +613,178 @@ class ProviderTar(
                 runCatching { fileSystemLokal.delete(pathTemp, mustExist = false) }
                 runCatching { fileSystemLokal.delete(pathTempIsi, mustExist = false) }
             }
+        }
+    }
+
+    internal suspend fun tulisUlangDenganPengganti(
+        pathArsipLama: Path,
+        format: FormatArsip,
+        jalurTarget: String,
+        pathFilePengganti: Path,
+        pathTempOut: Path,
+        waktuBaruEpochMs: Long? = null,
+        batas: KebijakanBatasArsip = KebijakanBatasArsip()
+    ): HasilOperasi<Unit> = withContext(ioDispatcher) {
+        if (format !in formatDidukung) {
+            return@withContext HasilOperasi.Gagal("Format bukan TAR/TGZ", PenyebabGalat.VALIDASI)
+        }
+        val validasiTarget = ValidasiPathArsip.validasi(jalurTarget, adalahFolder = false)
+        val jalurNormal = when (validasiTarget) {
+            is HasilValidasiPathArsip.Sah -> validasiTarget.jalurNormal
+            is HasilValidasiPathArsip.AbaikanRoot -> {
+                return@withContext HasilOperasi.Gagal("Jalur entri tidak valid", PenyebabGalat.VALIDASI)
+            }
+            is HasilValidasiPathArsip.TidakSah -> {
+                return@withContext HasilOperasi.Gagal(validasiTarget.alasan, PenyebabGalat.VALIDASI)
+            }
+        }
+
+        val fs = adapterPlatform.sistemBerkasLokal
+        val ukuranPengganti = fs.metadataOrNull(pathFilePengganti)?.size
+            ?: return@withContext HasilOperasi.Gagal("Berkas edit sementara tidak ditemukan", PenyebabGalat.TIDAK_DITEMUKAN)
+
+        var bufferedTar: BufferedSource? = null
+        var selesai = false
+        try {
+            bufferedTar = bukaStreamTar(SumberPathLokal.Tersedia(pathArsipLama, fs, false), format)
+            val rawSink = fs.sink(pathTempOut, mustCreate = false)
+            val targetSink = if (format == FormatArsip.TGZ) {
+                adapterPlatform.bukaSinkGzip(rawSink)
+            } else {
+                rawSink
+            }
+            var ketemuTarget = false
+
+            targetSink.buffer().use { out ->
+                while (true) {
+                    currentCoroutineContext().ensureActive()
+                    val hdr = when (val baca = bacaEntriBerikutnya(bufferedTar)) {
+                        is HasilBacaHeaderTar.Akhir -> break
+                        is HasilBacaHeaderTar.Galat -> {
+                            return@withContext HasilOperasi.Gagal(baca.pesan, PenyebabGalat.VALIDASI)
+                        }
+                        is HasilBacaHeaderTar.Entri -> baca.data
+                    }
+
+                    val valPath = ValidasiPathArsip.validasi(hdr.jalurMentah, hdr.adalahFolder)
+                    val pathSah = when (valPath) {
+                        is HasilValidasiPathArsip.AbaikanRoot -> {
+                            if (hdr.ukuranByte > 0L) {
+                                lewatiTepat(bufferedTar, hdr.ukuranByte + hitungPaddingBlok(hdr.ukuranByte))
+                            }
+                            continue
+                        }
+                        is HasilValidasiPathArsip.TidakSah -> {
+                            return@withContext HasilOperasi.Gagal(valPath.alasan, PenyebabGalat.VALIDASI)
+                        }
+                        is HasilValidasiPathArsip.Sah -> valPath
+                    }
+
+                    if (hdr.adalahTautan) {
+                        return@withContext HasilOperasi.Gagal(
+                            "Arsip mengandung tautan simbolik sehingga penulisan ulang dibatalkan demi keamanan",
+                            PenyebabGalat.VALIDASI
+                        )
+                    }
+
+                    if (hdr.adalahFolder) {
+                        if (hdr.ukuranByte > 0L) {
+                            lewatiTepat(bufferedTar, hdr.ukuranByte + hitungPaddingBlok(hdr.ukuranByte))
+                        }
+                        tulisEntriHeaderTar(
+                            out = out,
+                            jalur = "${pathSah.jalurNormal}/",
+                            ukuranByte = 0L,
+                            adalahFolder = true,
+                            waktuUbahEpochMs = hdr.waktuUbahEpochMs
+                        )
+                        continue
+                    }
+
+                    if (pathSah.jalurNormal == jalurNormal) {
+                        ketemuTarget = true
+                        if (hdr.ukuranByte > 0L) {
+                            lewatiTepat(bufferedTar, hdr.ukuranByte + hitungPaddingBlok(hdr.ukuranByte))
+                        }
+                        tulisEntriHeaderTar(
+                            out = out,
+                            jalur = jalurNormal,
+                            ukuranByte = ukuranPengganti,
+                            adalahFolder = false,
+                            waktuUbahEpochMs = waktuBaruEpochMs ?: hdr.waktuUbahEpochMs
+                        )
+                        if (ukuranPengganti > 0L) {
+                            fs.source(pathFilePengganti).buffer().use { src ->
+                                out.writeAll(src)
+                            }
+                            val pad = hitungPaddingBlok(ukuranPengganti)
+                            if (pad > 0L) out.write(ByteArray(pad.toInt()))
+                        }
+                    } else {
+                        tulisEntriHeaderTar(
+                            out = out,
+                            jalur = pathSah.jalurNormal,
+                            ukuranByte = hdr.ukuranByte,
+                            adalahFolder = false,
+                            waktuUbahEpochMs = hdr.waktuUbahEpochMs
+                        )
+                        if (hdr.ukuranByte > 0L) {
+                            salinTepat(bufferedTar, out, hdr.ukuranByte)
+                            val pad = hitungPaddingBlok(hdr.ukuranByte)
+                            if (pad > 0L) {
+                                lewatiTepat(bufferedTar, pad)
+                                out.write(ByteArray(pad.toInt()))
+                            }
+                        }
+                    }
+                }
+                out.write(ByteArray(UKURAN_BLOK_TAR * 2))
+                out.flush()
+            }
+
+            if (!ketemuTarget) {
+                return@withContext HasilOperasi.Gagal(
+                    "Entri '$jalurNormal' tidak ditemukan dalam arsip TAR/TGZ",
+                    PenyebabGalat.TIDAK_DITEMUKAN
+                )
+            }
+            selesai = true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return@withContext HasilOperasi.Gagal(
+                e.message ?: "Gagal menulis ulang arsip ${format.namaTampilan}",
+                PenyebabGalat.TIDAK_DIKETAHUI
+            )
+        } finally {
+            withContext(NonCancellable) {
+                runCatching { bufferedTar?.close() }
+                if (!selesai) {
+                    runCatching { fs.delete(pathTempOut, mustExist = false) }
+                }
+            }
+        }
+
+        val lokasiSementara = LokasiBerkas(pathTempOut.toString(), JenisLokasi.POSIX, pathTempOut.name)
+        when (val verifikasi = daftarEntri(lokasiSementara, format, batas = batas)) {
+            is HasilOperasi.Sukses -> HasilOperasi.Sukses(Unit)
+            is HasilOperasi.Gagal -> {
+                runCatching { fs.delete(pathTempOut, mustExist = false) }
+                HasilOperasi.Gagal("Verifikasi arsip hasil pembaruan gagal: ${verifikasi.pesan}", verifikasi.penyebab)
+            }
+        }
+    }
+
+    private suspend fun salinTepat(src: BufferedSource, dst: okio.BufferedSink, jumlahByte: Long) {
+        var sisa = jumlahByte
+        val buf = ByteArray(8192)
+        while (sisa > 0L) {
+            currentCoroutineContext().ensureActive()
+            val minta = minOf(sisa, buf.size.toLong()).toInt()
+            val n = src.read(buf, 0, minta)
+            if (n == -1) throw EOFException("Isi entri TAR terpotong saat menulis ulang arsip")
+            dst.write(buf, 0, n)
+            sisa -= n
         }
     }
 

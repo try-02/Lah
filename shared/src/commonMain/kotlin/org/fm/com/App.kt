@@ -98,7 +98,8 @@ fun App(
             ViewModelEditor(
                 repositoriBerkas = kontainer.repositoriBerkas,
                 riwayatPencarianUseCase = kontainer.riwayatPencarianUseCase,
-                simpanBerkasUseCase = kontainer.simpanBerkasUseCase
+                simpanBerkasUseCase = kontainer.simpanBerkasUseCase,
+                ekstrakArsipUseCase = kontainer.ekstrakArsipUseCase
             )
         }
         val vmDiff: ViewModelDiff = viewModel(key = "diff_$kunciKontainer") {
@@ -114,6 +115,8 @@ fun App(
             ViewModelArsip(
                 ekstrakArsipUseCase = kontainer.ekstrakArsipUseCase,
                 kompresArsipUseCase = kontainer.kompresArsipUseCase,
+                repositoriBerkas = kontainer.repositoriBerkas,
+                repositoriOperasi = kontainer.repositoriOperasi,
                 lokasiPintasanAwal = lokasiPintasan
             )
         }
@@ -151,11 +154,16 @@ fun App(
         LaunchedEffect(permintaanBukaEksternal?.id) {
             val lokasi = permintaanBukaEksternal?.lokasi ?: return@LaunchedEffect
             val lokasiSiap = onSiapkanAksesLokasi?.invoke(lokasi) ?: lokasi
-            ruangEditorTerbuka = false
-            ruangArsipTerbuka = false
-            vmArsip.prosesIntent(IntentArsip.TutupBrowser)
-            tabTerpilih = 0
-            vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasiSiap))
+            val arsipState = vmArsip.state.value
+            if (arsipState.browser.dialogKonfirmasiEkstrak != null || arsipState.pemilihFolder.terbuka) {
+                vmArsip.prosesIntent(IntentArsip.TerimaFolderSistemTujuan(lokasiSiap))
+            } else {
+                ruangEditorTerbuka = false
+                ruangArsipTerbuka = false
+                vmArsip.prosesIntent(IntentArsip.TutupBrowser)
+                tabTerpilih = 0
+                vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasiSiap))
+            }
         }
 
         LaunchedEffect(pesanEksternal?.first) {
@@ -172,8 +180,20 @@ fun App(
             LayarEditor(
                 viewModel = vmEditor,
                 onKembali = {
-                    ruangEditorTerbuka = false
+                    val tabAktif = vmEditor.state.value.tabAktif
+                    if (ruangArsipTerbuka && tabAktif?.konteksArsip != null) {
+                        vmEditor.prosesIntent(IntentEditor.MintaKeluarDariTabArsip(tabAktif.idTab))
+                    } else {
+                        ruangEditorTerbuka = false
+                        vmFilemanager.prosesIntent(IntentFilemanager.Segarkan)
+                    }
+                },
+                onArsipDiperbarui = { kembaliKeArsip ->
+                    vmArsip.prosesIntent(IntentArsip.SegarkanDariSesi)
                     vmFilemanager.prosesIntent(IntentFilemanager.Segarkan)
+                    if (kembaliKeArsip) {
+                        ruangEditorTerbuka = false
+                    }
                 }
             )
         } else if (ruangArsipTerbuka) {
@@ -184,10 +204,16 @@ fun App(
                     ruangArsipTerbuka = false
                     vmFilemanager.prosesIntent(IntentFilemanager.Segarkan)
                 },
-                onBukaBerkasDiEditor = { entitas ->
-                    vmEditor.prosesIntent(IntentEditor.BukaBerkas(entitas))
+                onBukaBerkasDiEditor = { entitas, konteksArsip ->
+                    vmEditor.prosesIntent(
+                        IntentEditor.BukaBerkas(
+                            entitas = entitas,
+                            konteksArsip = konteksArsip
+                        )
+                    )
                     ruangEditorTerbuka = true
-                }
+                },
+                onPilihFolderSistem = onPilihFolder
             )
         } else {
             Scaffold(

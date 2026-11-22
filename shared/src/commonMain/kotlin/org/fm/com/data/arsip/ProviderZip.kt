@@ -532,6 +532,118 @@ class ProviderZip(
         }
     }
 
+    internal suspend fun tulisUlangDenganPengganti(
+        pathArsipLama: Path,
+        format: FormatArsip,
+        jalurTarget: String,
+        pathFilePengganti: Path,
+        pathTempOut: Path,
+        waktuBaruEpochMs: Long? = null,
+        batas: KebijakanBatasArsip = KebijakanBatasArsip()
+    ): HasilOperasi<Unit> = withContext(ioDispatcher) {
+        val validasiTarget = ValidasiPathArsip.validasi(jalurTarget, adalahFolder = false)
+        val jalurNormal = when (validasiTarget) {
+            is HasilValidasiPathArsip.Sah -> validasiTarget.jalurNormal
+            is HasilValidasiPathArsip.AbaikanRoot -> {
+                return@withContext HasilOperasi.Gagal("Jalur entri tidak valid", PenyebabGalat.VALIDASI)
+            }
+            is HasilValidasiPathArsip.TidakSah -> {
+                return@withContext HasilOperasi.Gagal(validasiTarget.alasan, PenyebabGalat.VALIDASI)
+            }
+        }
+
+        val fs = adapterPlatform.sistemBerkasLokal
+        val pathSumberLama = SumberPathLokal.Tersedia(pathArsipLama, fs, harusDihapusSetelahnya = false)
+        val ringkasan = when (val meta = bacaMetadataZipDariPath(pathSumberLama, format, batas, tolakZipSlipFatal = true)) {
+            is HasilOperasi.Sukses -> meta.nilai
+            is HasilOperasi.Gagal -> return@withContext meta
+        }
+
+        if (ringkasan.daftarEntri.any { it.terenkripsi }) {
+            return@withContext HasilOperasi.Gagal(
+                "Arsip mengandung entri terenkripsi sehingga tidak dapat ditulis ulang dengan aman",
+                PenyebabGalat.TIDAK_DIDUKUNG
+            )
+        }
+        if (ringkasan.daftarEntri.any { it.adalahTautanSimbolik }) {
+            return@withContext HasilOperasi.Gagal(
+                "Arsip mengandung tautan simbolik sehingga penulisan ulang dibatalkan demi keamanan",
+                PenyebabGalat.VALIDASI
+            )
+        }
+        if (ringkasan.daftarEntri.none { !it.adalahFolder && it.jalurInternal == jalurNormal }) {
+            return@withContext HasilOperasi.Gagal(
+                "Entri '$jalurNormal' tidak ditemukan dalam arsip untuk diperbarui",
+                PenyebabGalat.TIDAK_DITEMUKAN
+            )
+        }
+
+        val zipLama = adapterPlatform.bukaZipDariPath(fs, pathArsipLama)
+        val penulis = adapterPlatform.bukaPenulisZip(fs, pathTempOut)
+        var selesai = false
+        val buf = ByteArray(8 * 1024)
+        try {
+            for (entri in ringkasan.daftarEntri) {
+                currentCoroutineContext().ensureActive()
+                if (entri.adalahFolder) {
+                    penulis.mulaiEntri(entri.jalurInternal, adalahFolder = true, waktuUbahEpochMs = entri.waktuUbahEpochMs)
+                    penulis.tutupEntri()
+                    continue
+                }
+
+                val adalahTarget = entri.jalurInternal == jalurNormal
+                val waktu = if (adalahTarget) (waktuBaruEpochMs ?: entri.waktuUbahEpochMs) else entri.waktuUbahEpochMs
+                penulis.mulaiEntri(entri.jalurInternal, adalahFolder = false, waktuUbahEpochMs = waktu)
+
+                val source = if (adalahTarget) {
+                    fs.source(pathFilePengganti)
+                } else {
+                    zipLama.bukaSumberEntri(entri.jalurInternal)
+                }
+                source.buffer().use { src ->
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val n = src.read(buf)
+                        if (n == -1) break
+                        penulis.tulisPotongan(buf, 0, n)
+                    }
+                }
+                penulis.tutupEntri()
+            }
+            penulis.selesaikanDanTutup()
+            selesai = true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return@withContext HasilOperasi.Gagal(
+                petakanPesanErrorZip(e, "Gagal menulis ulang arsip ZIP"),
+                PenyebabGalat.TIDAK_DIKETAHUI
+            )
+        } finally {
+            withContext(NonCancellable) {
+                runCatching { zipLama.tutup() }
+                if (!selesai) {
+                    penulis.batalkanDanTutup()
+                }
+            }
+        }
+
+        when (
+            val verifikasi = bacaMetadataZipDariPath(
+                SumberPathLokal.Tersedia(pathTempOut, fs, harusDihapusSetelahnya = false),
+                format,
+                batas,
+                tolakZipSlipFatal = true
+            )
+        ) {
+            is HasilOperasi.Sukses -> HasilOperasi.Sukses(Unit)
+            is HasilOperasi.Gagal -> {
+                runCatching { fs.delete(pathTempOut, mustExist = false) }
+                HasilOperasi.Gagal("Verifikasi arsip hasil pembaruan gagal: ${verifikasi.pesan}", verifikasi.penyebab)
+            }
+        }
+    }
+
     private suspend fun kumpulkanItemRekursifUntukArsip(
         daftarSumber: List<ItemSumberKompresi>
     ): HasilOperasi<List<ItemSiapArsip>> {

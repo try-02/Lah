@@ -24,10 +24,19 @@ import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.OpsiEkstrakArsip
 import org.fm.com.domain.model.PenyebabGalat
 import org.fm.com.domain.model.ValidasiNama
+import kotlinx.coroutines.flow.first
+import org.fm.com.domain.model.JenisBerkas
+import org.fm.com.domain.model.OperasiBerkas
+import org.fm.com.domain.repository.RepositoriBerkas
+import org.fm.com.domain.repository.RepositoriOperasiBerkas
+import org.fm.com.domain.usecase.BuatBerkasUseCase
 import org.fm.com.domain.usecase.EkstrakArsipUseCase
 import org.fm.com.domain.usecase.KompresArsipUseCase
+import org.fm.com.domain.usecase.KonteksEditArsip
 import org.fm.com.domain.usecase.LapisanJejakArsip
+import org.fm.com.domain.usecase.SegmenLokasi
 import org.fm.com.domain.usecase.StatusLapisanArsip
+import org.fm.com.domain.usecase.TelusuriLokasiUseCase
 import org.fm.com.presentation.filemanager.PemetaanDomainUi
 
 private const val ID_SESI_UTAMA = "sesi_browser_arsip"
@@ -66,7 +75,20 @@ data class PermintaanKonfirmasiTimpaKompres(
 @Immutable
 data class AcaraBukaEditorArsip(
     val id: Long,
-    val entitas: EntitasBerkas
+    val entitas: EntitasBerkas,
+    val konteks: KonteksEditArsip
+)
+
+@Immutable
+data class StatePemilihFolderTujuan(
+    val terbuka: Boolean = false,
+    val lokasiSaatIni: LokasiBerkas? = null,
+    val segmenBreadcrumb: List<SegmenLokasi> = emptyList(),
+    val daftarSubfolder: List<EntitasBerkas> = emptyList(),
+    val sedangMemuat: Boolean = false,
+    val dapatMembuatFolder: Boolean = true,
+    val dialogBuatFolderTerbuka: Boolean = false,
+    val pesanGalat: String? = null
 )
 
 @Immutable
@@ -139,6 +161,7 @@ data class StateKompresArsip(
 data class StateArsip(
     val browser: StateBrowserArsip = StateBrowserArsip(),
     val kompres: StateKompresArsip = StateKompresArsip(),
+    val pemilihFolder: StatePemilihFolderTujuan = StatePemilihFolderTujuan(),
     val folderTujuanBawaan: LokasiBerkas? = null,
     val lokasiPintasan: List<LokasiBerkas> = emptyList(),
     val acaraBukaEditor: AcaraBukaEditorArsip? = null,
@@ -178,6 +201,17 @@ sealed interface IntentArsip {
     data object TutupLaporanEkstrak : IntentArsip
     data class SetDialogInfoKapabilitas(val buka: Boolean) : IntentArsip
     data class SetPesanInfoBrowser(val pesan: String?) : IntentArsip
+    data object SegarkanDariSesi : IntentArsip
+
+    // Pemilih folder tujuan bebas
+    data object BukaPemilihFolderTujuan : IntentArsip
+    data class BukaLokasiDiPemilihFolder(val lokasi: LokasiBerkas) : IntentArsip
+    data class NavigasiSegmenPemilihFolder(val segmen: SegmenLokasi) : IntentArsip
+    data class SetDialogBuatFolderTujuan(val buka: Boolean) : IntentArsip
+    data class BuatFolderDiPemilihTujuan(val nama: String) : IntentArsip
+    data object KonfirmasiPemilihFolderTujuan : IntentArsip
+    data object TutupPemilihFolderTujuan : IntentArsip
+    data class TerimaFolderSistemTujuan(val lokasi: LokasiBerkas) : IntentArsip
 
     // T47 Kompres
     data class BukaDialogKompres(
@@ -201,6 +235,10 @@ sealed interface IntentArsip {
 class ViewModelArsip(
     private val ekstrakArsipUseCase: EkstrakArsipUseCase,
     private val kompresArsipUseCase: KompresArsipUseCase,
+    private val repositoriBerkas: RepositoriBerkas? = null,
+    repositoriOperasi: RepositoriOperasiBerkas? = repositoriBerkas as? RepositoriOperasiBerkas,
+    private val telusuriLokasiUseCase: TelusuriLokasiUseCase = TelusuriLokasiUseCase(),
+    private val buatBerkasUseCase: BuatBerkasUseCase? = repositoriOperasi?.let { BuatBerkasUseCase(it) },
     lokasiPintasanAwal: List<LokasiBerkas> = emptyList()
 ) : ViewModel() {
 
@@ -208,9 +246,11 @@ class ViewModelArsip(
     val state: StateFlow<StateArsip> = _state.asStateFlow()
 
     private var pekerjaanMuat: Job? = null
+    private var pekerjaanMuatFolderTujuan: Job? = null
     private var pekerjaanEkstrak: Job? = null
     private var pekerjaanKompres: Job? = null
     private var urutanAcara = 0L
+    private val riwayatHierarkiPemilih = mutableListOf<LokasiBerkas>()
 
     fun prosesIntent(intent: IntentArsip) {
         when (intent) {
@@ -280,6 +320,20 @@ class ViewModelArsip(
             is IntentArsip.SetPesanInfoBrowser -> _state.update {
                 it.copy(browser = it.browser.copy(pesanInfo = intent.pesan))
             }
+            is IntentArsip.SegarkanDariSesi -> segarkanDariSesi()
+            is IntentArsip.BukaPemilihFolderTujuan -> bukaPemilihFolderTujuan()
+            is IntentArsip.BukaLokasiDiPemilihFolder -> muatPemilihFolder(intent.lokasi, dariSegmen = false)
+            is IntentArsip.NavigasiSegmenPemilihFolder -> navigasiSegmenPemilih(intent.segmen)
+            is IntentArsip.SetDialogBuatFolderTujuan -> _state.update {
+                it.copy(pemilihFolder = it.pemilihFolder.copy(dialogBuatFolderTerbuka = intent.buka))
+            }
+            is IntentArsip.BuatFolderDiPemilihTujuan -> buatFolderDiPemilihTujuan(intent.nama)
+            is IntentArsip.KonfirmasiPemilihFolderTujuan -> konfirmasiPemilihFolderTujuan()
+            is IntentArsip.TutupPemilihFolderTujuan -> {
+                pekerjaanMuatFolderTujuan?.cancel()
+                _state.update { it.copy(pemilihFolder = StatePemilihFolderTujuan()) }
+            }
+            is IntentArsip.TerimaFolderSistemTujuan -> terimaFolderSistemTujuan(intent.lokasi)
 
             is IntentArsip.BukaDialogKompres -> bukaDialogKompres(intent.daftarSumber, intent.tujuanInduk)
             is IntentArsip.UbahFormatKompres -> ubahFormatKompres(intent.format)
@@ -430,11 +484,185 @@ class ViewModelArsip(
 
     private fun tutupBrowser() {
         pekerjaanMuat?.cancel()
+        pekerjaanMuatFolderTujuan?.cancel()
         pekerjaanEkstrak?.cancel()
         viewModelScope.launch {
             ekstrakArsipUseCase.tutupSesi(ID_SESI_UTAMA)
         }
-        _state.update { it.copy(browser = StateBrowserArsip()) }
+        _state.update {
+            it.copy(
+                browser = StateBrowserArsip(),
+                pemilihFolder = StatePemilihFolderTujuan()
+            )
+        }
+    }
+
+    private fun segarkanDariSesi() {
+        viewModelScope.launch {
+            val status = ekstrakArsipUseCase.ambilStatusSesi(ID_SESI_UTAMA) ?: return@launch
+            val folderTetap = _state.value.browser.folderDalamLapisan
+            terapkanStatusLapisan(status, folderDalamBaru = folderTetap)
+        }
+    }
+
+    private fun bukaPemilihFolderTujuan() {
+        val br = _state.value.browser
+        val tujuanAwal = br.dialogKonfirmasiEkstrak?.folderTujuan
+            ?: _state.value.folderTujuanBawaan
+            ?: _state.value.lokasiPintasan.firstOrNull()
+            ?: return
+        riwayatHierarkiPemilih.clear()
+        if (tujuanAwal.jenis != org.fm.com.domain.model.JenisLokasi.POSIX) {
+            riwayatHierarkiPemilih.add(tujuanAwal)
+        }
+        muatPemilihFolder(tujuanAwal, dariSegmen = false)
+    }
+
+    private fun navigasiSegmenPemilih(segmen: SegmenLokasi) {
+        val idx = riwayatHierarkiPemilih.indexOfFirst { it == segmen.lokasi }
+        if (idx >= 0) {
+            while (riwayatHierarkiPemilih.size > idx + 1) {
+                riwayatHierarkiPemilih.removeAt(riwayatHierarkiPemilih.lastIndex)
+            }
+        }
+        muatPemilihFolder(segmen.lokasi, dariSegmen = true)
+    }
+
+    private fun muatPemilihFolder(lokasi: LokasiBerkas, dariSegmen: Boolean) {
+        val repo = repositoriBerkas ?: return
+        pekerjaanMuatFolderTujuan?.cancel()
+
+        if (!dariSegmen) {
+            if (lokasi.jenis == org.fm.com.domain.model.JenisLokasi.POSIX) {
+                riwayatHierarkiPemilih.clear()
+            } else {
+                val adalahAnak = _state.value.pemilihFolder.daftarSubfolder.any { it.lokasi == lokasi }
+                if (adalahAnak && riwayatHierarkiPemilih.isNotEmpty() && riwayatHierarkiPemilih.last().jenis == lokasi.jenis) {
+                    if (riwayatHierarkiPemilih.last() != lokasi) riwayatHierarkiPemilih.add(lokasi)
+                } else {
+                    val idxAda = riwayatHierarkiPemilih.indexOfFirst { it == lokasi }
+                    if (idxAda >= 0) {
+                        while (riwayatHierarkiPemilih.size > idxAda + 1) {
+                            riwayatHierarkiPemilih.removeAt(riwayatHierarkiPemilih.lastIndex)
+                        }
+                    } else {
+                        riwayatHierarkiPemilih.clear()
+                        riwayatHierarkiPemilih.add(lokasi)
+                    }
+                }
+            }
+        }
+
+        val segmen = telusuriLokasiUseCase.buatSegmenBreadcrumb(lokasi, riwayatHierarkiPemilih)
+        val dapatBuat = repo.kapabilitas(lokasi)?.apakahDidukung(OperasiBerkas.MEMBUAT) ?: true
+
+        _state.update {
+            it.copy(
+                pemilihFolder = StatePemilihFolderTujuan(
+                    terbuka = true,
+                    lokasiSaatIni = lokasi,
+                    segmenBreadcrumb = segmen,
+                    daftarSubfolder = emptyList(),
+                    sedangMemuat = true,
+                    dapatMembuatFolder = dapatBuat && buatBerkasUseCase != null,
+                    dialogBuatFolderTerbuka = false,
+                    pesanGalat = null
+                )
+            )
+        }
+
+        pekerjaanMuatFolderTujuan = viewModelScope.launch {
+            val hasil = runCatching { repo.daftarIsi(lokasi).first() }.getOrNull()
+            when (hasil) {
+                is HasilOperasi.Sukses -> {
+                    val folderSaja = hasil.nilai
+                        .filter { it.jenis == JenisBerkas.FOLDER }
+                        .sortedBy { it.nama.lowercase() }
+                    _state.update { st ->
+                        st.copy(
+                            pemilihFolder = st.pemilihFolder.copy(
+                                daftarSubfolder = folderSaja,
+                                sedangMemuat = false,
+                                pesanGalat = null
+                            )
+                        )
+                    }
+                }
+                is HasilOperasi.Gagal -> {
+                    _state.update { st ->
+                        st.copy(
+                            pemilihFolder = st.pemilihFolder.copy(
+                                sedangMemuat = false,
+                                pesanGalat = hasil.pesan
+                            )
+                        )
+                    }
+                }
+                null -> {
+                    _state.update { st ->
+                        st.copy(
+                            pemilihFolder = st.pemilihFolder.copy(
+                                sedangMemuat = false,
+                                pesanGalat = "Gagal memuat daftar folder tujuan"
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun buatFolderDiPemilihTujuan(nama: String) {
+        val pf = _state.value.pemilihFolder
+        val induk = pf.lokasiSaatIni ?: return
+        val uc = buatBerkasUseCase ?: return
+        viewModelScope.launch {
+            _state.update {
+                it.copy(pemilihFolder = it.pemilihFolder.copy(dialogBuatFolderTerbuka = false, sedangMemuat = true))
+            }
+            when (val hasil = uc.buatFolder(induk, nama, konfirmasi = false)) {
+                is HasilOperasi.Sukses -> {
+                    muatPemilihFolder(hasil.nilai.lokasi, dariSegmen = false)
+                }
+                is HasilOperasi.Gagal -> {
+                    _state.update {
+                        it.copy(pemilihFolder = it.pemilihFolder.copy(sedangMemuat = false, pesanGalat = hasil.pesan))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun konfirmasiPemilihFolderTujuan() {
+        val lokasiDipilih = _state.value.pemilihFolder.lokasiSaatIni ?: return
+        pekerjaanMuatFolderTujuan?.cancel()
+        _state.update { st ->
+            val dialog = st.browser.dialogKonfirmasiEkstrak
+            st.copy(
+                pemilihFolder = StatePemilihFolderTujuan(),
+                folderTujuanBawaan = lokasiDipilih,
+                browser = st.browser.copy(
+                    dialogKonfirmasiEkstrak = dialog?.copy(folderTujuan = lokasiDipilih)
+                )
+            )
+        }
+    }
+
+    private fun terimaFolderSistemTujuan(lokasi: LokasiBerkas) {
+        _state.update { st ->
+            val dialog = st.browser.dialogKonfirmasiEkstrak
+            val pemilih = st.pemilihFolder
+            st.copy(
+                folderTujuanBawaan = lokasi,
+                browser = st.browser.copy(
+                    dialogKonfirmasiEkstrak = dialog?.copy(folderTujuan = lokasi)
+                ),
+                pemilihFolder = if (pemilih.terbuka) pemilih.copy(lokasiSaatIni = lokasi) else pemilih
+            )
+        }
+        if (_state.value.pemilihFolder.terbuka) {
+            muatPemilihFolder(lokasi, dariSegmen = false)
+        }
     }
 
     private fun terapkanStatusLapisan(status: StatusLapisanArsip, folderDalamBaru: String) {
@@ -525,12 +753,15 @@ class ViewModelArsip(
         }
 
         val batas = _state.value.browser.batasKebijakan
+        val kapAktif = _state.value.browser.kapabilitasAktif
+        val bolehEdit = kapAktif?.dapatBuat == true
         viewModelScope.launch {
             _state.update { it.copy(browser = it.browser.copy(sedangMemuat = true)) }
             when (
                 val hasil = ekstrakArsipUseCase.siapkanPratinjauBerkas(
                     idSesi = ID_SESI_UTAMA,
                     jalurInternal = entri.jalurInternal,
+                    untukEdit = bolehEdit,
                     batas = batas
                 )
             ) {
@@ -540,7 +771,8 @@ class ViewModelArsip(
                             browser = st.browser.copy(sedangMemuat = false),
                             acaraBukaEditor = AcaraBukaEditorArsip(
                                 id = ++urutanAcara,
-                                entitas = hasil.nilai
+                                entitas = hasil.nilai.entitasSementara,
+                                konteks = hasil.nilai.konteks
                             )
                         )
                     }
@@ -1002,6 +1234,7 @@ class ViewModelArsip(
 
     override fun onCleared() {
         pekerjaanMuat?.cancel()
+        pekerjaanMuatFolderTujuan?.cancel()
         pekerjaanEkstrak?.cancel()
         pekerjaanKompres?.cancel()
     }

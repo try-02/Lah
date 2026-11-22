@@ -5,6 +5,7 @@ import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.SidikIsiBerkas
 import org.fm.com.domain.usecase.HasilStatistikTeks
+import org.fm.com.domain.usecase.KonteksEditArsip
 import org.fm.com.domain.usecase.RentangKecocokan
 
 @Immutable
@@ -53,6 +54,21 @@ data class PermintaanSimpanSebagai(
 )
 
 @Immutable
+data class PermintaanKonfirmasiPerbaruiArsip(
+    val idTab: String,
+    val namaBerkas: String,
+    val namaArsip: String,
+    val tutupSetelahPerbarui: Boolean,
+    val kembaliKeArsipSetelahSelesai: Boolean = false
+)
+
+@Immutable
+data class AcaraArsipDiperbaruiDariEditor(
+    val id: Long,
+    val kembaliKeArsip: Boolean
+)
+
+@Immutable
 data class StateEditor(
     val daftarTab: List<ModelTabEditor> = emptyList(),
     val idTabAktif: String? = null,
@@ -61,6 +77,8 @@ data class StateEditor(
     val sedangMenyimpan: Boolean = false,
     val tabMenungguKonfirmasiTutup: ModelTabEditor? = null,
     val konfirmasiKonflikSimpan: PermintaanKonfirmasiKonflikSimpan? = null,
+    val konfirmasiPerbaruiArsip: PermintaanKonfirmasiPerbaruiArsip? = null,
+    val acaraArsipDiperbarui: AcaraArsipDiperbaruiDariEditor? = null,
     val dialogSimpanSebagai: PermintaanSimpanSebagai? = null,
     val dialogLompatBarisTerbuka: Boolean = false,
     val dialogStatistik: StateDialogStatistik = StateDialogStatistik(),
@@ -81,7 +99,8 @@ data class StateEditor(
 sealed interface IntentEditor {
     data class BukaBerkas(
         val entitas: EntitasBerkas,
-        val barisTujuan: Int? = null
+        val barisTujuan: Int? = null,
+        val konteksArsip: KonteksEditArsip? = null
     ) : IntentEditor
 
     data class BukaLokasi(
@@ -114,6 +133,11 @@ sealed interface IntentEditor {
     data object TutupDialogSimpanSebagai : IntentEditor
     data object KonfirmasiTimpaKonflikSimpan : IntentEditor
     data object BatalKonflikSimpan : IntentEditor
+    data class MintaKeluarDariTabArsip(val idTab: String) : IntentEditor
+    data object KonfirmasiPerbaruiArsip : IntentEditor
+    data object BatalkanEditDalamArsip : IntentEditor
+    data object TutupDialogPerbaruiArsip : IntentEditor
+    data object KonsumsiAcaraArsipDiperbarui : IntentEditor
 
     data class HitungStatistikTab(val idTab: String) : IntentEditor
     data object TutupDialogStatistik : IntentEditor

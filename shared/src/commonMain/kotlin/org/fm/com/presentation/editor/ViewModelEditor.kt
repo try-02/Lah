@@ -16,13 +16,16 @@ import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.OperasiBerkas
 import org.fm.com.domain.model.SidikIsiBerkas
 import org.fm.com.domain.repository.RepositoriBerkas
+import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.usecase.BukaBerkasTeksUseCase
 import org.fm.com.domain.usecase.CariGantiUseCase
+import org.fm.com.domain.usecase.EkstrakArsipUseCase
 import org.fm.com.domain.usecase.HasilBukaBerkasTeks
 import org.fm.com.domain.usecase.HasilCariEditor
 import org.fm.com.domain.usecase.HasilOperasiGanti
 import org.fm.com.domain.usecase.HasilSimpanBerkas
 import org.fm.com.domain.usecase.HasilStatistikTeks
+import org.fm.com.domain.usecase.KonteksEditArsip
 import org.fm.com.domain.usecase.OpsiCariEditor
 import org.fm.com.domain.usecase.RentangKecocokan
 import org.fm.com.domain.usecase.RiwayatPencarianUseCase
@@ -36,6 +39,7 @@ class ViewModelEditor(
     private val riwayatPencarianUseCase: RiwayatPencarianUseCase? = null,
     private val statistikTeksUseCase: StatistikTeksUseCase = StatistikTeksUseCase(),
     private val simpanBerkasUseCase: SimpanBerkasUseCase? = null,
+    private val ekstrakArsipUseCase: EkstrakArsipUseCase? = null,
     private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ViewModel() {
     private val _state = MutableStateFlow(StateEditor())
@@ -49,6 +53,7 @@ class ViewModelEditor(
     private val sejarahPerTab = mutableMapOf<String, SejarahUndo>()
     private var penghitungTabKosong = 0L
     private var urutanNavigasi = 0L
+    private var urutanAcaraArsip = 0L
 
     init {
         if (riwayatPencarianUseCase != null) {
@@ -73,7 +78,8 @@ class ViewModelEditor(
                     dapatDitulis = entitas.dapatDitulis,
                     ukuranByte = entitas.ukuranByte,
                     waktuUbahMs = entitas.waktuUbahEpochMs,
-                    barisTujuan = intent.barisTujuan
+                    barisTujuan = intent.barisTujuan,
+                    konteksArsip = intent.konteksArsip
                 )
             }
             is IntentEditor.BukaLokasi -> {
@@ -100,6 +106,11 @@ class ViewModelEditor(
             is IntentEditor.TutupDialogSimpanSebagai -> _state.update { it.copy(dialogSimpanSebagai = null) }
             is IntentEditor.KonfirmasiTimpaKonflikSimpan -> konfirmasiTimpaKonflikSimpan()
             is IntentEditor.BatalKonflikSimpan -> _state.update { it.copy(konfirmasiKonflikSimpan = null) }
+            is IntentEditor.MintaKeluarDariTabArsip -> mintaKeluarDariTabArsip(intent.idTab)
+            is IntentEditor.KonfirmasiPerbaruiArsip -> konfirmasiPerbaruiArsip()
+            is IntentEditor.BatalkanEditDalamArsip -> batalkanEditDalamArsip()
+            is IntentEditor.TutupDialogPerbaruiArsip -> _state.update { it.copy(konfirmasiPerbaruiArsip = null) }
+            is IntentEditor.KonsumsiAcaraArsipDiperbarui -> _state.update { it.copy(acaraArsipDiperbarui = null) }
             is IntentEditor.HitungStatistikTab -> hitungStatistikTab(intent.idTab)
             is IntentEditor.TutupDialogStatistik -> tutupDialogStatistik()
             is IntentEditor.UbahTeks -> ubahTeks(
@@ -173,16 +184,31 @@ class ViewModelEditor(
         dapatDitulis: Boolean,
         ukuranByte: Long?,
         waktuUbahMs: Long?,
-        barisTujuan: Int?
+        barisTujuan: Int?,
+        konteksArsip: KonteksEditArsip? = null
     ) {
         val idTab = buatIdTabLokasi(lokasi)
-        val tabAda = _state.value.daftarTab.firstOrNull { it.idTab == idTab }
+        val tabAda = if (konteksArsip != null) {
+            _state.value.daftarTab.firstOrNull { tab ->
+                val k = tab.konteksArsip
+                k != null &&
+                    k.sumberArsipAkar == konteksArsip.sumberArsipAkar &&
+                    k.rantaiJalurArsipBersarang == konteksArsip.rantaiJalurArsipBersarang &&
+                    k.jalurEntriTarget == konteksArsip.jalurEntriTarget
+            }
+        } else {
+            _state.value.daftarTab.firstOrNull { it.idTab == idTab }
+        }
         if (tabAda != null) {
-            pilihTab(idTab)
+            if (konteksArsip != null && tabAda.lokasi != null && tabAda.lokasi != lokasi) {
+                val lokasiBaru = lokasi
+                viewModelScope.launch { ekstrakArsipUseCase?.bersihkanBerkasSementara(lokasiBaru) }
+            }
+            pilihTab(tabAda.idTab)
             if (tabAda.statusMuat == StatusMuatTab.SIAP && barisTujuan != null) {
-                lompatKeBaris(idTab, barisTujuan)
+                lompatKeBaris(tabAda.idTab, barisTujuan)
             } else if (tabAda.statusMuat == StatusMuatTab.GAGAL) {
-                muatIsiTab(idTab, lokasi, barisTujuan)
+                muatIsiTab(tabAda.idTab, tabAda.lokasi ?: lokasi, barisTujuan)
             }
             return
         }
@@ -193,6 +219,7 @@ class ViewModelEditor(
             idTab = idTab,
             lokasi = lokasi,
             namaBerkas = nama.ifBlank { "Berkas" },
+            konteksArsip = konteksArsip,
             statusMuat = StatusMuatTab.MEMUAT,
             hanyaBacaPermanen = hanyaBacaPermanen,
             modeHanyaBaca = hanyaBacaPermanen,
@@ -342,10 +369,51 @@ class ViewModelEditor(
 
     private fun mintaTutupTab(idTab: String) {
         val tab = _state.value.daftarTab.firstOrNull { it.idTab == idTab } ?: return
-        if (tab.adaPerubahanBelumTersimpan) {
+        val kArsip = tab.konteksArsip
+        if (kArsip != null && tab.adaPerubahanBelumTersimpan && !tab.hanyaBacaPermanen) {
+            _state.update {
+                it.copy(
+                    konfirmasiPerbaruiArsip = PermintaanKonfirmasiPerbaruiArsip(
+                        idTab = tab.idTab,
+                        namaBerkas = tab.namaBerkas,
+                        namaArsip = kArsip.namaArsipTampilan,
+                        tutupSetelahPerbarui = true,
+                        kembaliKeArsipSetelahSelesai = false
+                    )
+                )
+            }
+        } else if (tab.adaPerubahanBelumTersimpan) {
             _state.update { it.copy(tabMenungguKonfirmasiTutup = tab) }
         } else {
             hapusTabInternal(idTab)
+        }
+    }
+
+    private fun mintaKeluarDariTabArsip(idTab: String) {
+        val tab = _state.value.daftarTab.firstOrNull { it.idTab == idTab } ?: return
+        val kArsip = tab.konteksArsip ?: return
+        if (tab.adaPerubahanBelumTersimpan && !tab.hanyaBacaPermanen) {
+            _state.update {
+                it.copy(
+                    konfirmasiPerbaruiArsip = PermintaanKonfirmasiPerbaruiArsip(
+                        idTab = tab.idTab,
+                        namaBerkas = tab.namaBerkas,
+                        namaArsip = kArsip.namaArsipTampilan,
+                        tutupSetelahPerbarui = true,
+                        kembaliKeArsipSetelahSelesai = true
+                    )
+                )
+            }
+        } else {
+            hapusTabInternal(tab.idTab)
+            _state.update {
+                it.copy(
+                    acaraArsipDiperbarui = AcaraArsipDiperbaruiDariEditor(
+                        id = ++urutanAcaraArsip,
+                        kembaliKeArsip = true
+                    )
+                )
+            }
         }
     }
 
@@ -373,6 +441,16 @@ class ViewModelEditor(
                 return
             }
         }
+        val lokasiArsipUntukDibersihkan = _state.value.daftarTab
+            .filter { it.konteksArsip != null && it.lokasi != null }
+            .mapNotNull { it.lokasi }
+        if (lokasiArsipUntukDibersihkan.isNotEmpty() && ekstrakArsipUseCase != null) {
+            viewModelScope.launch {
+                for (lok in lokasiArsipUntukDibersihkan) {
+                    ekstrakArsipUseCase.bersihkanBerkasSementara(lok)
+                }
+            }
+        }
         pekerjaanMuat.values.forEach { it.cancel() }
         pekerjaanMuat.clear()
         pekerjaanCari?.cancel()
@@ -386,6 +464,7 @@ class ViewModelEditor(
                 sedangMenyimpan = false,
                 tabMenungguKonfirmasiTutup = null,
                 konfirmasiKonflikSimpan = null,
+                konfirmasiPerbaruiArsip = null,
                 dialogSimpanSebagai = null,
                 dialogLompatBarisTerbuka = false,
                 dialogStatistik = StateDialogStatistik(),
@@ -402,6 +481,11 @@ class ViewModelEditor(
     }
 
     private fun hapusTabInternal(idTab: String) {
+        val tabTarget = _state.value.daftarTab.firstOrNull { it.idTab == idTab }
+        if (tabTarget?.konteksArsip != null && tabTarget.lokasi != null && ekstrakArsipUseCase != null) {
+            val lok = tabTarget.lokasi
+            viewModelScope.launch { ekstrakArsipUseCase.bersihkanBerkasSementara(lok) }
+        }
         pekerjaanMuat.remove(idTab)?.cancel()
         sejarahPerTab.remove(idTab)
         if (_state.value.idTabAktif == idTab) {
@@ -418,6 +502,7 @@ class ViewModelEditor(
             }
             val menungguBaru = if (st.tabMenungguKonfirmasiTutup?.idTab == idTab) null else st.tabMenungguKonfirmasiTutup
             val konflikBaru = if (st.konfirmasiKonflikSimpan?.idTab == idTab) null else st.konfirmasiKonflikSimpan
+            val arsipKonfBaru = if (st.konfirmasiPerbaruiArsip?.idTab == idTab) null else st.konfirmasiPerbaruiArsip
             val simpanSebagaiBaru = if (st.dialogSimpanSebagai?.idTab == idTab) null else st.dialogSimpanSebagai
             val cgBaru = if (daftarBaru.isEmpty()) {
                 st.cariGanti.copy(
@@ -436,6 +521,7 @@ class ViewModelEditor(
                 idTabAktif = aktifBaru,
                 tabMenungguKonfirmasiTutup = menungguBaru,
                 konfirmasiKonflikSimpan = konflikBaru,
+                konfirmasiPerbaruiArsip = arsipKonfBaru,
                 dialogSimpanSebagai = simpanSebagaiBaru,
                 dialogStatistik = if (st.idTabAktif == idTab) StateDialogStatistik() else st.dialogStatistik,
                 cariGanti = cgBaru
@@ -455,6 +541,21 @@ class ViewModelEditor(
         if (tab.statusMuat != StatusMuatTab.SIAP) return
         if (tab.hanyaBacaPermanen) {
             _state.update { it.copy(pesanInfo = "Lokasi berkas tidak mendukung penulisan. Gunakan Simpan Sebagai.") }
+            return
+        }
+        val kArsip = tab.konteksArsip
+        if (kArsip != null) {
+            _state.update {
+                it.copy(
+                    konfirmasiPerbaruiArsip = PermintaanKonfirmasiPerbaruiArsip(
+                        idTab = idTab,
+                        namaBerkas = tab.namaBerkas,
+                        namaArsip = kArsip.namaArsipTampilan,
+                        tutupSetelahPerbarui = tutupSetelahSimpan,
+                        kembaliKeArsipSetelahSelesai = false
+                    )
+                )
+            }
             return
         }
         val lokasi = tab.lokasi
@@ -556,6 +657,134 @@ class ViewModelEditor(
             paksaTimpaKonflik = true,
             tutupSetelahSimpan = permintaan.tutupSetelahSimpan
         )
+    }
+
+    private fun konfirmasiPerbaruiArsip() {
+        val permintaan = _state.value.konfirmasiPerbaruiArsip ?: return
+        val tab = _state.value.daftarTab.firstOrNull { it.idTab == permintaan.idTab } ?: return
+        val kArsip = tab.konteksArsip ?: return
+        val lokasiTemp = tab.lokasi ?: return
+        val simpanUc = simpanBerkasUseCase ?: run {
+            _state.update { it.copy(konfirmasiPerbaruiArsip = null, pesanInfo = "Layanan simpan belum tersedia") }
+            return
+        }
+        val arsipUc = ekstrakArsipUseCase ?: run {
+            _state.update { it.copy(konfirmasiPerbaruiArsip = null, pesanInfo = "Layanan pembaruan arsip belum tersedia") }
+            return
+        }
+
+        val snapshotIsi = tab.isiSaatIni
+        pekerjaanSimpan?.cancel()
+        _state.update { it.copy(konfirmasiPerbaruiArsip = null, sedangMenyimpan = true) }
+
+        val job = viewModelScope.launch {
+            // 1. Tulis ke berkas kerja sementara dengan verifikasi
+            val hasilTemp = simpanUc.simpan(
+                lokasi = lokasiTemp,
+                isiTeks = snapshotIsi,
+                encoding = tab.encoding,
+                akhirBaris = tab.akhirBaris,
+                sidikDiharapkan = null,
+                paksaTimpaKonflik = true
+            )
+            if (hasilTemp !is HasilSimpanBerkas.Sukses) {
+                val pesan = when (hasilTemp) {
+                    is HasilSimpanBerkas.Gagal -> hasilTemp.pesan
+                    is HasilSimpanBerkas.KonflikEksternal -> hasilTemp.pesan
+                    is HasilSimpanBerkas.KonflikTujuan -> hasilTemp.pesan
+                    is HasilSimpanBerkas.Sukses -> ""
+                }
+                _state.update {
+                    it.copy(
+                        sedangMenyimpan = false,
+                        pesanInfo = "Gagal menyimpan salinan kerja: $pesan"
+                    )
+                }
+                return@launch
+            }
+
+            // 2. Bangun ulang & verifikasi arsip target
+            when (val hasilArsip = arsipUc.perbaruiBerkasDalamArsip(kArsip, hasilTemp.lokasiHasil)) {
+                is HasilOperasi.Sukses -> {
+                    perbaruiTab(tab.idTab) {
+                        it.copy(
+                            isiTersimpan = snapshotIsi,
+                            ukuranByteAsli = hasilTemp.sidikBaru.ukuranByte,
+                            waktuUbahTerakhirMs = hasilTemp.waktuSimpanEpochMs,
+                            sidikIsiTersimpan = hasilTemp.sidikBaru
+                        )
+                    }
+                    _state.update {
+                        it.copy(
+                            sedangMenyimpan = false,
+                            pesanInfo = "Arsip '${kArsip.namaArsipTampilan}' berhasil diperbarui",
+                            acaraArsipDiperbarui = AcaraArsipDiperbaruiDariEditor(
+                                id = ++urutanAcaraArsip,
+                                kembaliKeArsip = permintaan.kembaliKeArsipSetelahSelesai
+                            )
+                        )
+                    }
+                    if (permintaan.tutupSetelahPerbarui) {
+                        hapusTabInternal(tab.idTab)
+                    }
+                }
+                is HasilOperasi.Gagal -> {
+                    _state.update {
+                        it.copy(
+                            sedangMenyimpan = false,
+                            pesanInfo = "Gagal memperbarui arsip (arsip asli dipertahankan): ${hasilArsip.pesan}"
+                        )
+                    }
+                }
+            }
+        }
+        pekerjaanSimpan = job
+        job.invokeOnCompletion {
+            if (pekerjaanSimpan === job) pekerjaanSimpan = null
+        }
+    }
+
+    private fun batalkanEditDalamArsip() {
+        val permintaan = _state.value.konfirmasiPerbaruiArsip ?: return
+        val tab = _state.value.daftarTab.firstOrNull { it.idTab == permintaan.idTab } ?: run {
+            _state.update { it.copy(konfirmasiPerbaruiArsip = null) }
+            return
+        }
+        _state.update { it.copy(konfirmasiPerbaruiArsip = null) }
+
+        sejarahPerTab[tab.idTab]?.bersihkan()
+        if (permintaan.tutupSetelahPerbarui) {
+            hapusTabInternal(tab.idTab)
+            _state.update {
+                it.copy(
+                    pesanInfo = "Edit berkas dibatalkan; arsip tetap seperti semula",
+                    acaraArsipDiperbarui = if (permintaan.kembaliKeArsipSetelahSelesai) {
+                        AcaraArsipDiperbaruiDariEditor(
+                            id = ++urutanAcaraArsip,
+                            kembaliKeArsip = true
+                        )
+                    } else {
+                        it.acaraArsipDiperbarui
+                    }
+                )
+            }
+        } else {
+            val jumlahBarisAsli = hitungJumlahBaris(tab.isiTersimpan)
+            perbaruiTab(tab.idTab) {
+                it.copy(
+                    isiSaatIni = it.isiTersimpan,
+                    jumlahBaris = jumlahBarisAsli,
+                    posisiKursor = PosisiKursor(),
+                    dapatUndo = false,
+                    dapatRedo = false,
+                    urutanNavigasiKursor = ++urutanNavigasi,
+                    urutanSinkronTeks = it.urutanSinkronTeks + 1L
+                )
+            }
+            _state.update {
+                it.copy(pesanInfo = "Edit berkas dibatalkan; arsip tetap seperti semula")
+            }
+        }
     }
 
     private fun bukaDialogSimpanSebagai(idTab: String, tutupSetelahSimpan: Boolean) {

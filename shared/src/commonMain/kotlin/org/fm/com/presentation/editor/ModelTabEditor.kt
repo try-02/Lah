@@ -4,6 +4,7 @@ import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.SidikIsiBerkas
 import org.fm.com.domain.usecase.EncodingTeks
 import org.fm.com.domain.usecase.JenisAkhirBaris
+import org.fm.com.domain.usecase.KonteksEditArsip
 
 enum class StatusMuatTab {
     MEMUAT,
@@ -33,6 +34,7 @@ data class ModelTabEditor(
     val idTab: String,
     val lokasi: LokasiBerkas?,
     val namaBerkas: String,
+    val konteksArsip: KonteksEditArsip? = null,
     val statusMuat: StatusMuatTab = StatusMuatTab.MEMUAT,
     val pesanStatus: String? = null,
     val isiTersimpan: String = "",

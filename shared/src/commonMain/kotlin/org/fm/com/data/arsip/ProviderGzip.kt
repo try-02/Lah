@@ -377,6 +377,64 @@ class ProviderGzip(
         }
     }
 
+    internal suspend fun tulisUlangDenganPengganti(
+        pathArsipLama: Path,
+        jalurTarget: String,
+        pathFilePengganti: Path,
+        pathTempOut: Path
+    ): HasilOperasi<Unit> = withContext(ioDispatcher) {
+        val fs = adapterPlatform.sistemBerkasLokal
+        bacaHeaderDanValidasiGzip(SumberPathLokal.Tersedia(pathArsipLama, fs, harusDihapusSetelahnya = false))
+            ?: return@withContext HasilOperasi.Gagal(
+                "Berkas bukan arsip GZIP yang sah",
+                PenyebabGalat.VALIDASI
+            )
+        if (jalurTarget.isBlank()) {
+            return@withContext HasilOperasi.Gagal("Jalur entri tidak valid", PenyebabGalat.VALIDASI)
+        }
+
+        var selesai = false
+        try {
+            val rawSink = fs.sink(pathTempOut, mustCreate = false)
+            adapterPlatform.bukaSinkGzip(rawSink).buffer().use { gzipOut ->
+                fs.source(pathFilePengganti).buffer().use { src ->
+                    val buf = ByteArray(8192)
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val n = src.read(buf)
+                        if (n == -1) break
+                        gzipOut.write(buf, 0, n)
+                    }
+                }
+                gzipOut.flush()
+            }
+            selesai = true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return@withContext HasilOperasi.Gagal(
+                e.message ?: "Gagal menulis ulang arsip GZIP",
+                PenyebabGalat.TIDAK_DIKETAHUI
+            )
+        } finally {
+            withContext(NonCancellable) {
+                if (!selesai) {
+                    runCatching { fs.delete(pathTempOut, mustExist = false) }
+                }
+            }
+        }
+
+        val infoBaru = bacaHeaderDanValidasiGzip(
+            SumberPathLokal.Tersedia(pathTempOut, fs, harusDihapusSetelahnya = false)
+        )
+        if (infoBaru == null) {
+            runCatching { fs.delete(pathTempOut, mustExist = false) }
+            HasilOperasi.Gagal("Verifikasi arsip GZIP hasil pembaruan gagal", PenyebabGalat.TIDAK_DIKETAHUI)
+        } else {
+            HasilOperasi.Sukses(Unit)
+        }
+    }
+
     private data class InfoHeaderGzip(
         val namaAsli: String?,
         val waktuModifikasiEpochMs: Long?

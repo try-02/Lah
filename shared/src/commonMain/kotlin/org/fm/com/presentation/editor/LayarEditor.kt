@@ -123,7 +123,8 @@ private data class PermintaanFokusBlok(
 fun LayarEditor(
     viewModel: ViewModelEditor,
     modifier: Modifier = Modifier,
-    onKembali: (() -> Unit)? = null
+    onKembali: (() -> Unit)? = null,
+    onArsipDiperbarui: ((kembaliKeArsip: Boolean) -> Unit)? = null
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -134,6 +135,12 @@ fun LayarEditor(
             snackbarHostState.showSnackbar(it)
             viewModel.prosesIntent(IntentEditor.SetPesanInfo(null))
         }
+    }
+
+    LaunchedEffect(state.acaraArsipDiperbarui?.id) {
+        val acara = state.acaraArsipDiperbarui ?: return@LaunchedEffect
+        onArsipDiperbarui?.invoke(acara.kembaliKeArsip)
+        viewModel.prosesIntent(IntentEditor.KonsumsiAcaraArsipDiperbarui)
     }
 
     val tabAktif = state.tabAktif
@@ -401,6 +408,16 @@ fun LayarEditor(
                 viewModel.prosesIntent(IntentEditor.EksekusiSimpanSebagai(nama, timpa))
             },
             onTutup = { viewModel.prosesIntent(IntentEditor.TutupDialogSimpanSebagai) }
+        )
+    }
+
+    if (state.konfirmasiPerbaruiArsip != null) {
+        DialogKonfirmasiPerbaruiArsip(
+            permintaan = state.konfirmasiPerbaruiArsip,
+            sedangMenyimpan = state.sedangMenyimpan,
+            onPerbaruiArsip = { viewModel.prosesIntent(IntentEditor.KonfirmasiPerbaruiArsip) },
+            onBatalkanEdit = { viewModel.prosesIntent(IntentEditor.BatalkanEditDalamArsip) },
+            onKembali = { viewModel.prosesIntent(IntentEditor.TutupDialogPerbaruiArsip) }
         )
     }
 }

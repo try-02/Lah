@@ -852,6 +852,7 @@ fun DaftarBerkasLayar(
 
         OverlayDialogEkstrakArsip(
             viewModel = viewModelArsip,
+            onPilihFolderSistem = onPilihFolder,
             onEkstrakSelesai = { hasil, _ ->
                 viewModel.prosesIntent(IntentFilemanager.Segarkan)
                 val info = if (!hasil.adaGagal && !hasil.adaKonflik) {

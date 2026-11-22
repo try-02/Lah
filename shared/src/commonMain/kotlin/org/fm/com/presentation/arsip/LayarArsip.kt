@@ -70,7 +70,12 @@ import org.fm.com.domain.model.HasilEkstrakArsip
 import org.fm.com.domain.model.JenisBerkas
 import org.fm.com.domain.model.KebijakanKonflikEkstrak
 import org.fm.com.domain.model.LokasiBerkas
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import org.fm.com.domain.model.ValidasiNama
+import org.fm.com.domain.usecase.KonteksEditArsip
 import org.fm.com.domain.usecase.LapisanJejakArsip
+import org.fm.com.domain.usecase.SegmenLokasi
 import org.fm.com.presentation.filemanager.KomponenIkonBerkas
 import org.fm.com.presentation.filemanager.PemetaanDomainUi
 import org.fm.com.presentation.komponen.IkonAplikasi
@@ -81,8 +86,9 @@ import org.fm.com.presentation.tema.LocalFontMono
 fun LayarArsip(
     viewModel: ViewModelArsip,
     onKembali: () -> Unit,
-    onBukaBerkasDiEditor: (EntitasBerkas) -> Unit,
-    modifier: Modifier = Modifier
+    onBukaBerkasDiEditor: (EntitasBerkas, KonteksEditArsip) -> Unit,
+    modifier: Modifier = Modifier,
+    onPilihFolderSistem: (() -> Unit)? = null
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val br = state.browser
@@ -99,7 +105,7 @@ fun LayarArsip(
 
     LaunchedEffect(state.acaraBukaEditor?.id) {
         val acara = state.acaraBukaEditor ?: return@LaunchedEffect
-        onBukaBerkasDiEditor(acara.entitas)
+        onBukaBerkasDiEditor(acara.entitas, acara.konteks)
         viewModel.prosesIntent(IntentArsip.KonsumsiAcaraEditor)
     }
 
@@ -367,7 +373,13 @@ fun LayarArsip(
                     },
                     enabled = !entri.terenkripsi && !entri.adalahTautanSimbolik
                 ) {
-                    Text("Buka di Editor (Baca)")
+                    Text(
+                        if (br.kapabilitasAktif?.dapatBuat == true) {
+                            "Buka / Edit di Editor"
+                        } else {
+                            "Buka di Editor (Baca)"
+                        }
+                    )
                 }
             },
             dismissButton = {
@@ -399,13 +411,17 @@ fun LayarArsip(
         )
     }
 
-    OverlayDialogEkstrakArsip(viewModel = viewModel)
+    OverlayDialogEkstrakArsip(
+        viewModel = viewModel,
+        onPilihFolderSistem = onPilihFolderSistem
+    )
 }
 
 @Composable
 fun OverlayDialogEkstrakArsip(
     viewModel: ViewModelArsip,
     modifier: Modifier = Modifier,
+    onPilihFolderSistem: (() -> Unit)? = null,
     onEkstrakSelesai: ((HasilEkstrakArsip, LokasiBerkas) -> Unit)? = null
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -422,10 +438,27 @@ fun OverlayDialogEkstrakArsip(
             permintaan = req,
             lokasiPintasan = state.lokasiPintasan,
             onPilihTujuan = { viewModel.prosesIntent(IntentArsip.UbahFolderTujuanEkstrak(it)) },
+            onBukaPemilihFolder = { viewModel.prosesIntent(IntentArsip.BukaPemilihFolderTujuan) },
+            onPilihFolderSistem = onPilihFolderSistem,
             onPilihKebijakan = { viewModel.prosesIntent(IntentArsip.UbahKebijakanKonflikEkstrak(it)) },
             onKonfirmasi = { viewModel.prosesIntent(IntentArsip.KonfirmasiDanEkstrak) },
             onBatal = { viewModel.prosesIntent(IntentArsip.BatalDialogEkstrak) },
             modifier = modifier
+        )
+    }
+
+    if (state.pemilihFolder.terbuka) {
+        DialogPemilihFolderEkstrak(
+            statePemilih = state.pemilihFolder,
+            lokasiPintasan = state.lokasiPintasan,
+            onBukaLokasi = { viewModel.prosesIntent(IntentArsip.BukaLokasiDiPemilihFolder(it)) },
+            onKlikSegmen = { viewModel.prosesIntent(IntentArsip.NavigasiSegmenPemilihFolder(it)) },
+            onBukaDialogBuatFolder = { viewModel.prosesIntent(IntentArsip.SetDialogBuatFolderTujuan(true)) },
+            onTutupDialogBuatFolder = { viewModel.prosesIntent(IntentArsip.SetDialogBuatFolderTujuan(false)) },
+            onBuatFolder = { viewModel.prosesIntent(IntentArsip.BuatFolderDiPemilihTujuan(it)) },
+            onPilihFolderSistem = onPilihFolderSistem,
+            onPilihFolderIni = { viewModel.prosesIntent(IntentArsip.KonfirmasiPemilihFolderTujuan) },
+            onBatal = { viewModel.prosesIntent(IntentArsip.TutupPemilihFolderTujuan) }
         )
     }
 
@@ -733,6 +766,8 @@ private fun DialogKonfirmasiEkstrak(
     permintaan: PermintaanKonfirmasiEkstrak,
     lokasiPintasan: List<LokasiBerkas>,
     onPilihTujuan: (LokasiBerkas) -> Unit,
+    onBukaPemilihFolder: () -> Unit,
+    onPilihFolderSistem: (() -> Unit)?,
     onPilihKebijakan: (KebijakanKonflikEkstrak) -> Unit,
     onKonfirmasi: () -> Unit,
     onBatal: () -> Unit,
@@ -793,7 +828,7 @@ private fun DialogKonfirmasiEkstrak(
                         if (lokasiPintasan.isNotEmpty()) {
                             Icon(
                                 imageVector = IkonAplikasi.TukarLokasi,
-                                contentDescription = "Ganti tujuan ekstraksi",
+                                contentDescription = "Pintasan folder tujuan",
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -820,6 +855,25 @@ private fun DialogKonfirmasiEkstrak(
                                     onPilihTujuan(lok)
                                 }
                             )
+                        }
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onBukaPemilihFolder,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Jelajahi Folder", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (onPilihFolderSistem != null) {
+                        OutlinedButton(
+                            onClick = onPilihFolderSistem,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Folder Sistem", maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -972,6 +1026,262 @@ private fun BarisStatusKap(label: String, didukung: Boolean) {
             text = if (didukung) "Didukung" else "Tidak didukung",
             style = MaterialTheme.typography.labelSmall,
             color = if (didukung) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun DialogPemilihFolderEkstrak(
+    statePemilih: StatePemilihFolderTujuan,
+    lokasiPintasan: List<LokasiBerkas>,
+    onBukaLokasi: (LokasiBerkas) -> Unit,
+    onKlikSegmen: (SegmenLokasi) -> Unit,
+    onBukaDialogBuatFolder: () -> Unit,
+    onTutupDialogBuatFolder: () -> Unit,
+    onBuatFolder: (String) -> Unit,
+    onPilihFolderSistem: (() -> Unit)?,
+    onPilihFolderIni: () -> Unit,
+    onBatal: () -> Unit
+) {
+    val fontMono = LocalFontMono.current
+    val lokasiAktif = statePemilih.lokasiSaatIni
+
+    Dialog(
+        onDismissRequest = onBatal,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        androidx.compose.material3.Surface(
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            tonalElevation = 2.dp,
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .heightIn(max = 620.dp)
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Pilih Folder Tujuan", style = MaterialTheme.typography.titleMedium)
+                        lokasiAktif?.let {
+                            Text(
+                                text = PemformatLokasiRamah.formatRingkas(it),
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = fontMono),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    if (statePemilih.dapatMembuatFolder) {
+                        IconButton(onClick = onBukaDialogBuatFolder) {
+                            Icon(
+                                imageVector = IkonAplikasi.Tambah,
+                                contentDescription = "Buat folder baru",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    if (onPilihFolderSistem != null) {
+                        IconButton(onClick = onPilihFolderSistem) {
+                            Icon(
+                                imageVector = IkonAplikasi.PilihFolder,
+                                contentDescription = "Pilih dari penyimpanan sistem",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+
+                if (lokasiPintasan.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        lokasiPintasan.forEach { lok ->
+                            val terpilih = lokasiAktif != null &&
+                                lokasiAktif.pengenal == lok.pengenal &&
+                                lokasiAktif.jenis == lok.jenis
+                            androidx.compose.material3.FilterChip(
+                                selected = terpilih,
+                                onClick = { onBukaLokasi(lok) },
+                                label = {
+                                    Text(
+                                        text = lok.label ?: PemformatLokasiRamah.formatRingkas(lok),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
+
+                if (statePemilih.segmenBreadcrumb.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        statePemilih.segmenBreadcrumb.forEachIndexed { idx, seg ->
+                            val akhir = idx == statePemilih.segmenBreadcrumb.lastIndex
+                            Text(
+                                text = seg.namaTampilan,
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontFamily = fontMono,
+                                    fontWeight = if (akhir) FontWeight.SemiBold else FontWeight.Normal
+                                ),
+                                color = if (akhir) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .clickable(enabled = !akhir) { onKlikSegmen(seg) }
+                                    .padding(horizontal = 2.dp, vertical = 2.dp)
+                            )
+                            if (!akhir) {
+                                Text(
+                                    text = "/",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontFamily = fontMono),
+                                    color = MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.padding(horizontal = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .fillMaxWidth()
+                        .heightIn(min = 180.dp, max = 320.dp)
+                ) {
+                    when {
+                        statePemilih.sedangMemuat -> {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(strokeWidth = 2.dp)
+                            }
+                        }
+                        statePemilih.pesanGalat != null -> {
+                            Box(
+                                modifier = Modifier.fillMaxSize().padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = statePemilih.pesanGalat,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                        statePemilih.daftarSubfolder.isEmpty() -> {
+                            Box(
+                                modifier = Modifier.fillMaxSize().padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "// tidak ada subfolder",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = fontMono),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        else -> {
+                            LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                                items(
+                                    items = statePemilih.daftarSubfolder,
+                                    key = { "${it.lokasi.jenis.name}:${it.lokasi.pengenal}" }
+                                ) { folder ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { onBukaLokasi(folder.lokasi) }
+                                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        KomponenIkonBerkas(jenis = JenisBerkas.FOLDER, ukuran = 20.dp)
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(
+                                            text = folder.nama,
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = fontMono),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    HorizontalDivider(
+                                        thickness = 0.5.dp,
+                                        color = MaterialTheme.colorScheme.outlineVariant,
+                                        modifier = Modifier.padding(start = 48.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    OutlinedButton(onClick = onBatal) {
+                        Text("Batal")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = onPilihFolderIni,
+                        enabled = lokasiAktif != null
+                    ) {
+                        Text("Pilih Folder Ini")
+                    }
+                }
+            }
+        }
+    }
+
+    if (statePemilih.dialogBuatFolderTerbuka) {
+        var namaFolder by remember { mutableStateOf("") }
+        val namaSah = ValidasiNama.sah(namaFolder.trim())
+        AlertDialog(
+            onDismissRequest = onTutupDialogBuatFolder,
+            title = { Text("Buat Folder Tujuan") },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    value = namaFolder,
+                    onValueChange = { namaFolder = it },
+                    label = { Text("Nama Folder") },
+                    singleLine = true,
+                    isError = namaFolder.isNotEmpty() && !namaSah,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { if (namaSah) onBuatFolder(namaFolder.trim()) },
+                    enabled = namaSah
+                ) {
+                    Text("Buat")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onTutupDialogBuatFolder) {
+                    Text("Batal")
+                }
+            }
         )
     }
 }

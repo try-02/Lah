@@ -29,6 +29,20 @@ data class StatusLapisanArsip(
     val lapisanAktif: LapisanJejakArsip get() = jejakLapisan.last()
 }
 
+data class KonteksEditArsip(
+    val sumberArsipAkar: LokasiBerkas,
+    val namaArsipTampilan: String,
+    val formatArsipAktif: FormatArsip,
+    val rantaiJalurArsipBersarang: List<String> = emptyList(),
+    val jalurEntriTarget: String,
+    val idSesiArsip: String? = null
+)
+
+data class HasilSiapkanEditArsip(
+    val entitasSementara: EntitasBerkas,
+    val konteks: KonteksEditArsip
+)
+
 interface PelaksanaPenjelajahanArsip {
     suspend fun bukaArsipAkar(
         idSesi: String,
@@ -59,9 +73,20 @@ interface PelaksanaPenjelajahanArsip {
     suspend fun siapkanPratinjauBerkas(
         idSesi: String,
         jalurInternal: String,
+        untukEdit: Boolean = false,
         kataSandi: String? = null,
         batas: KebijakanBatasArsip = KebijakanBatasArsip()
-    ): HasilOperasi<EntitasBerkas>
+    ): HasilOperasi<HasilSiapkanEditArsip>
+
+    suspend fun perbaruiBerkasDalamArsip(
+        konteks: KonteksEditArsip,
+        lokasiBerkasEdit: LokasiBerkas,
+        batas: KebijakanBatasArsip = KebijakanBatasArsip()
+    ): HasilOperasi<StatusLapisanArsip?>
+
+    suspend fun ambilStatusSesi(idSesi: String): StatusLapisanArsip?
+
+    suspend fun bersihkanBerkasSementara(lokasi: LokasiBerkas)
 
     suspend fun tutupSesi(idSesi: String)
 }
@@ -129,10 +154,25 @@ class EkstrakArsipUseCase(
     suspend fun siapkanPratinjauBerkas(
         idSesi: String,
         jalurInternal: String,
+        untukEdit: Boolean = false,
         kataSandi: String? = null,
         batas: KebijakanBatasArsip = KebijakanBatasArsip()
-    ): HasilOperasi<EntitasBerkas> =
-        pelaksana.siapkanPratinjauBerkas(idSesi, jalurInternal, kataSandi, batas)
+    ): HasilOperasi<HasilSiapkanEditArsip> =
+        pelaksana.siapkanPratinjauBerkas(idSesi, jalurInternal, untukEdit, kataSandi, batas)
+
+    suspend fun perbaruiBerkasDalamArsip(
+        konteks: KonteksEditArsip,
+        lokasiBerkasEdit: LokasiBerkas,
+        batas: KebijakanBatasArsip = KebijakanBatasArsip()
+    ): HasilOperasi<StatusLapisanArsip?> =
+        pelaksana.perbaruiBerkasDalamArsip(konteks, lokasiBerkasEdit, batas)
+
+    suspend fun ambilStatusSesi(idSesi: String): StatusLapisanArsip? =
+        pelaksana.ambilStatusSesi(idSesi)
+
+    suspend fun bersihkanBerkasSementara(lokasi: LokasiBerkas) {
+        pelaksana.bersihkanBerkasSementara(lokasi)
+    }
 
     suspend fun tutupSesi(idSesi: String) {
         pelaksana.tutupSesi(idSesi)
