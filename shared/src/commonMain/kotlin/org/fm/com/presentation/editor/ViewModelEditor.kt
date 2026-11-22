@@ -162,6 +162,7 @@ class ViewModelEditor(
             is IntentEditor.BersihkanRiwayatPencarian -> bersihkanRiwayatPencarian()
             is IntentEditor.ToggleModeHanyaBaca -> toggleModeHanyaBaca(intent.idTab)
             is IntentEditor.ToggleWordWrapTab -> toggleWordWrapTab(intent.idTab)
+            is IntentEditor.SetWordWrapTab -> perbaruiTab(intent.idTab) { it.copy(wordWrapOverride = intent.aktif) }
             is IntentEditor.SetWordWrapUmum -> _state.update { it.copy(wordWrapUmum = intent.aktif) }
             is IntentEditor.MuatUlangTab -> muatUlangTab(intent.idTab)
             is IntentEditor.TandaiTersimpan -> tandaiTersimpan(

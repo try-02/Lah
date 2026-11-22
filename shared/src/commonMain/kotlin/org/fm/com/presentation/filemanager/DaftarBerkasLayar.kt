@@ -90,7 +90,9 @@ fun DaftarBerkasLayar(
     lokasiPintasan: List<LokasiBerkas> = emptyList(),
     onPilihLokasiPintasan: ((LokasiBerkas) -> Unit)? = null,
     onBandingkanBerkas: ((ItemBerkasUi, ItemBerkasUi) -> Unit)? = null,
-    onBukaArsip: ((ItemBerkasUi) -> Unit)? = null
+    onBukaArsip: ((ItemBerkasUi) -> Unit)? = null,
+    onBookmarkItem: ((LokasiBerkas, JenisBerkas, Boolean) -> Unit)? = null,
+    onJadikanBeranda: ((LokasiBerkas) -> Unit)? = null
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val defaultStateMassal = remember { MutableStateFlow(StateOperasiMassal()) }
@@ -273,6 +275,17 @@ fun DaftarBerkasLayar(
                                 modifier = Modifier.size(20.dp)
                             )
                         }
+                        if (onBookmarkItem != null && lokasiAktif != null && state.kemampuanUi.dapatBookmark) {
+                            IconButton(onClick = {
+                                onBookmarkItem(lokasiAktif, JenisBerkas.FOLDER, true)
+                            }) {
+                                Icon(
+                                    imageVector = IkonAplikasi.Bookmark,
+                                    contentDescription = "Bookmark folder ini",
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
                         IconButton(onClick = { viewModel.prosesIntent(IntentFilemanager.Segarkan) }) {
                             Icon(
                                 imageVector = IkonAplikasi.Segarkan,
@@ -448,6 +461,11 @@ fun DaftarBerkasLayar(
                                         } else {
                                             null
                                         },
+                                        onBookmark = if (onBookmarkItem != null) {
+                                            { onBookmarkItem(item.lokasi, item.jenis, item.adalahFolder) }
+                                        } else {
+                                            null
+                                        },
                                         onBagikan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBagikan(item)) },
                                         onGantiNama = { viewModel.prosesIntent(IntentFilemanager.BukaDialogRename(item)) },
                                         onProperti = { viewModel.prosesIntent(IntentFilemanager.BukaDialogProperti(item)) },
@@ -547,6 +565,11 @@ fun DaftarBerkasLayar(
                                         } else {
                                             null
                                         },
+                                        onBookmark = if (onBookmarkItem != null) {
+                                            { onBookmarkItem(item.lokasi, item.jenis, item.adalahFolder) }
+                                        } else {
+                                            null
+                                        },
                                         onBagikan = { viewModel.prosesIntent(IntentFilemanager.BukaDialogBagikan(item)) },
                                         onGantiNama = { viewModel.prosesIntent(IntentFilemanager.BukaDialogRename(item)) },
                                         onProperti = { viewModel.prosesIntent(IntentFilemanager.BukaDialogProperti(item)) },
@@ -627,6 +650,37 @@ fun DaftarBerkasLayar(
                                 modifier = Modifier.size(18.dp)
                             )
                         }
+                    }
+                }
+                if (onJadikanBeranda != null && lokasiAktif != null) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(MaterialTheme.shapes.small)
+                            .clickable {
+                                tampilSwitcherLokasi = false
+                                onJadikanBeranda(lokasiAktif)
+                            }
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = IkonAplikasi.Beranda,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Jadikan Folder Ini sebagai Beranda",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
                 if (onPilihFolder != null) {
@@ -1003,7 +1057,8 @@ private fun MenuKonteksItemBerkas(
     onBandingkan: (() -> Unit)? = null,
     onBukaArsip: (() -> Unit)? = null,
     onEkstrak: (() -> Unit)? = null,
-    onKompres: (() -> Unit)? = null
+    onKompres: (() -> Unit)? = null,
+    onBookmark: (() -> Unit)? = null
 ) {
     val adalahItemArsip = !item.adalahFolder &&
         (item.jenis == JenisBerkas.ARSIP || FormatArsip.dariNamaBerkas(item.nama) != null)
@@ -1060,6 +1115,15 @@ private fun MenuKonteksItemBerkas(
                 didukung = kemampuan.dapatKompres,
                 alasan = kemampuan.alasan(OperasiBerkas.MENGKOMPRES),
                 onKlik = { onTutup(); onKompres() }
+            )
+        }
+        if (onBookmark != null) {
+            MenuItemDenganAlasan(
+                judul = "Bookmark",
+                ikon = IkonAplikasi.Bookmark,
+                didukung = kemampuan.dapatBookmark,
+                alasan = kemampuan.alasan(OperasiBerkas.MEMBOOKMARK),
+                onKlik = { onTutup(); onBookmark() }
             )
         }
         if (!item.adalahFolder) {

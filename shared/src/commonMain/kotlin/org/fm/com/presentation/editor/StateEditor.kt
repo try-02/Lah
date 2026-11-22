@@ -182,6 +182,7 @@ sealed interface IntentEditor {
 
     data class ToggleModeHanyaBaca(val idTab: String) : IntentEditor
     data class ToggleWordWrapTab(val idTab: String) : IntentEditor
+    data class SetWordWrapTab(val idTab: String, val aktif: Boolean?) : IntentEditor
     data class SetWordWrapUmum(val aktif: Boolean) : IntentEditor
     data class MuatUlangTab(val idTab: String) : IntentEditor
 

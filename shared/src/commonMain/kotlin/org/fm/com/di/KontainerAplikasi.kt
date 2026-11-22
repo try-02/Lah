@@ -5,6 +5,9 @@ import kotlinx.coroutines.runBlocking
 import org.fm.com.data.DataBerkas
 import org.fm.com.data.SumberMemoriPenyimpanan
 import org.fm.com.data.pencarian.PencariIsiBerkas
+import org.fm.com.data.persistensi.MemoriRepositoriBeranda
+import org.fm.com.data.persistensi.MemoriRepositoriBookmark
+import org.fm.com.data.persistensi.MemoriRepositoriPreferensi
 import org.fm.com.data.persistensi.MemoriRepositoriRiwayatLokasi
 import org.fm.com.data.persistensi.MemoriRepositoriRiwayatPencarian
 import org.fm.com.data.arsip.EkstraktorArsip
@@ -19,11 +22,16 @@ import org.fm.com.data.simpan.SimpanTransaksional
 import org.fm.com.domain.arsip.RegistriArsipProvider
 import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.LokasiBerkas
+import org.fm.com.domain.repository.RepositoriBeranda
 import org.fm.com.domain.repository.RepositoriBerkas
+import org.fm.com.domain.repository.RepositoriBookmark
 import org.fm.com.domain.repository.RepositoriOperasiBerkas
+import org.fm.com.domain.repository.RepositoriPreferensi
 import org.fm.com.domain.repository.RepositoriRiwayatLokasi
 import org.fm.com.domain.repository.RepositoriRiwayatPencarian
 import org.fm.com.domain.usecase.BandingkanBerkasUseCase
+import org.fm.com.domain.usecase.BerandaUseCase
+import org.fm.com.domain.usecase.BookmarkUseCase
 import org.fm.com.domain.usecase.CariIsiBerkasUseCase
 import org.fm.com.domain.usecase.CariNamaBerkasUseCase
 import org.fm.com.domain.usecase.EkstrakArsipUseCase
@@ -35,6 +43,7 @@ import org.fm.com.domain.usecase.PelaksanaRenameMassal
 import org.fm.com.domain.usecase.PelaksanaSimpanTransaksional
 import org.fm.com.domain.usecase.PemeriksaKonflikSimpan
 import org.fm.com.domain.usecase.PemindaiIsiBerkas
+import org.fm.com.domain.usecase.PreferensiUseCase
 import org.fm.com.domain.usecase.RiwayatLokasiUseCase
 import org.fm.com.domain.usecase.RiwayatPencarianUseCase
 import org.fm.com.domain.usecase.SimpanBerkasUseCase
@@ -60,6 +69,9 @@ data class KontainerAplikasi(
     val registriArsipProvider: RegistriArsipProvider,
     val ekstrakArsipUseCase: EkstrakArsipUseCase,
     val kompresArsipUseCase: KompresArsipUseCase,
+    val bookmarkUseCase: BookmarkUseCase,
+    val berandaUseCase: BerandaUseCase,
+    val preferensiUseCase: PreferensiUseCase,
     val lokasiAwal: LokasiBerkas,
     val lokasiPintasan: List<LokasiBerkas> = listOf(lokasiAwal),
     val aksiPlatform: AksiPlatformBerkas = AksiPlatformBerkasBawaan(),
@@ -106,6 +118,9 @@ fun buatKontainerAplikasi(
                 single<PelaksanaPembuatanArsip> { PembuatArsip(get(), get()) }
                 single { EkstrakArsipUseCase(get()) }
                 single { KompresArsipUseCase(get()) }
+                single { BookmarkUseCase(get(), get()) }
+                single { BerandaUseCase(get(), get(), lokasiAwal) }
+                single { PreferensiUseCase(get()) }
             }
         )
     }
@@ -125,6 +140,9 @@ fun buatKontainerAplikasi(
         registriArsipProvider = koin.get(),
         ekstrakArsipUseCase = koin.get(),
         kompresArsipUseCase = koin.get(),
+        bookmarkUseCase = koin.get(),
+        berandaUseCase = koin.get(),
+        preferensiUseCase = koin.get(),
         lokasiAwal = lokasiAwal,
         lokasiPintasan = lokasiPintasan,
         aksiPlatform = aksiPlatform,
@@ -156,6 +174,9 @@ fun buatKontainerPreview(): KontainerAplikasi {
             single<RepositoriOperasiBerkas> { storage }
             single<RepositoriRiwayatLokasi> { MemoriRepositoriRiwayatLokasi() }
             single<RepositoriRiwayatPencarian> { MemoriRepositoriRiwayatPencarian() }
+            single<RepositoriBookmark> { MemoriRepositoriBookmark() }
+            single<RepositoriBeranda> { MemoriRepositoriBeranda() }
+            single<RepositoriPreferensi> { MemoriRepositoriPreferensi() }
         }
     )
 }

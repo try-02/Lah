@@ -435,4 +435,53 @@ object IkonAplikasi {
         lineTo(12f, 5f)
         lineTo(15.5f, 8.5f)
     }
+
+    val Bookmark: ImageVector = ikonGaris("Bookmark") {
+        moveTo(6.5f, 4f)
+        lineTo(17.5f, 4f)
+        lineTo(17.5f, 20f)
+        lineTo(12f, 16f)
+        lineTo(6.5f, 20f)
+        close()
+    }
+
+    val Beranda: ImageVector = ikonGaris("Beranda") {
+        moveTo(3.5f, 11f)
+        lineTo(12f, 4f)
+        lineTo(20.5f, 11f)
+        moveTo(5.5f, 9.5f)
+        lineTo(5.5f, 20f)
+        lineTo(18.5f, 20f)
+        lineTo(18.5f, 9.5f)
+        moveTo(10f, 20f)
+        lineTo(10f, 14f)
+        lineTo(14f, 14f)
+        lineTo(14f, 20f)
+    }
+
+    val Pengaturan: ImageVector = ikonGaris("Pengaturan") {
+        moveTo(4f, 6.5f)
+        lineTo(9f, 6.5f)
+        moveTo(13f, 6.5f)
+        lineTo(20f, 6.5f)
+        moveTo(11f, 4.5f)
+        arcTo(2f, 2f, 0f, isMoreThanHalf = true, isPositiveArc = false, 11f, 8.5f)
+        arcTo(2f, 2f, 0f, isMoreThanHalf = false, isPositiveArc = false, 11f, 4.5f)
+
+        moveTo(4f, 12f)
+        lineTo(14f, 12f)
+        moveTo(18f, 12f)
+        lineTo(20f, 12f)
+        moveTo(16f, 10f)
+        arcTo(2f, 2f, 0f, isMoreThanHalf = true, isPositiveArc = false, 16f, 14f)
+        arcTo(2f, 2f, 0f, isMoreThanHalf = false, isPositiveArc = false, 16f, 10f)
+
+        moveTo(4f, 17.5f)
+        lineTo(7f, 17.5f)
+        moveTo(11f, 17.5f)
+        lineTo(20f, 17.5f)
+        moveTo(9f, 15.5f)
+        arcTo(2f, 2f, 0f, isMoreThanHalf = true, isPositiveArc = false, 9f, 19.5f)
+        arcTo(2f, 2f, 0f, isMoreThanHalf = false, isPositiveArc = false, 9f, 15.5f)
+    }
 }

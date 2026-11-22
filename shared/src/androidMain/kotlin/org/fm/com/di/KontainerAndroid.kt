@@ -7,6 +7,9 @@ import okio.FileSystem
 import org.fm.com.data.RepositoriRouterBerkas
 import org.fm.com.data.persistensi.DatabaseAplikasi
 import org.fm.com.data.persistensi.PenyediaDriverBasisDataAndroid
+import org.fm.com.data.persistensi.SqlDelightRepositoriBeranda
+import org.fm.com.data.persistensi.SqlDelightRepositoriBookmark
+import org.fm.com.data.persistensi.SqlDelightRepositoriPreferensi
 import org.fm.com.data.persistensi.SqlDelightRepositoriRiwayatLokasi
 import org.fm.com.data.persistensi.SqlDelightRepositoriRiwayatPencarian
 import org.fm.com.data.persistensi.buatDatabaseAplikasi
@@ -17,8 +20,11 @@ import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.PlatformPenyimpanan
+import org.fm.com.domain.repository.RepositoriBeranda
 import org.fm.com.domain.repository.RepositoriBerkas
+import org.fm.com.domain.repository.RepositoriBookmark
 import org.fm.com.domain.repository.RepositoriOperasiBerkas
+import org.fm.com.domain.repository.RepositoriPreferensi
 import org.fm.com.domain.repository.RepositoriRiwayatLokasi
 import org.fm.com.domain.repository.RepositoriRiwayatPencarian
 import org.fm.com.presentation.filemanager.AksiPlatformBerkasAndroid
@@ -63,6 +69,9 @@ class KontainerAndroid internal constructor(
             single<RepositoriOperasiBerkas> { routerBerkas }
             single<RepositoriRiwayatLokasi> { repositoriRiwayat }
             single<RepositoriRiwayatPencarian> { repositoriRiwayatPencarian }
+            single<RepositoriBookmark> { SqlDelightRepositoriBookmark(database) }
+            single<RepositoriBeranda> { SqlDelightRepositoriBeranda(database) }
+            single<RepositoriPreferensi> { SqlDelightRepositoriPreferensi(database) }
         }
     )
 }
