@@ -2,10 +2,12 @@ package org.fm.com
 
 import androidx.compose.ui.test.DeviceConfigurationOverride
 import androidx.compose.ui.test.ForcedSize
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -57,7 +59,8 @@ class NavigasiTest {
         composeRule.onNodeWithText("Lokasi Terbaru").assertIsDisplayed()
 
         composeRule.onNodeWithContentDescription("Tab Bookmark").performClick()
-        composeRule.onNodeWithText("Bookmark").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Bookmark").assertCountEquals(2)
+        composeRule.onNodeWithText("// belum ada bookmark tersimpan").assertIsDisplayed()
 
         composeRule.onNodeWithContentDescription("Tab Pencarian Berkas").performClick()
         composeRule.onNodeWithText("Cari Nama").assertIsDisplayed()
