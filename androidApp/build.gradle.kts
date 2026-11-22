@@ -24,6 +24,7 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.uiTestJunit4)
     androidTestImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.kotlin.test)
+    androidTestImplementation(libs.kotlinx.datetime)
     androidTestImplementation(libs.okio)
     debugImplementation(libs.androidx.compose.uiTestManifest)
 }
