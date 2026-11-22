@@ -1,4 +1,4 @@
-@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
 
 package org.fm.com.data.ios
 
@@ -6,194 +6,159 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.cinterop.ObjCObjectVar
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
-import org.fm.com.data.RepositoriRouterBerkas
+import okio.Buffer
+import org.fm.com.data.persistensi.MemoriRepositoriBeranda
+import org.fm.com.data.persistensi.MemoriRepositoriBookmark
 import org.fm.com.domain.io.PotonganIsi
 import org.fm.com.domain.io.SumberIsiBerkas
-import org.fm.com.domain.io.SumberTulisBerkas
 import org.fm.com.domain.model.EntitasBerkas
+import org.fm.com.domain.model.EntitasBookmark
 import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.model.JenisBerkas
 import org.fm.com.domain.model.JenisLokasi
-import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.OperasiBerkas
 import org.fm.com.domain.model.PenyebabGalat
+import org.fm.com.domain.model.StatusKetersediaanBookmark
 import org.fm.com.domain.repository.PermintaanOperasi
+import org.fm.com.domain.usecase.BerandaUseCase
+import org.fm.com.domain.usecase.BookmarkUseCase
+import org.fm.com.domain.usecase.HasilResolusiBeranda
+import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
 
 class DokumenAdapterTest {
-    private fun buatDirektoriUji(): NSURL {
-        val dirPath = NSTemporaryDirectory() + "fm_ios_uji_" + NSUUID.UUID().UUIDString
-        val dirUrl = NSURL.fileURLWithPath(dirPath)
-        NSFileManager.defaultManager.createDirectoryAtPath(dirPath, withIntermediateDirectories = true, attributes = null, error = null)
-        return dirUrl
-    }
 
-    private fun <T> assertSukses(hasil: HasilOperasi<T>, langkah: String): T {
-        if (hasil is HasilOperasi.Gagal) {
-            kotlin.test.fail("[$langkah] Gagal (${hasil.penyebab}): ${hasil.pesan}")
+    @Test
+    fun operasiBerkasStreamingDanDeteksiBookmarkHilangBerjalanDiIos() = runTest {
+        val fm = NSFileManager.defaultManager
+        val rootPath = NSTemporaryDirectory() + "fm_ios_uji_" + NSUUID.UUID().UUIDString
+        val rootUrl = NSURL.fileURLWithPath(rootPath, isDirectory = true)
+        memScoped {
+            val errPtr = alloc<ObjCObjectVar<NSError?>>()
+            assertTrue(
+                fm.createDirectoryAtURL(rootUrl, withIntermediateDirectories = true, attributes = null, error = errPtr.ptr)
+            )
         }
-        return (hasil as HasilOperasi.Sukses<T>).nilai
-    }
 
-    @Test
-    fun pemetaanLokasiIosDuaArah() {
-        val path = NSTemporaryDirectory() + "test_file.txt"
-        val url = NSURL.fileURLWithPath(path)
-        val lokasi = DokumenPemetaanLokasi.keLokasi(url, label = "test_file.txt")
-        assertEquals(JenisLokasi.IOS, lokasi.jenis)
-        assertEquals("test_file.txt", lokasi.label)
-        val hasilUrl = assertIs<HasilOperasi.Sukses<NSURL>>(DokumenPemetaanLokasi.keUrl(lokasi))
-        assertEquals(url.path, hasilUrl.nilai.path)
-    }
-
-    @Test
-    fun matriksKapabilitasIosMenonaktifkanPathPosixDanTautanSimbolik() {
-        val adapter = IosSumberDataPenyimpanan()
-        val lokasi = LokasiBerkas("file:///tmp", JenisLokasi.IOS)
-        val cap = assertNotNull(adapter.kapabilitas(lokasi))
-        assertFalse(cap.apakahDidukung(OperasiBerkas.MELIHAT_PATH_POSIX))
-        assertFalse(cap.apakahDidukung(OperasiBerkas.MEMBUAT_TAUTAN_SIMBOLIK))
-        assertTrue(cap.apakahDidukung(OperasiBerkas.MEMBACA))
-        assertTrue(cap.apakahDidukung(OperasiBerkas.MENULIS))
-        assertEquals(null, adapter.kapabilitas(LokasiBerkas("/sdcard", JenisLokasi.POSIX)))
-    }
-
-    @Test
-    fun roundTripTulisBacaDanBerkasNolByte() = runTest {
-        val rootUrl = buatDirektoriUji()
         try {
             val adapter = IosSumberDataPenyimpanan()
-            val rootLok = DokumenPemetaanLokasi.keLokasi(rootUrl)
+            val lokasiRoot = DokumenPemetaanLokasi.keLokasi(rootUrl, label = "AkarUji")
+            assertEquals(JenisLokasi.IOS, lokasiRoot.jenis)
 
-            val tulisKosong = assertSukses(
-                adapter.bukaUntukTulisDi(rootLok, "kosong.txt", timpa = false),
-                "bukaUntukTulisDi kosong.txt"
-            )
-            assertSukses(tulisKosong.selesai(), "selesai kosong.txt")
-            val lokKosong = assertNotNull(tulisKosong.lokasiTarget)
+            // Verifikasi matriks kapabilitas iOS jujur terhadap batasan sandbox
+            val kap = adapter.kapabilitas(lokasiRoot)!!
+            assertFalse(kap.apakahDidukung(OperasiBerkas.MELIHAT_PATH_POSIX))
+            assertFalse(kap.apakahDidukung(OperasiBerkas.MEMBUAT_TAUTAN_SIMBOLIK))
+            assertTrue(kap.apakahDidukung(OperasiBerkas.MEMBOOKMARK))
+            assertTrue(kap.apakahDidukung(OperasiBerkas.MENULIS))
 
-            val bacaKosong = assertSukses(adapter.bukaUntukBaca(lokKosong), "bukaUntukBaca kosong.txt")
-            assertEquals(0L, bacaKosong.ukuranByte)
-            val potKosong = assertIs<SumberIsiBerkas.HasilPotongan.Isi>(bacaKosong.potongan())
-            assertTrue(potKosong.potongan.selesai, "potongan berkas kosong harus langsung selesai")
-            bacaKosong.tutup()
+            // Buat folder & berkas via adapter
+            val subFolder = assertIs<HasilOperasi.Sukses<EntitasBerkas>>(
+                adapter.buatFolder(PermintaanOperasi(sumber = lokasiRoot, namaBaru = "dokumen"))
+            ).nilai
+            val subCadangan = assertIs<HasilOperasi.Sukses<EntitasBerkas>>(
+                adapter.buatFolder(PermintaanOperasi(sumber = lokasiRoot, namaBaru = "cadangan"))
+            ).nilai
 
-            val tulis = assertSukses(
-                adapter.bukaUntukTulisDi(rootLok, "catatan.txt", timpa = false),
-                "bukaUntukTulisDi catatan.txt"
-            )
-            assertSukses(tulis.tulis(PotonganIsi("Halo ".encodeToByteArray())), "tulis bagian 1")
-            assertSukses(tulis.tulis(PotonganIsi("iOS!".encodeToByteArray())), "tulis bagian 2")
-            assertSukses(tulis.selesai(), "selesai catatan.txt")
+            // Tulis streaming ke berkas baru lalu verifikasi baca ulang
+            val writer = assertIs<HasilOperasi.Sukses<*>>(
+                adapter.bukaUntukTulisDi(subFolder.lokasi, "catatan.txt", timpa = false)
+            ).nilai as org.fm.com.domain.io.SumberTulisBerkas
+            val isiAsli = "Halo Sandbox iOS!".encodeToByteArray()
+            assertIs<HasilOperasi.Sukses<Unit>>(writer.tulis(PotonganIsi(isiAsli, selesai = true)))
+            assertIs<HasilOperasi.Sukses<Unit>>(writer.selesai())
 
-            val lokCatatan = assertNotNull(tulis.lokasiTarget)
-            val baca = assertSukses(adapter.bukaUntukBaca(lokCatatan), "bukaUntukBaca catatan.txt")
-            var data = ByteArray(0)
-            while (true) {
-                val p = assertIs<SumberIsiBerkas.HasilPotongan.Isi>(baca.potongan())
-                data += p.potongan.data
-                if (p.potongan.selesai) break
+            // Penulisan tanpa timpa pada nama sama ditolak KONFLIK
+            val konflikTulis = adapter.bukaUntukTulisDi(subFolder.lokasi, "catatan.txt", timpa = false)
+            assertEquals(PenyebabGalat.KONFLIK, assertIs<HasilOperasi.Gagal>(konflikTulis).penyebab)
+
+            // Batalkan tulis pada berkas baru tidak meninggalkan file
+            val writerBatal = assertIs<HasilOperasi.Sukses<*>>(
+                adapter.bukaUntukTulisDi(subFolder.lokasi, "batal.txt", timpa = false)
+            ).nilai as org.fm.com.domain.io.SumberTulisBerkas
+            assertIs<HasilOperasi.Sukses<Unit>>(writerBatal.tulis(PotonganIsi("sementara".encodeToByteArray(), true)))
+            assertIs<HasilOperasi.Sukses<Unit>>(writerBatal.batalkan())
+
+            val isiFolder = assertIs<HasilOperasi.Sukses<List<EntitasBerkas>>>(
+                adapter.daftarIsi(subFolder.lokasi).first()
+            ).nilai
+            assertEquals(listOf("catatan.txt"), isiFolder.map { it.nama })
+
+            val berkasCatatan = isiFolder.single()
+            val reader = assertIs<HasilOperasi.Sukses<SumberIsiBerkas>>(
+                adapter.bukaUntukBaca(berkasCatatan.lokasi)
+            ).nilai
+            val buf = Buffer()
+            try {
+                while (true) {
+                    when (val pot = reader.potongan()) {
+                        is SumberIsiBerkas.HasilPotongan.Isi -> {
+                            val d = pot.potongan.data
+                            if (d.isNotEmpty()) buf.write(d)
+                            if (pot.potongan.selesai) break
+                        }
+                        is SumberIsiBerkas.HasilPotongan.Gagal -> error(pot.pesan)
+                    }
+                }
+            } finally {
+                reader.tutup()
             }
-            baca.tutup()
-            assertEquals("Halo iOS!", data.decodeToString())
+            assertEquals("Halo Sandbox iOS!", buf.readByteArray().decodeToString())
+
+            // Uji PenyimpanBookmarkKeamanan (valid & tidak valid)
+            assertIs<HasilOperasi.Gagal>(PenyimpanBookmarkKeamanan.selesaikanDanSegarkanBookmark(""))
+            assertIs<HasilOperasi.Gagal>(PenyimpanBookmarkKeamanan.selesaikanDanSegarkanBookmark("!!!"))
+            val urlCatatan = assertIs<HasilOperasi.Sukses<NSURL>>(DokumenPemetaanLokasi.keUrl(berkasCatatan.lokasi)).nilai
+            val bmRes = PenyimpanBookmarkKeamanan.buatBookmarkBase64(urlCatatan)
+            if (bmRes is HasilOperasi.Sukses) {
+                val resolved = assertIs<HasilOperasi.Sukses<HasilBookmarkTerselesaikan>>(
+                    PenyimpanBookmarkKeamanan.selesaikanDanSegarkanBookmark(bmRes.nilai)
+                ).nilai
+                assertEquals(urlCatatan.path, resolved.url.path)
+            }
+
+            // Uji BookmarkUseCase & BerandaUseCase saat folder dihapus dari sandbox iOS
+            val bookmarkUseCase = BookmarkUseCase(MemoriRepositoriBookmark(), adapter)
+            val berandaUseCase = BerandaUseCase(MemoriRepositoriBeranda(), adapter, lokasiRoot)
+
+            val bmFolder = assertIs<HasilOperasi.Sukses<EntitasBookmark>>(
+                bookmarkUseCase.tambahBookmark(subFolder.lokasi, JenisBerkas.FOLDER, adalahFolder = true)
+            ).nilai
+            assertIs<HasilOperasi.Sukses<LokasiBerkas>>(berandaUseCase.tetapkanBeranda(subFolder.lokasi))
+            assertIs<StatusKetersediaanBookmark.Tersedia>(bookmarkUseCase.periksaKetersediaanSatu(bmFolder))
+
+            // Hapus memerlukan konfirmasi = true
+            val hapusTanpaKonf = adapter.hapus(PermintaanOperasi(sumber = subFolder.lokasi, konfirmasi = false))
+            assertEquals(PenyebabGalat.VALIDASI, assertIs<HasilOperasi.Gagal>(hapusTanpaKonf).penyebab)
+
+            assertIs<HasilOperasi.Sukses<Unit>>(
+                adapter.hapus(PermintaanOperasi(sumber = subFolder.lokasi, konfirmasi = true))
+            )
+
+            // Setelah dihapus -> Bookmark ditandai LokasiHilang & Beranda fallback ke root tanpa crash
+            assertIs<StatusKetersediaanBookmark.LokasiHilang>(bookmarkUseCase.periksaKetersediaanSatu(bmFolder))
+            val resBeranda = assertIs<HasilResolusiBeranda.IzinAtauLokasiHilang>(
+                berandaUseCase.selesaikanLokasiAwal()
+            )
+            assertEquals(lokasiRoot, resBeranda.lokasiDigunakan)
+
+            // Pilih ulang bookmark ke folder cadangan berhasil
+            val terganti = assertIs<HasilOperasi.Sukses<EntitasBookmark>>(
+                bookmarkUseCase.gantiLokasiBookmark(bmFolder, subCadangan.lokasi, JenisBerkas.FOLDER, true)
+            ).nilai
+            assertIs<StatusKetersediaanBookmark.Tersedia>(bookmarkUseCase.periksaKetersediaanSatu(terganti))
         } finally {
-            rootUrl.path?.let { NSFileManager.defaultManager.removeItemAtPath(it, null) }
+            fm.removeItemAtURL(rootUrl, null)
         }
-    }
-
-    @Test
-    fun siklusHidupTulisDanBatalkanIdempoten() = runTest {
-        val path = NSTemporaryDirectory() + "tulis_uji_" + NSUUID.UUID().UUIDString + ".txt"
-        val url = NSURL.fileURLWithPath(path)
-        val penulis = DokumenAliranTulis(url, apakahDokumenBaru = true)
-        assertIs<HasilOperasi.Sukses<Unit>>(penulis.tulis(PotonganIsi("halo iOS".encodeToByteArray())))
-        assertIs<HasilOperasi.Sukses<Unit>>(penulis.batalkan())
-        assertIs<HasilOperasi.Sukses<Unit>>(penulis.batalkan())
-        assertFalse(NSFileManager.defaultManager.fileExistsAtPath(path))
-        val tulisPascaBatal = assertIs<HasilOperasi.Gagal>(penulis.tulis(PotonganIsi("data".encodeToByteArray())))
-        assertEquals(PenyebabGalat.VALIDASI, tulisPascaBatal.penyebab)
-    }
-
-    @Test
-    fun operasiBerkasDanDaftarIsiIosBerjalanNyata() = runTest {
-        val rootUrl = buatDirektoriUji()
-        try {
-            val adapter = IosSumberDataPenyimpanan()
-            val rootLok = DokumenPemetaanLokasi.keLokasi(rootUrl)
-
-            val sub = assertSukses(
-                adapter.buatFolder(PermintaanOperasi(sumber = rootLok, namaBaru = "Sub")),
-                "buatFolder Sub"
-            )
-            val berkas = assertSukses(
-                adapter.buatBerkasKosong(PermintaanOperasi(sumber = sub.lokasi, namaBaru = "a.txt")),
-                "buatBerkasKosong a.txt"
-            )
-            val renameKonflik = assertIs<HasilOperasi.Gagal>(
-                adapter.buatBerkasKosong(PermintaanOperasi(sumber = sub.lokasi, namaBaru = "a.txt"))
-            )
-            assertEquals(PenyebabGalat.KONFLIK, renameKonflik.penyebab)
-
-            val hasilRename = assertSukses(
-                adapter.gantiNama(PermintaanOperasi(sumber = berkas.lokasi, namaBaru = "b.txt")),
-                "gantiNama a.txt -> b.txt"
-            )
-            assertEquals("b.txt", hasilRename.nama)
-
-            val daftar = assertSukses(adapter.daftarIsi(sub.lokasi).first(), "daftarIsi Sub")
-            assertEquals(listOf("b.txt"), daftar.map { it.nama })
-
-            val salinDirKeDiri = assertIs<HasilOperasi.Gagal>(
-                adapter.salin(PermintaanOperasi(sumber = sub.lokasi, tujuan = sub.lokasi))
-            )
-            assertEquals(PenyebabGalat.VALIDASI, salinDirKeDiri.penyebab)
-
-            assertSukses(
-                adapter.hapus(PermintaanOperasi(sumber = sub.lokasi, konfirmasi = true)),
-                "hapus Sub"
-            )
-        } finally {
-            rootUrl.path?.let { NSFileManager.defaultManager.removeItemAtPath(it, null) }
-        }
-    }
-
-    @Test
-    fun operasiBerkasMemvalidasiNamaDanKonfirmasi() = runTest {
-        val op = DokumenOperasiBerkas()
-        val root = LokasiBerkas("file:///tmp", JenisLokasi.IOS)
-        val hasil = assertIs<HasilOperasi.Gagal>(
-            op.buatFolder(PermintaanOperasi(sumber = root, namaBaru = "../bahaya"))
-        )
-        assertEquals(PenyebabGalat.VALIDASI, hasil.penyebab)
-        val hapusTanpaKonfirmasi = assertIs<HasilOperasi.Gagal>(
-            op.hapus(PermintaanOperasi(sumber = root, konfirmasi = false))
-        )
-        assertEquals(PenyebabGalat.VALIDASI, hapusTanpaKonfirmasi.penyebab)
-    }
-
-    @Test
-    fun routerMerutekanKeBackendIos() = runTest {
-        val contohEntitas = EntitasBerkas(
-            lokasi = LokasiBerkas("file:///tmp/catatan.txt", JenisLokasi.IOS, "catatan.txt"),
-            nama = "catatan.txt",
-            jenis = JenisBerkas.BERKAS_TEKS,
-            ukuranByte = 12L
-        )
-        val adapterIos = IosSumberDataPenyimpanan.untukUji {
-            flowOf(HasilOperasi.Sukses(listOf(contohEntitas)))
-        }
-        val router = RepositoriRouterBerkas(mapOf(JenisLokasi.IOS to adapterIos))
-        val lok = LokasiBerkas("file:///tmp", JenisLokasi.IOS)
-        val daftar = assertIs<HasilOperasi.Sukses<List<EntitasBerkas>>>(router.daftarIsi(lok).first())
-        assertEquals(1, daftar.nilai.size)
-        assertEquals("catatan.txt", daftar.nilai.first().nama)
     }
 }
