@@ -5,8 +5,6 @@ package org.fm.com.benchmark
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
-import kotlin.test.Test
-import kotlin.test.assertTrue
 import kotlin.time.TimeSource
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -21,6 +19,8 @@ import org.fm.com.domain.usecase.FilterBerkasUseCase
 import org.fm.com.domain.usecase.KriteriaUrutan
 import org.fm.com.domain.usecase.UrutkanBerkasUseCase
 import org.fm.com.presentation.filemanager.PemetaanDomainUi.keUi
+import org.junit.Assert.assertTrue
+import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
@@ -68,9 +68,9 @@ class BenchmarkDaftarBerkas {
                 assertTrue(hasil.size == 1000)
             }
 
-            val p95 = BenchmarkDiffCommon.hitungP95(durasiList)
+            val p95 = BantuBenchmark.hitungP95(durasiList)
             println("BENCHMARK [Android] Tampilan Awal 1.000 Item Disk P95: ${p95}ms (Target PRD <= 500ms)")
-            assertTrue(p95 <= 500L, "P95 Daftar 1.000 item disk ($p95 ms) melebihi target 500 ms")
+            assertTrue("P95 Daftar 1.000 item disk ($p95 ms) melebihi target 500 ms", p95 <= 500L)
         } finally {
             folderUji.deleteRecursively()
         }

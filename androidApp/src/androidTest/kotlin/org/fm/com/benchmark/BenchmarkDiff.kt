@@ -5,8 +5,6 @@ package org.fm.com.benchmark
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
-import kotlin.test.Test
-import kotlin.test.assertTrue
 import kotlin.time.TimeSource
 import kotlinx.coroutines.runBlocking
 import okio.FileSystem
@@ -18,6 +16,8 @@ import org.fm.com.domain.usecase.BandingkanBerkasUseCase
 import org.fm.com.domain.usecase.BukaBerkasTeksUseCase
 import org.fm.com.domain.usecase.HasilBandingkanBerkas
 import org.fm.com.domain.usecase.HasilBukaBerkasTeks
+import org.junit.Assert.assertTrue
+import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
@@ -32,7 +32,7 @@ class BenchmarkDiff {
         }
 
         try {
-            val (teksA, teksB) = BenchmarkDiffCommon.bangunDuaTeksSatuMegabyte()
+            val (teksA, teksB) = BantuBenchmark.bangunDuaTeksSatuMegabyte()
             val fileA = File(folderUji, "a_1mb.txt").apply { writeText(teksA) }
             val fileB = File(folderUji, "b_1mb.txt").apply { writeText(teksB) }
 
@@ -61,9 +61,9 @@ class BenchmarkDiff {
                 durasiBuka.add(mark.elapsedNow().inWholeMilliseconds)
                 assertTrue(hasilBuka is HasilBukaBerkasTeks.Sukses)
             }
-            val p95Buka = BenchmarkDiffCommon.hitungP95(durasiBuka)
+            val p95Buka = BantuBenchmark.hitungP95(durasiBuka)
             println("BENCHMARK [Android] Buka 1 MiB Disk P95: ${p95Buka}ms (Target PRD <= 500ms)")
-            assertTrue(p95Buka <= 500L, "P95 Buka berkas 1 MiB ($p95Buka ms) melebihi target 500 ms")
+            assertTrue("P95 Buka berkas 1 MiB ($p95Buka ms) melebihi target 500 ms", p95Buka <= 500L)
 
             // 2. Ukur Diff 2x1 MiB asinkron pada runtime Android ART (Target <= 2000 ms)
             val durasiDiff = mutableListOf<Long>()
@@ -75,9 +75,9 @@ class BenchmarkDiff {
                 durasiDiff.add(mark.elapsedNow().inWholeMilliseconds)
                 assertTrue(hasilDiff is HasilBandingkanBerkas.Sukses)
             }
-            val p95Diff = BenchmarkDiffCommon.hitungP95(durasiDiff)
+            val p95Diff = BantuBenchmark.hitungP95(durasiDiff)
             println("BENCHMARK [Android] Diff 2x1 MiB P95: ${p95Diff}ms (Target PRD <= 2000ms)")
-            assertTrue(p95Diff <= 2000L, "P95 Diff 2x1 MiB ($p95Diff ms) melebihi target 2000 ms")
+            assertTrue("P95 Diff 2x1 MiB ($p95Diff ms) melebihi target 2000 ms", p95Diff <= 2000L)
         } finally {
             folderUji.deleteRecursively()
         }

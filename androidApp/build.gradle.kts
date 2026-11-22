@@ -23,6 +23,8 @@ dependencies {
     androidTestImplementation(libs.androidx.testRunner)
     androidTestImplementation(libs.androidx.compose.uiTestJunit4)
     androidTestImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.kotlin.test)
+    androidTestImplementation(libs.okio)
     debugImplementation(libs.androidx.compose.uiTestManifest)
 }
 
