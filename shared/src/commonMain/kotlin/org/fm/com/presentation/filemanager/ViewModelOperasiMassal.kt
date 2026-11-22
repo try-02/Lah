@@ -1,5 +1,6 @@
 package org.fm.com.presentation.filemanager
 
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -16,6 +17,7 @@ import org.fm.com.domain.repository.RepositoriBerkas
 import org.fm.com.domain.repository.RepositoriOperasiBerkas
 import org.fm.com.domain.usecase.SalinPindahkanBerkasUseCase
 
+@Immutable
 data class StateOperasiMassal(
     val sedangBerjalan: Boolean = false,
     val apakahPindah: Boolean = false,

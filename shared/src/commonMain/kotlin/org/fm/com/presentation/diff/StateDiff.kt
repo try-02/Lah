@@ -1,5 +1,6 @@
 package org.fm.com.presentation.diff
 
+import androidx.compose.runtime.Immutable
 import org.fm.com.domain.diff.BarisDiffBerdampingan
 import org.fm.com.domain.diff.BarisDiffUnified
 import org.fm.com.domain.diff.KelompokPerubahanDiff
@@ -19,6 +20,7 @@ data class InfoBerkasDiff(
     val nama: String
 )
 
+@Immutable
 data class StateDiff(
     val berkasA: InfoBerkasDiff? = null,
     val berkasB: InfoBerkasDiff? = null,

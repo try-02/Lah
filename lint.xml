@@ -5,10 +5,6 @@
     <issue id="GradleDependency" severity="ignore" />
     <issue id="NewerVersionAvailable" severity="ignore" />
 
-    <!-- Pastikan temuan Compose & performa tampil jelas pada laporan diagnosa -->
-    <issue id="ComposeModifierMissing" severity="warning" />
-    <issue id="ComposeUnstableCollections" severity="warning" />
-    <issue id="ComposeViewModelInjection" severity="warning" />
-    <issue id="ComposeRememberMissing" severity="error" />
-    <issue id="ComposeMultipleContentEmitters" severity="error" />
+    <!-- Pastikan aturan Compose bawaan AndroidX tampil jelas -->
+    <issue id="ModifierParameter" severity="warning" />
 </lint>

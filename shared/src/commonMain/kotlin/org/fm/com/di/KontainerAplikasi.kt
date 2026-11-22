@@ -1,5 +1,6 @@
 package org.fm.com.di
 
+import androidx.compose.runtime.Stable
 import kotlinx.coroutines.runBlocking
 import org.fm.com.data.DataBerkas
 import org.fm.com.data.SumberMemoriPenyimpanan
@@ -37,6 +38,7 @@ import org.koin.core.module.Module
 import org.koin.dsl.koinApplication
 import org.koin.dsl.module
 
+@Stable
 data class KontainerAplikasi(
     val repositoriBerkas: RepositoriBerkas,
     val repositoriOperasi: RepositoriOperasiBerkas,

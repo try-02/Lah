@@ -2,6 +2,7 @@
 
 package org.fm.com.presentation.filemanager
 
+import androidx.compose.runtime.Immutable
 import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
@@ -46,6 +47,7 @@ data class ItemBerkasUi(
     val waktuUbahEpochMs: Long? = null
 )
 
+@Immutable
 data class StateFilemanager(
     val lokasiSaatIni: LokasiBerkas? = null,
     val segmenBreadcrumb: List<SegmenLokasi> = emptyList(),

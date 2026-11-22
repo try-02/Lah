@@ -239,6 +239,5 @@ class ViewModelDiff(
 
     override fun onCleared() {
         pekerjaanDiff?.cancel()
-        super.onCleared()
     }
 }

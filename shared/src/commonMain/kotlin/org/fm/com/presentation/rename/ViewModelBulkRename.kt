@@ -1,5 +1,6 @@
 package org.fm.com.presentation.rename
 
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlin.coroutines.cancellation.CancellationException
@@ -41,6 +42,7 @@ data class AcaraSuksesBulkRename(
     val jumlahBerhasil: Int
 )
 
+@Immutable
 data class StateBulkRename(
     val terbuka: Boolean = false,
     val folderInduk: LokasiBerkas? = null,
@@ -437,6 +439,5 @@ class ViewModelBulkRename(
     override fun onCleared() {
         pekerjaanMuatFolder?.cancel()
         pekerjaanEksekusi?.cancel()
-        super.onCleared()
     }
 }

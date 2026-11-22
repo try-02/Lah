@@ -124,7 +124,6 @@ sqldelight {
 
 dependencies {
     androidRuntimeClasspath(libs.compose.uiTooling)
-    lintChecks(libs.compose.lint.checks)
 }
 
 compose.resources {

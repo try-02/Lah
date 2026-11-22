@@ -268,6 +268,5 @@ class ViewModelPencarian(
 
     override fun onCleared() {
         pekerjaanCari?.cancel()
-        super.onCleared()
     }
 }

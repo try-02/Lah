@@ -39,20 +39,37 @@ jobs:
         with:
           cache-cleanup: always
 
-      - name: Build Android & host tests
+      - name: host tests
         run: |
           chmod +x ./gradlew
           ./gradlew :shared:testAndroidHostTest --stacktrace --console=plain
 
-      - name: Build Android & host tests
+      - name: stability
         run: |
           chmod +x ./gradlew
           ./gradlew :shared:stabilityDump :shared:compileAndroidMain -PenableComposeCompilerReports=true --stacktrace --console=plain
 
-      - name: Build Android & host tests
+      - name: lint
         run: |
           chmod +x ./gradlew
           ./gradlew :shared:lint :androidApp:lintDebug --stacktrace --console=plain
+
+      - name: appdebug
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :androidApp:assembleDebug --stacktrace --console=plain
+
+      - name: Sign APK
+        uses: r0adkll/sign-android-release@v1
+        id: sign_app
+        env:
+          BUILD_TOOLS_VERSION: "34.0.0"
+        with:
+          releaseDirectory: androidApp/build/outputs/apk/debug
+          signingKeyBase64: ${{ secrets.KEYSTORE_BASE64 }}
+          alias: ${{ secrets.KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
 
       - name: Sanitize Compose Compiler Report filenames
         shell: bash
@@ -72,6 +89,7 @@ jobs:
         with:
           name: pos-offline-release-signed-apk
           path: |
+            ${{ steps.sign_app.outputs.signedReleaseFile }}
             shared/stability/
             shared/build/compose_compiler/
             shared/build/reports/

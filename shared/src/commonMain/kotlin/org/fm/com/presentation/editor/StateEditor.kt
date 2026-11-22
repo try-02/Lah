@@ -1,11 +1,13 @@
 package org.fm.com.presentation.editor
 
+import androidx.compose.runtime.Immutable
 import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.SidikIsiBerkas
 import org.fm.com.domain.usecase.HasilStatistikTeks
 import org.fm.com.domain.usecase.RentangKecocokan
 
+@Immutable
 data class StateCariGanti(
     val terbuka: Boolean = false,
     val kueriCari: String = "",
@@ -26,6 +28,7 @@ data class StateCariGanti(
         get() = daftarKecocokan.getOrNull(indeksKecocokanAktif)
 }
 
+@Immutable
 data class StateDialogStatistik(
     val terbuka: Boolean = false,
     val sedangMenghitung: Boolean = false,
@@ -49,6 +52,7 @@ data class PermintaanSimpanSebagai(
     val pesanKonflikTujuan: String? = null
 )
 
+@Immutable
 data class StateEditor(
     val daftarTab: List<ModelTabEditor> = emptyList(),
     val idTabAktif: String? = null,

@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import androidx.core.net.toUri
 import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.LokasiBerkas
@@ -36,7 +37,7 @@ object SafPemetaanLokasi {
             return HasilOperasi.Gagal("Pengenal URI SAF kosong", PenyebabGalat.VALIDASI)
         }
         return try {
-            val uri = Uri.parse(pengenalUri)
+            val uri = pengenalUri.toUri()
             if (uri.scheme != ContentResolver.SCHEME_CONTENT || uri.authority.isNullOrBlank()) {
                 return HasilOperasi.Gagal(
                     "Pengenal bukan URI content SAF yang sah",

@@ -58,6 +58,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.OperasiBerkas
@@ -72,19 +73,19 @@ import org.fm.com.presentation.tema.LocalFontMono
 @Composable
 fun DaftarBerkasLayar(
     viewModel: ViewModelFilemanager,
+    onBukaBerkas: (ItemBerkasUi) -> Unit,
+    modifier: Modifier = Modifier,
     viewModelOperasiMassal: ViewModelOperasiMassal? = null,
     viewModelBulkRename: ViewModelBulkRename? = null,
     aksiPlatform: AksiPlatformBerkas = remember { AksiPlatformBerkasBawaan() },
-    onBukaBerkas: (ItemBerkasUi) -> Unit,
     onPilihFolder: (() -> Unit)? = null,
     lokasiPintasan: List<LokasiBerkas> = emptyList(),
     onPilihLokasiPintasan: ((LokasiBerkas) -> Unit)? = null,
-    modifier: Modifier = Modifier,
     onBandingkanBerkas: ((ItemBerkasUi, ItemBerkasUi) -> Unit)? = null
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val stateMassalState = viewModelOperasiMassal?.state?.collectAsStateWithLifecycle()
-    val stateMassal = stateMassalState?.value ?: remember { StateOperasiMassal() }
+    val defaultStateMassal = remember { MutableStateFlow(StateOperasiMassal()) }
+    val stateMassal by (viewModelOperasiMassal?.state ?: defaultStateMassal).collectAsStateWithLifecycle()
     val fontMono = LocalFontMono.current
     @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current

@@ -1,5 +1,6 @@
 package org.fm.com.presentation.terbaru
 
+import androidx.compose.runtime.Immutable
 import org.fm.com.domain.model.EntitasRiwayatLokasi
 import org.fm.com.domain.model.JenisBerkas
 import org.fm.com.domain.model.LokasiBerkas
@@ -14,6 +15,7 @@ data class ItemRiwayatUi(
     val adalahFolder: Boolean
 )
 
+@Immutable
 data class StateTerbaru(
     val daftarItem: List<ItemRiwayatUi> = emptyList(),
     val sedangMemuat: Boolean = false,

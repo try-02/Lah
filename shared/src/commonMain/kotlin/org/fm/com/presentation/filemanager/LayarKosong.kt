@@ -24,9 +24,9 @@ fun LayarStatusFilemanager(
     sedangMemuat: Boolean,
     pesanGalat: String?,
     jumlahItem: Int,
-    promptLokasi: String = "~/$",
     onMuatUlang: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    promptLokasi: String = "~/$"
 ) {
     val fontMono = LocalFontMono.current
     Box(

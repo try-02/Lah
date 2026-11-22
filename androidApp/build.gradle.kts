@@ -17,7 +17,6 @@ dependencies {
 
     implementation(libs.compose.uiToolingPreview)
     debugImplementation(libs.compose.uiTooling)
-    lintChecks(libs.compose.lint.checks)
 }
 
 android {

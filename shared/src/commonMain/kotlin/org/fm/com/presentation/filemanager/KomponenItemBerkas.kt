@@ -44,8 +44,8 @@ fun ItemBerkasBaris(
     modeSeleksi: Boolean,
     onKlik: () -> Unit,
     onTekanLama: () -> Unit,
-    onKlikMenu: () -> Unit = onTekanLama,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onKlikMenu: () -> Unit = onTekanLama
 ) {
     val fontMono = LocalFontMono.current
     val haptic = LocalHapticFeedback.current
@@ -177,8 +177,8 @@ fun ItemBerkasKotak(
     modeSeleksi: Boolean,
     onKlik: () -> Unit,
     onTekanLama: () -> Unit,
-    onKlikMenu: () -> Unit = onTekanLama,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onKlikMenu: () -> Unit = onTekanLama
 ) {
     val fontMono = LocalFontMono.current
     val haptic = LocalHapticFeedback.current

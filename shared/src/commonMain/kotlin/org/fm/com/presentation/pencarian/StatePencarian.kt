@@ -1,5 +1,6 @@
 package org.fm.com.presentation.pencarian
 
+import androidx.compose.runtime.Immutable
 import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.FilterJenisEntitas
 import org.fm.com.domain.model.GalatBacaCariIsi
@@ -51,6 +52,7 @@ data class BarisCocokUi(
     val jumlahKecocokanDiBaris: Int
 )
 
+@Immutable
 data class ItemHasilCariIsiUi(
     val entitas: EntitasBerkas,
     val nama: String,
@@ -60,6 +62,7 @@ data class ItemHasilCariIsiUi(
     val daftarTerpotongBatas: Boolean
 )
 
+@Immutable
 data class StatePencarian(
     val folderAkar: LokasiBerkas? = null,
     val modePencarian: ModePencarian = ModePencarian.NAMA,

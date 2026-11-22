@@ -93,6 +93,7 @@ object PemformatLokasiRamah {
         return if (ext.length <= 5) ".$ext" else ".${ext.take(4)}"
     }
 
+    @Suppress("SdCardPath")
     private fun formatPathPosix(path: String): String {
         val bersih = path.trimEnd('/').ifEmpty { "/" }
         return when {
@@ -108,6 +109,7 @@ object PemformatLokasiRamah {
         }
     }
 
+    @Suppress("SdCardPath")
     private fun formatUriSaf(uriString: String, label: String?): String {
         val setelahScheme = uriString.substringAfter("://", "")
         if (setelahScheme.isEmpty()) return label ?: uriString

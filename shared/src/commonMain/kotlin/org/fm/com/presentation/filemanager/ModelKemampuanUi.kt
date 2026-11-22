@@ -1,9 +1,11 @@
 package org.fm.com.presentation.filemanager
 
+import androidx.compose.runtime.Immutable
 import org.fm.com.domain.model.KemampuanPenyimpanan
 import org.fm.com.domain.model.OperasiBerkas
 import org.fm.com.domain.usecase.KemampuanDipakaiUseCase
 
+@Immutable
 data class ModelKemampuanUi(
     val dapatMembuat: Boolean = true,
     val dapatGantiNama: Boolean = true,

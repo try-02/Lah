@@ -8,6 +8,7 @@ import android.net.Uri
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import java.io.File
 import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.LokasiBerkas
@@ -49,7 +50,7 @@ class AksiPlatformBerkasAndroid(
 
     private fun resolusiUriAman(lokasi: LokasiBerkas): Uri? {
         return when (lokasi.jenis) {
-            JenisLokasi.SAF -> runCatching { Uri.parse(lokasi.pengenal) }.getOrNull()
+            JenisLokasi.SAF -> runCatching { lokasi.pengenal.toUri() }.getOrNull()
             JenisLokasi.POSIX -> runCatching {
                 FileProvider.getUriForFile(
                     context,

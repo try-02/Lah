@@ -122,8 +122,8 @@ private data class PermintaanFokusBlok(
 @Composable
 fun LayarEditor(
     viewModel: ViewModelEditor,
-    onKembali: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onKembali: (() -> Unit)? = null
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -1163,9 +1163,8 @@ private fun BarisBlokEditor(
                     cursorBrush = SolidColor(warnaCursor),
                     onTextLayout = { textLayoutResult = it },
                     modifier = modField.padding(
-                        horizontal = 10.dp,
-                        vertical = 0.dp
-                    ).padding(
+                        start = 10.dp,
+                        end = 10.dp,
                         top = paddingAtasDp,
                         bottom = paddingBawahDp
                     )

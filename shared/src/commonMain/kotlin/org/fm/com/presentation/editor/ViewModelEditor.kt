@@ -1623,7 +1623,6 @@ class ViewModelEditor(
         pekerjaanStatistik?.cancel()
         pekerjaanSimpan?.cancel()
         sejarahPerTab.clear()
-        super.onCleared()
     }
 
     internal companion object {
