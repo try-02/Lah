@@ -70,6 +70,7 @@ import org.fm.com.domain.model.HasilEkstrakArsip
 import org.fm.com.domain.model.JenisBerkas
 import org.fm.com.domain.model.KebijakanKonflikEkstrak
 import org.fm.com.domain.model.LokasiBerkas
+import org.fm.com.domain.usecase.LapisanJejakArsip
 import org.fm.com.presentation.filemanager.KomponenIkonBerkas
 import org.fm.com.presentation.filemanager.PemetaanDomainUi
 import org.fm.com.presentation.komponen.IkonAplikasi
@@ -930,7 +931,7 @@ private fun DialogInfoKapabilitasArsip(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Jumlah entri: $jumlahEntri", style = MaterialTheme.typography.bodySmall)
-                val ukuranTeks = PemformatDomainUi.formatUkuran(totalUkuranByte, adalahFolder = false)
+                val ukuranTeks = PemetaanDomainUi.formatUkuran(totalUkuranByte, adalahFolder = false)
                 Text(
                     text = "Total ukuran tidak terkompresi: $ukuranTeks" +
                         if (adaUkuranTidakDiketahui) " (sebagian tidak diketahui)" else "",
@@ -976,4 +977,4 @@ private fun BarisStatusKap(label: String, didukung: Boolean) {
 }
 
 private fun PemformatLokasiRamah.formatRingkasUkuran(byte: Long): String =
-    PemformatDomainUi.formatUkuran(byte, adalahFolder = false)
+    PemetaanDomainUi.formatUkuran(byte, adalahFolder = false)

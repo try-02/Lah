@@ -23,13 +23,12 @@ import org.fm.com.domain.model.KebijakanKonflikEkstrak
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.OpsiEkstrakArsip
 import org.fm.com.domain.model.PenyebabGalat
-import org.fm.com.domain.model.RingkasanIsiArsip
 import org.fm.com.domain.model.ValidasiNama
 import org.fm.com.domain.usecase.EkstrakArsipUseCase
 import org.fm.com.domain.usecase.KompresArsipUseCase
 import org.fm.com.domain.usecase.LapisanJejakArsip
 import org.fm.com.domain.usecase.StatusLapisanArsip
-import org.fm.com.presentation.filemanager.PemformatLokasiRamah
+import org.fm.com.presentation.filemanager.PemetaanDomainUi
 
 private const val ID_SESI_UTAMA = "sesi_browser_arsip"
 
@@ -939,17 +938,15 @@ class ViewModelArsip(
                 jalurInternal = e.jalurInternal,
                 nama = e.nama,
                 adalahFolder = e.adalahFolder,
-                ukuranAsliFormat = if (e.adalahFolder) {
-                    "-"
-                } else {
-                    PemformatLokasiRamah.formatUkuranSingkat(e.ukuranTidakTerkompresiByte)
-                },
+                ukuranAsliFormat = PemetaanDomainUi.formatUkuran(
+                    e.ukuranTidakTerkompresiByte,
+                    e.adalahFolder
+                ),
                 ukuranAsliByte = e.ukuranTidakTerkompresiByte,
-                ukuranKompresFormat = if (e.adalahFolder) {
-                    "-"
-                } else {
-                    PemformatLokasiRamah.formatUkuranSingkat(e.ukuranTerkompresiByte)
-                },
+                ukuranKompresFormat = PemetaanDomainUi.formatUkuran(
+                    e.ukuranTerkompresiByte,
+                    e.adalahFolder
+                ),
                 adalahArsipBersarang = e.adalahArsipBersarang,
                 terenkripsi = e.terenkripsi,
                 adalahTautanSimbolik = e.adalahTautanSimbolik,
@@ -1008,21 +1005,4 @@ class ViewModelArsip(
         pekerjaanEkstrak?.cancel()
         pekerjaanKompres?.cancel()
     }
-}
-
-private fun PemformatLokasiRamah.formatUkuranSingkat(ukuranByte: Long?): String {
-    if (ukuranByte == null || ukuranByte < 0L) return "-"
-    if (ukuranByte < 1024L) return "$ukuranByte B"
-    val kb = ukuranByte / 1024.0
-    if (kb < 1024.0) return "${formatSatuDesimal(kb)} KiB"
-    val mb = kb / 1024.0
-    if (mb < 1024.0) return "${formatSatuDesimal(mb)} MiB"
-    val gb = mb / 1024.0
-    return "${formatSatuDesimal(gb)} GiB"
-}
-
-private fun formatSatuDesimal(nilai: Double): String {
-    val dibulatkan = (nilai * 10.0).toLong() / 10.0
-    val teks = dibulatkan.toString()
-    return if (teks.endsWith(".0")) teks.substringBefore(".0") else teks
 }
