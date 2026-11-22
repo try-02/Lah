@@ -1,8 +1,10 @@
 package org.fm.com.arsitektur
 
+import androidx.lifecycle.ViewModel
 import com.lemonappdev.konsist.api.Konsist
 import com.lemonappdev.konsist.api.architecture.KoArchitectureCreator.assertArchitecture
 import com.lemonappdev.konsist.api.architecture.Layer
+import com.lemonappdev.konsist.api.ext.list.withAllParentsOf
 import com.lemonappdev.konsist.api.ext.list.withNameEndingWith
 import com.lemonappdev.konsist.api.verify.assertFalse
 import com.lemonappdev.konsist.api.verify.assertTrue
@@ -39,7 +41,10 @@ class KonsistArsitekturTest {
 
         Konsist.scopeFromProduction()
             .files
-            .filter { it.resideInPackage("org.fm.com.domain..") }
+            .filter { file ->
+                val pkg = file.packagee?.name
+                pkg == "org.fm.com.domain" || pkg?.startsWith("org.fm.com.domain.") == true
+            }
             .assertFalse { file ->
                 file.imports.any { imp ->
                     awalanTerlarang.any { prefiks -> imp.name.startsWith(prefiks) }
@@ -59,9 +64,7 @@ class KonsistArsitekturTest {
     fun subkelasViewModelBeradaDiPresentationDenganPenamaanKonsisten() {
         Konsist.scopeFromProduction()
             .classes()
-            .filter { kelas ->
-                kelas.parents().any { induk -> induk.name == "ViewModel" }
-            }
+            .withAllParentsOf(ViewModel::class)
             .assertTrue { kelas ->
                 kelas.resideInPackage("org.fm.com.presentation..") &&
                     (kelas.name.startsWith("ViewModel") || kelas.name.endsWith("ViewModel"))
