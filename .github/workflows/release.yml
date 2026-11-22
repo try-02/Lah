@@ -28,7 +28,6 @@ jobs:
 
           ./gradlew assembleRelease \
             --no-daemon \
-            --non-interactive \
             --stacktrace \
             --console=plain
         env:
