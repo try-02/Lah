@@ -1247,6 +1247,13 @@ class ViewModelEditor(
 
     private fun setBukaDialogCariGanti(buka: Boolean) {
         if (!buka) {
+            val cgLama = _state.value.cariGanti
+            if (cgLama.kueriCari.isNotEmpty() && cgLama.galatPola == null) {
+                catatRiwayatPencarian(
+                    cgLama.kueriCari,
+                    OpsiCariEditor(cgLama.pekaHuruf, cgLama.kataUtuh, cgLama.gunakanRegex)
+                )
+            }
             pekerjaanCari?.cancel()
             _state.update {
                 it.copy(

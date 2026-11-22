@@ -67,6 +67,7 @@ import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.FilterJenisEntitas
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.ModeCocokNama
+import org.fm.com.presentation.editor.BagianRiwayatPencarian
 import org.fm.com.presentation.komponen.IkonAplikasi
 import org.fm.com.presentation.komponen.PemformatLokasiRamah
 import org.fm.com.presentation.tema.LocalFontMono
@@ -349,12 +350,27 @@ fun LayarPencarian(
                 }
 
                 if (!state.pernahMencari) {
-                    Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "find . -name  // ketik pola atau buka Filter",
-                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = fontMono, fontSize = 12.5.sp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    if (state.daftarRiwayat.isNotEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(16.dp)
+                        ) {
+                            BagianRiwayatPencarian(
+                                daftarRiwayat = state.daftarRiwayat,
+                                onPilihItem = { viewModel.prosesIntent(IntentPencarian.PilihRiwayat(it)) },
+                                onHapusItem = { viewModel.prosesIntent(IntentPencarian.HapusItemRiwayat(it)) },
+                                onHapusSemua = { viewModel.prosesIntent(IntentPencarian.BersihkanSemuaRiwayat) }
+                            )
+                        }
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "find . -name  // ketik pola atau buka Filter",
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = fontMono, fontSize = 12.5.sp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 } else if (!state.sedangMencari && daftarKosong && state.pesanGalat == null) {
                     Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {

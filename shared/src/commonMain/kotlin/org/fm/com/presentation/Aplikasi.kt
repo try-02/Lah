@@ -39,6 +39,7 @@ import org.fm.com.presentation.filemanager.DaftarBerkasLayar
 import org.fm.com.presentation.filemanager.IntentFilemanager
 import org.fm.com.presentation.filemanager.ViewModelFilemanager
 import org.fm.com.presentation.filemanager.ViewModelOperasiMassal
+import org.fm.com.presentation.komponen.PenanganKembaliSistem
 import org.fm.com.presentation.navigasi.NavigasiUtama
 import org.fm.com.presentation.navigasi.TabUtama
 import org.fm.com.presentation.pencarian.IntentPencarian
@@ -109,7 +110,8 @@ fun Aplikasi(
         val vmPencarian: ViewModelPencarian = viewModel(key = "cari_$kunciKontainer") {
             ViewModelPencarian(
                 cariNamaUseCase = kontainer.cariNamaBerkasUseCase,
-                cariIsiUseCase = kontainer.cariIsiBerkasUseCase
+                cariIsiUseCase = kontainer.cariIsiBerkasUseCase,
+                riwayatPencarianUseCase = kontainer.riwayatPencarianUseCase
             )
         }
         val vmEditor: ViewModelEditor = viewModel(key = "editor_$kunciKontainer") {
@@ -150,6 +152,16 @@ fun Aplikasi(
         val wordWrapUmumAktif by remember(vmPengaturan) {
             vmPengaturan.state.map { it.wordWrapUmum }.distinctUntilChanged()
         }.collectAsStateWithLifecycle(initialValue = true)
+
+        val statusBackFm by remember(vmFilemanager) {
+            vmFilemanager.state
+                .map { Triple(it.sedangMultiSelect, it.kataKunciSaring.isNotEmpty(), it.dapatNavigasiKembali) }
+                .distinctUntilChanged()
+        }.collectAsStateWithLifecycle(initialValue = Triple(false, false, false))
+
+        val sedangModeTempel by remember(vmOperasiMassal) {
+            vmOperasiMassal.state.map { it.sedangMemilihTujuan }.distinctUntilChanged()
+        }.collectAsStateWithLifecycle(initialValue = false)
 
         var tabTerpilih by remember { mutableStateOf(TabUtama.FILE) }
         var ruangEditorTerbuka by remember { mutableStateOf(false) }
@@ -278,6 +290,22 @@ fun Aplikasi(
                 } else null
             )
         } else {
+            val tanganiBackUtama = tabTerpilih != TabUtama.FILE ||
+                statusBackFm.first ||
+                sedangModeTempel ||
+                statusBackFm.second ||
+                statusBackFm.third
+
+            PenanganKembaliSistem(aktif = tanganiBackUtama) {
+                when {
+                    tabTerpilih != TabUtama.FILE -> tabTerpilih = TabUtama.FILE
+                    statusBackFm.first -> vmFilemanager.prosesIntent(IntentFilemanager.BersihkanPilihan)
+                    sedangModeTempel -> vmOperasiMassal.batalModeTempel()
+                    statusBackFm.second -> vmFilemanager.prosesIntent(IntentFilemanager.UbahKataKunciSaring(""))
+                    statusBackFm.third -> vmFilemanager.prosesIntent(IntentFilemanager.NavigasiKembali)
+                }
+            }
+
             NavigasiUtama(
                 tabAktif = tabTerpilih,
                 onPilihTab = { tabTerpilih = it },

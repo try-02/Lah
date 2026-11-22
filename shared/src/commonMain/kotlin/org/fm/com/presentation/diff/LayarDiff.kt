@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.fm.com.domain.diff.ModeWhitespaceDiff
 import org.fm.com.presentation.komponen.IkonAplikasi
+import org.fm.com.presentation.komponen.PenanganKembaliSistem
 import org.fm.com.presentation.tema.LocalFontMono
 
 @Composable
@@ -72,6 +73,8 @@ fun LayarDiff(
     val listStateBerdampingan = rememberLazyListState()
     val listStateUnified = rememberLazyListState()
     var menuTerbuka by remember { mutableStateOf(false) }
+
+    PenanganKembaliSistem(aktif = true, onKembali = onKembali)
 
     LaunchedEffect(state.pesanInfo) {
         state.pesanInfo?.let {

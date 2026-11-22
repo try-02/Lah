@@ -19,16 +19,33 @@ import org.fm.com.domain.model.ModeCocokNama
 import org.fm.com.domain.model.UtilitasFilterPencarian
 import org.fm.com.domain.usecase.CariIsiBerkasUseCase
 import org.fm.com.domain.usecase.CariNamaBerkasUseCase
+import org.fm.com.domain.usecase.RiwayatPencarianUseCase
+import org.fm.com.presentation.editor.ItemRiwayatPencarianUi
+import org.fm.com.presentation.editor.keUi
 
 class ViewModelPencarian(
     private val cariNamaUseCase: CariNamaBerkasUseCase,
     private val cariIsiUseCase: CariIsiBerkasUseCase,
+    private val riwayatPencarianUseCase: RiwayatPencarianUseCase? = null,
     private val clock: Clock = Clock.System
 ) : ViewModel() {
     private val _state = MutableStateFlow(StatePencarian())
     val state: StateFlow<StatePencarian> = _state.asStateFlow()
 
     private var pekerjaanCari: Job? = null
+    private var pekerjaanRiwayat: Job? = null
+
+    init {
+        if (riwayatPencarianUseCase != null) {
+            pekerjaanRiwayat = viewModelScope.launch {
+                riwayatPencarianUseCase.ambilRiwayat()
+                    .catch { /* Abaikan galat sementara aliran riwayat */ }
+                    .collect { daftar ->
+                        _state.update { it.copy(daftarRiwayat = daftar.map { item -> item.keUi() }) }
+                    }
+            }
+        }
+    }
 
     fun prosesIntent(intent: IntentPencarian) {
         when (intent) {
@@ -82,6 +99,9 @@ class ViewModelPencarian(
             }
             is IntentPencarian.MulaiPencarian -> mulaiPencarian()
             is IntentPencarian.BatalkanPencarian -> batalkanPencarian()
+            is IntentPencarian.PilihRiwayat -> pilihRiwayat(intent.item)
+            is IntentPencarian.HapusItemRiwayat -> hapusItemRiwayat(intent.kueri)
+            is IntentPencarian.BersihkanSemuaRiwayat -> bersihkanSemuaRiwayat()
             is IntentPencarian.HapusGalat -> _state.update { it.copy(pesanGalat = null) }
         }
     }
@@ -105,6 +125,7 @@ class ViewModelPencarian(
         }
 
         val ekstensi = UtilitasFilterPencarian.normalisasiEkstensi(st.filterEkstensiInput)
+        catatRiwayatDariState(st)
         pekerjaanCari?.cancel()
 
         when (st.modePencarian) {
@@ -266,7 +287,60 @@ class ViewModelPencarian(
         return HasilParseUkuran(nilaiByte)
     }
 
+    private fun catatRiwayatDariState(st: StatePencarian) {
+        val uc = riwayatPencarianUseCase ?: return
+        if (st.kueri.isEmpty()) return
+        viewModelScope.launch {
+            when (st.modePencarian) {
+                ModePencarian.NAMA -> uc.catat(
+                    kueri = st.kueri,
+                    pekaHuruf = st.pekaHurufNama,
+                    kataUtuh = false,
+                    gunakanRegex = st.modeCocokNama == ModeCocokNama.REGEX
+                )
+                ModePencarian.ISI -> uc.catat(
+                    kueri = st.kueri,
+                    pekaHuruf = st.pekaHurufIsi,
+                    kataUtuh = st.kataUtuhIsi,
+                    gunakanRegex = st.gunakanRegexIsi
+                )
+            }
+        }
+    }
+
+    private fun pilihRiwayat(item: ItemRiwayatPencarianUi) {
+        _state.update { st ->
+            when (st.modePencarian) {
+                ModePencarian.NAMA -> st.copy(
+                    kueri = item.kueri,
+                    pekaHurufNama = item.pekaHuruf,
+                    modeCocokNama = if (item.gunakanRegex) ModeCocokNama.REGEX else ModeCocokNama.SEBAGIAN,
+                    pesanGalat = null
+                )
+                ModePencarian.ISI -> st.copy(
+                    kueri = item.kueri,
+                    pekaHurufIsi = item.pekaHuruf,
+                    kataUtuhIsi = item.kataUtuh,
+                    gunakanRegexIsi = item.gunakanRegex,
+                    pesanGalat = null
+                )
+            }
+        }
+        mulaiPencarian()
+    }
+
+    private fun hapusItemRiwayat(kueri: String) {
+        val uc = riwayatPencarianUseCase ?: return
+        viewModelScope.launch { uc.hapusItem(kueri) }
+    }
+
+    private fun bersihkanSemuaRiwayat() {
+        val uc = riwayatPencarianUseCase ?: return
+        viewModelScope.launch { uc.bersihkanSemua() }
+    }
+
     override fun onCleared() {
         pekerjaanCari?.cancel()
+        pekerjaanRiwayat?.cancel()
     }
 }

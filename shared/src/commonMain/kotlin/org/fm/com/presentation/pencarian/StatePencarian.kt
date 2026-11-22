@@ -9,6 +9,7 @@ import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.ModeCocokNama
 import org.fm.com.domain.model.ProgresCariIsi
 import org.fm.com.domain.model.ProgresCariNama
+import org.fm.com.presentation.editor.ItemRiwayatPencarianUi
 import org.fm.com.presentation.filemanager.PemetaanDomainUi
 import kotlinx.datetime.TimeZone
 
@@ -98,6 +99,7 @@ data class StatePencarian(
     val daftarGalatBerkas: List<GalatBacaCariIsi> = emptyList(),
     val itemDiprosesSaatIni: String = "",
     val terpotongBatasHasil: Boolean = false,
+    val daftarRiwayat: List<ItemRiwayatPencarianUi> = emptyList(),
     val pesanGalat: String? = null
 )
 
@@ -124,6 +126,9 @@ sealed interface IntentPencarian {
     data object ResetFilter : IntentPencarian
     data object MulaiPencarian : IntentPencarian
     data object BatalkanPencarian : IntentPencarian
+    data class PilihRiwayat(val item: ItemRiwayatPencarianUi) : IntentPencarian
+    data class HapusItemRiwayat(val kueri: String) : IntentPencarian
+    data object BersihkanSemuaRiwayat : IntentPencarian
     data object HapusGalat : IntentPencarian
 }
 

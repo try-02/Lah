@@ -83,6 +83,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import org.fm.com.presentation.komponen.IkonAplikasi
+import org.fm.com.presentation.komponen.PenanganKembaliSistem
 import org.fm.com.presentation.tema.LocalFontMono
 
 private const val AMBANG_SATU_BLOK_CHAR = 16_384
@@ -144,6 +145,10 @@ fun LayarEditor(
     }
 
     val tabAktif = state.tabAktif
+
+    if (onKembali != null) {
+        PenanganKembaliSistem(aktif = true, onKembali = onKembali)
+    }
     val daftarHeaderTab by remember {
         derivedStateOf {
             state.daftarTab.map { TabHeaderUi(it.idTab, it.namaBerkas, it.adaPerubahanBelumTersimpan) }

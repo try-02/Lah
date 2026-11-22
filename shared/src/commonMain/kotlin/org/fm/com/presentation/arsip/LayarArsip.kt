@@ -80,6 +80,7 @@ import org.fm.com.presentation.filemanager.KomponenIkonBerkas
 import org.fm.com.presentation.filemanager.PemetaanDomainUi
 import org.fm.com.presentation.komponen.IkonAplikasi
 import org.fm.com.presentation.komponen.PemformatLokasiRamah
+import org.fm.com.presentation.komponen.PenanganKembaliSistem
 import org.fm.com.presentation.tema.LocalFontMono
 
 @Composable
@@ -107,6 +108,17 @@ fun LayarArsip(
         val acara = state.acaraBukaEditor ?: return@LaunchedEffect
         onBukaBerkasDiEditor(acara.entitas, acara.konteks)
         viewModel.prosesIntent(IntentArsip.KonsumsiAcaraEditor)
+    }
+
+    PenanganKembaliSistem(aktif = true) {
+        when {
+            br.sedangMengekstrak -> viewModel.prosesIntent(IntentArsip.BatalkanEkstraksi)
+            br.sedangMultiSelect -> viewModel.prosesIntent(IntentArsip.BersihkanPilihanEntri)
+            br.kataKunciSaring.isNotEmpty() -> viewModel.prosesIntent(IntentArsip.UbahKataKunciSaring(""))
+            br.folderDalamLapisan.isNotEmpty() || br.jejakLapisan.size > 1 ->
+                viewModel.prosesIntent(IntentArsip.NavigasiNaik)
+            else -> onKembali()
+        }
     }
 
     Scaffold(
