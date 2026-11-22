@@ -229,13 +229,12 @@ class ProviderZip(
 
         var zipTerbuka: ArsipZipTerbuka? = null
         try {
-            val hasilMeta = bacaMetadataZipDariPath(pathSumber, format, opsi.batas, tolakZipSlipFatal = false)
+            val hasilMeta = bacaMetadataZipDariPath(pathSumber, format, opsi.batas, tolakZipSlipFatal = true)
             val ringkasan = when (hasilMeta) {
                 is HasilOperasi.Sukses -> hasilMeta.nilai
                 is HasilOperasi.Gagal -> return@withContext hasilMeta
             }
 
-            val jalurDitolak = praPeriksaZipSlip(pathSumber, opsi.batas.batasJumlahEntriMaks)
             val targetEkstrak = ringkasan.daftarEntri.filter { entri ->
                 ValidasiPathArsip.apakahCocokFilterEkstrak(entri.jalurInternal, opsi.jalurTerpilih)
             }
@@ -247,12 +246,6 @@ class ProviderZip(
             val daftarBerkasHasil = mutableListOf<EntitasBerkas>()
             val daftarKonflik = mutableListOf<String>()
             val daftarGagal = mutableListOf<ItemGagalArsip>()
-
-            for ((jalurMentah, alasan) in jalurDitolak) {
-                if (ValidasiPathArsip.apakahCocokFilterEkstrak(jalurMentah, opsi.jalurTerpilih)) {
-                    daftarGagal.add(ItemGagalArsip(jalurMentah, alasan, PenyebabGalat.VALIDASI))
-                }
-            }
 
             var jumlahDiekstrak = 0
             var jumlahDilewati = 0

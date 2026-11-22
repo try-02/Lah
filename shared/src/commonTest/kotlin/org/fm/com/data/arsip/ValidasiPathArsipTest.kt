@@ -206,6 +206,7 @@ class ValidasiPathArsipTest {
             )
             assertEquals(PenyebabGalat.VALIDASI, assertIs<HasilOperasi.Gagal>(hasilEkstrak).penyebab)
             assertEquals(null, storage.berkas.data("/jahat.txt"))
+            assertEquals(null, storage.berkas.data("/keluar/jahat.txt"))
         } finally {
             runCatching { FileSystem.SYSTEM.delete(pathJahat, mustExist = false) }
         }
