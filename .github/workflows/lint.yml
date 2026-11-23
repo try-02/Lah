@@ -62,7 +62,9 @@ jobs:
         with:
           name: host-test
           path: |
-             shared/build/
-             androidApp/build/
+             shared/stability/
+             /shared/build/stability/
+             shared/build/reports/
+             androidApp/build/reports/
           retention-days: 1
           if-no-files-found: error
