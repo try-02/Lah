@@ -63,7 +63,7 @@ jobs:
           name: stab
           path: |
              shared/stability/
-             /shared/build/stability/
+             shared/build/stability/
              shared/build/reports/
              androidApp/build/reports/
           retention-days: 1

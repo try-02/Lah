@@ -63,7 +63,7 @@ jobs:
           name: host-test
           path: |
              shared/stability/
-             /shared/build/stability/
+             shared/build/stability/
              shared/build/reports/
              androidApp/build/reports/
              shared/build/test-results/
