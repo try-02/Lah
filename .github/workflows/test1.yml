@@ -1,0 +1,394 @@
+name: CI test-1
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run_ios:
+        description: 'Jalankan job iOS?'
+        required: true
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - always
+          - never
+      run_ui_test:
+        description: 'Jalankan Android UI test emulator?'
+        required: true
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - always
+          - never
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deteksi:
+    name: Deteksi pemicu CI
+    runs-on: ubuntu-latest
+    outputs:
+      jalankan_ios: ${{ steps.gate.outputs.jalankan_ios }}
+      jalankan_ui: ${{ steps.gate.outputs.jalankan_ui }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Evaluasi pemicu
+        id: gate
+        shell: bash
+        env:
+          NAMA_EVENT: ${{ github.event_name }}
+          INPUT_IOS: ${{ github.event.inputs.run_ios || 'auto' }}
+          INPUT_UI: ${{ github.event.inputs.run_ui_test || 'auto' }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+
+          base="$BASE_SHA"
+          if [[ -n "$base" ]] && ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            base=""
+          fi
+
+          # Pada push pertama sebuah branch, bandingkan dengan merge-base branch default.
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+            if [[ "$NAMA_EVENT" != "workflow_dispatch" && -n "$DEFAULT_BRANCH" ]] &&
+               git show-ref --verify --quiet "refs/remotes/origin/$DEFAULT_BRANCH"; then
+              base="$(git merge-base "$HEAD_SHA" "origin/$DEFAULT_BRANCH" 2>/dev/null || true)"
+            fi
+          fi
+
+          # Manual dispatch tanpa base membandingkan commit terakhir dengan parent-nya.
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+            base="$(git rev-parse "${HEAD_SHA}^" 2>/dev/null || true)"
+          fi
+
+          if [[ -n "$base" ]] && git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            berubah="$(git diff --name-only "$base" "$HEAD_SHA" 2>/dev/null || true)"
+            pesan_commit="$(git log --format=%B "${base}..${HEAD_SHA}" 2>/dev/null || true)"
+          else
+            berubah="$(git ls-tree -r --name-only "$HEAD_SHA" 2>/dev/null || true)"
+            pesan_commit="$(git log -1 --format=%B "$HEAD_SHA" 2>/dev/null || true)"
+          fi
+
+          # iOS: pilihan manual always/never mengalahkan deteksi otomatis.
+          jalankan_ios=false
+          if [[ "$INPUT_IOS" == "always" ]]; then
+            jalankan_ios=true
+          elif [[ "$INPUT_IOS" != "never" ]]; then
+            if printf '%s\n' "$pesan_commit" | grep -Eiq '\[ios\]' ||
+               printf '%s\n' "$berubah" | grep -Eq '^(shared/src/(commonMain|commonTest|iosMain|iosTest|appleMain|appleTest|nativeMain|nativeTest|ios[A-Za-z0-9]*Main|ios[A-Za-z0-9]*Test)/|iosApp/|gradle/|buildSrc/|build-logic/|(.*/)?[^/]+\.gradle(\.kts)?$|gradle\.properties$|\.github/workflows/.*\.ya?ml$)'; then
+              jalankan_ios=true
+            fi
+          fi
+
+          # UI: auto berjalan jika area Android/shared/build berubah.
+          jalankan_ui=false
+          if [[ "$INPUT_UI" == "always" ]]; then
+            jalankan_ui=true
+          elif [[ "$INPUT_UI" != "never" ]]; then
+            if printf '%s\n' "$berubah" | grep -Eq '^(androidApp/|app/|shared/|gradle/|buildSrc/|build-logic/|(.*/)?[^/]+\.gradle(\.kts)?$|gradle\.properties$|\.github/workflows/.*\.ya?ml$)'; then
+              jalankan_ui=true
+            fi
+          fi
+
+          echo "jalankan_ios=$jalankan_ios" >> "$GITHUB_OUTPUT"
+          echo "jalankan_ui=$jalankan_ui" >> "$GITHUB_OUTPUT"
+          echo "Pemicu iOS: $jalankan_ios"
+          echo "Pemicu Android UI test: $jalankan_ui"
+
+  host-test:
+    name: Android Host Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+          cache-cleanup: on-success
+
+      - name: Build Android & host tests
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :shared:testAndroidHostTest --stacktrace --console=plain
+
+      - name: Sanitize Compose Compiler Report filenames
+        if: always()
+        shell: bash
+        run: |
+          for dir in androidApp/build/compose_compiler shared/build/compose_compiler; do
+            if [[ -d "$dir" ]]; then
+              find "$dir" -depth -type f -name '*:*' -print0 |
+              while IFS= read -r -d '' file; do
+                mv "$file" "${file//:/_}"
+              done
+            fi
+          done
+
+      - name: Upload Host Test Reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: host-test-results
+          path: |
+            shared/stability/
+            shared/build/stability/
+            shared/build/reports/
+            shared/build/test-results/
+            shared/build/compose_compiler/
+            androidApp/build/reports/
+            androidApp/build/test-results/
+            androidApp/build/compose_compiler/
+          retention-days: 1
+          if-no-files-found: warn
+
+  stab:
+    name: Android Stability
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+          cache-cleanup: on-success
+
+      - name: Generate Stability Report
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :shared:stabilityDump :shared:compileAndroidMain -PenableComposeCompilerReports=true --stacktrace --console=plain
+
+      - name: Sanitize Compose Compiler Report filenames
+        if: always()
+        shell: bash
+        run: |
+          for dir in androidApp/build/compose_compiler shared/build/compose_compiler; do
+            if [[ -d "$dir" ]]; then
+              find "$dir" -depth -type f -name '*:*' -print0 |
+              while IFS= read -r -d '' file; do
+                mv "$file" "${file//:/_}"
+              done
+            fi
+          done
+
+      - name: Upload Stability Reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: stability-reports
+          path: |
+            shared/stability/
+            shared/build/stability/
+            shared/build/reports/
+            shared/build/compose_compiler/
+            androidApp/build/reports/
+            androidApp/build/compose_compiler/
+          retention-days: 1
+          if-no-files-found: warn
+
+  lint:
+    name: Android Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+          cache-cleanup: on-success
+
+      - name: Run Android Lint
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :shared:lint :androidApp:lintDebug --stacktrace --console=plain
+
+      - name: Sanitize Compose Compiler Report filenames
+        if: always()
+        shell: bash
+        run: |
+          for dir in androidApp/build/compose_compiler shared/build/compose_compiler; do
+            if [[ -d "$dir" ]]; then
+              find "$dir" -depth -type f -name '*:*' -print0 |
+              while IFS= read -r -d '' file; do
+                mv "$file" "${file//:/_}"
+              done
+            fi
+          done
+
+      - name: Upload Lint Reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lint-reports
+          path: |
+            shared/build/reports/
+            androidApp/build/reports/
+            shared/build/compose_compiler/
+            androidApp/build/compose_compiler/
+          retention-days: 1
+          if-no-files-found: warn
+
+  android-ui-test:
+    name: Android UI Test (Emulator)
+    needs: deteksi
+    if: needs.deteksi.outputs.jalankan_ui == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+          cache-cleanup: on-success
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run UI Tests on Android Emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: >-
+            -no-window -gpu swiftshader_indirect -no-snapshot -noaudio
+            -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: |
+            chmod +x ./gradlew
+            mkdir -p androidApp/build/reports/androidTests/connected/ci
+            adb logcat -c || true
+
+            set +e
+            ./gradlew :androidApp:connectedDebugAndroidTest --stacktrace --console=plain
+            test_status=$?
+
+            adb logcat -d -v threadtime > androidApp/build/reports/androidTests/connected/ci/emulator-logcat.txt 2>&1 || true
+            exit "$test_status"
+
+      - name: Upload Android UI Test Results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-ui-test-results
+          path: |
+            androidApp/build/reports/androidTests/connected/
+            androidApp/build/outputs/androidTest-results/connected/
+            androidApp/build/outputs/connected_android_test_additional_output/
+            androidApp/build/test-results/
+          retention-days: 7
+          if-no-files-found: warn
+
+  ios:
+    name: iOS Simulator Test
+    needs: deteksi
+    if: needs.deteksi.outputs.jalankan_ios == 'true'
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+          cache-cleanup: on-success
+
+      - name: Cache Kotlin/Native (.konan)
+        uses: actions/cache@v6
+        with:
+          path: ~/.konan
+          key: ${{ runner.os }}-konan-${{ hashFiles('**/*.gradle*', 'gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-konan-
+
+      - name: Run iOS Simulator Tests
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :shared:iosSimulatorArm64Test --stacktrace --console=plain
+
+      - name: Sanitize Compose Compiler Report filenames
+        if: always()
+        shell: bash
+        run: |
+          for dir in androidApp/build/compose_compiler shared/build/compose_compiler; do
+            if [[ -d "$dir" ]]; then
+              find "$dir" -depth -type f -name '*:*' -print0 |
+              while IFS= read -r -d '' file; do
+                mv "$file" "${file//:/_}"
+              done
+            fi
+          done
+
+      - name: Upload iOS Test Reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-simulator-test-results
+          path: |
+            shared/build/reports/
+            shared/build/test-results/
+            shared/build/compose_compiler/
+          retention-days: 7
+          if-no-files-found: warn
