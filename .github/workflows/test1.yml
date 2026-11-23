@@ -1,8 +1,6 @@
 name: CI test-1
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
     inputs:
       run_ios:
@@ -133,6 +131,18 @@ jobs:
         run: |
           chmod +x ./gradlew
           ./gradlew :shared:testAndroidHostTest --stacktrace --console=plain
+
+      - name: Ringkasan benchmark (Job Summary)
+        if: always()
+        shell: bash
+        run: |
+          hasil="$(grep -rhoE 'BENCHMARK \[.*' shared/build/test-results 2>/dev/null | sed -E 's/\]\]>.*$//' | sort -u || true)"
+          {
+            echo '### Benchmark - host JVM (commonTest + androidHostTest)'
+            echo '```'
+            echo "${hasil:-kosong - tidak ada baris BENCHMARK di laporan}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Sanitize Compose Compiler Report filenames
         if: always()
@@ -308,17 +318,30 @@ jobs:
             -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
           emulator-boot-timeout: 600
-          script: |
-            chmod +x ./gradlew
-            mkdir -p androidApp/build/reports/androidTests/connected/ci
-            adb logcat -c || true
-
-            set +e
-            ./gradlew :androidApp:connectedDebugAndroidTest --stacktrace --console=plain
-            test_status=$?
-
-            adb logcat -d -v threadtime > androidApp/build/reports/androidTests/connected/ci/emulator-logcat.txt 2>&1 || true
+          script: >-
+            chmod +x ./gradlew;
+            mkdir -p androidApp/build/reports/androidTests/connected/ci;
+            adb logcat -c || true;
+            ./gradlew :androidApp:connectedDebugAndroidTest --stacktrace --console=plain;
+            test_status=$?;
+            adb logcat -d -v threadtime > androidApp/build/reports/androidTests/connected/ci/emulator-logcat.txt 2>&1 || true;
             exit "$test_status"
+
+      - name: Ringkasan benchmark (Job Summary)
+        if: always()
+        shell: bash
+        run: |
+          f=androidApp/build/reports/androidTests/connected/ci/emulator-logcat.txt
+          hasil=""
+          if [[ -f "$f" ]]; then
+            hasil="$(grep -h 'BENCHMARK' "$f" | sed -E 's/^.*System\.out: *//' | sort -u || true)"
+          fi
+          {
+            echo '### Benchmark - Android emulator (CI)'
+            echo '```'
+            echo "${hasil:-kosong - tidak ada baris BENCHMARK di logcat}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Android UI Test Results
         if: always()
@@ -367,6 +390,18 @@ jobs:
         run: |
           chmod +x ./gradlew
           ./gradlew :shared:iosSimulatorArm64Test --stacktrace --console=plain
+
+      - name: Ringkasan benchmark (Job Summary)
+        if: always()
+        shell: bash
+        run: |
+          hasil="$(grep -rhoE 'BENCHMARK \[.*' shared/build/test-results 2>/dev/null | sed -E 's/\]\]>.*$//' | sort -u || true)"
+          {
+            echo '### Benchmark - iOS simulator'
+            echo '```'
+            echo "${hasil:-kosong - tidak ada baris BENCHMARK di laporan}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Sanitize Compose Compiler Report filenames
         if: always()
