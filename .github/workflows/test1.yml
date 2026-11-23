@@ -1,6 +1,8 @@
 name: CI test-1
 
 on:
+  push:
+  pull_request:
   workflow_dispatch:
     inputs:
       run_ios:
