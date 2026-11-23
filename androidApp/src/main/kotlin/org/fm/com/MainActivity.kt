@@ -35,8 +35,7 @@ class MainActivity : ComponentActivity() {
             var urutanEvent by remember { mutableLongStateOf(0L) }
 
             LaunchedEffect(kontainerAndroid) {
-                val lokasiAwal = kontainerAndroid.muatLokasiAwal()
-                val pintasan = kontainerAndroid.daftarLokasiPintasan()
+                val (lokasiAwal, pintasan) = kontainerAndroid.muatLokasiAwalDanPintasan()
                 daftarPintasan = pintasan
                 kontainerAplikasi = kontainerAndroid.keKontainerAplikasi(lokasiAwal, pintasan)
             }

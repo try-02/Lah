@@ -39,22 +39,36 @@ class KontainerAndroid internal constructor(
     val repositoriRiwayatPencarian: RepositoriRiwayatPencarian,
     val lokasiRuangKerja: LokasiBerkas
 ) {
-    suspend fun muatLokasiAwal(): LokasiBerkas = withContext(Dispatchers.IO) {
-        val treeTersimpan = (safPenyediaLokasi.daftarTreeTersimpan() as? HasilOperasi.Sukses)?.nilai.orEmpty()
-        treeTersimpan.firstOrNull() ?: lokasiRuangKerja
-    }
+    private suspend fun bacaTreeTersimpan(): List<LokasiBerkas> =
+        (safPenyediaLokasi.daftarTreeTersimpan() as? HasilOperasi.Sukses)?.nilai.orEmpty()
 
-    suspend fun daftarLokasiPintasan(): List<LokasiBerkas> = withContext(Dispatchers.IO) {
-        val treeTersimpan = (safPenyediaLokasi.daftarTreeTersimpan() as? HasilOperasi.Sukses)?.nilai.orEmpty()
-        buildList {
-            add(lokasiRuangKerja)
-            for (tree in treeTersimpan) {
-                if (none { it.pengenal == tree.pengenal && it.jenis == tree.jenis }) {
-                    add(tree)
-                }
+    private fun susunPintasan(treeTersimpan: List<LokasiBerkas>): List<LokasiBerkas> = buildList {
+        add(lokasiRuangKerja)
+        for (tree in treeTersimpan) {
+            if (none { it.pengenal == tree.pengenal && it.jenis == tree.jenis }) {
+                add(tree)
             }
         }
     }
+
+    suspend fun muatLokasiAwal(): LokasiBerkas = withContext(Dispatchers.IO) {
+        bacaTreeTersimpan().firstOrNull() ?: lokasiRuangKerja
+    }
+
+    suspend fun daftarLokasiPintasan(): List<LokasiBerkas> = withContext(Dispatchers.IO) {
+        susunPintasan(bacaTreeTersimpan())
+    }
+
+    /**
+     * Jalur startup: satu kali baca tree SAF tersimpan (tiap tree memicu query ke provider)
+     * untuk menurunkan lokasi awal sekaligus daftar pintasan, menggantikan pemanggilan
+     * [muatLokasiAwal] lalu [daftarLokasiPintasan] yang membaca ulang daftar yang sama.
+     */
+    suspend fun muatLokasiAwalDanPintasan(): Pair<LokasiBerkas, List<LokasiBerkas>> =
+        withContext(Dispatchers.IO) {
+            val treeTersimpan = bacaTreeTersimpan()
+            (treeTersimpan.firstOrNull() ?: lokasiRuangKerja) to susunPintasan(treeTersimpan)
+        }
 
     fun keKontainerAplikasi(
         lokasiAwal: LokasiBerkas,

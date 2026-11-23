@@ -24,8 +24,7 @@ class BenchmarkStartup {
         repeat(5) {
             val mark = timeSource.markNow()
             val kontainerAndroid = buatKontainerAndroid(appContext)
-            val lokasiAwal = runBlocking { kontainerAndroid.muatLokasiAwal() }
-            val pintasan = runBlocking { kontainerAndroid.daftarLokasiPintasan() }
+            val (lokasiAwal, pintasan) = runBlocking { kontainerAndroid.muatLokasiAwalDanPintasan() }
             val kontainerApp = kontainerAndroid.keKontainerAplikasi(lokasiAwal, pintasan)
             durasiList.add(mark.elapsedNow().inWholeMilliseconds)
             assertTrue(kontainerApp.lokasiPintasan.isNotEmpty())

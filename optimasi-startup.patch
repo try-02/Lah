@@ -1,0 +1,78 @@
+diff --git a/androidApp/src/androidTest/kotlin/org/fm/com/benchmark/BenchmarkStartup.kt b/androidApp/src/androidTest/kotlin/org/fm/com/benchmark/BenchmarkStartup.kt
+--- a/androidApp/src/androidTest/kotlin/org/fm/com/benchmark/BenchmarkStartup.kt
++++ b/androidApp/src/androidTest/kotlin/org/fm/com/benchmark/BenchmarkStartup.kt
+@@ -24,8 +24,7 @@
+         repeat(5) {
+             val mark = timeSource.markNow()
+             val kontainerAndroid = buatKontainerAndroid(appContext)
+-            val lokasiAwal = runBlocking { kontainerAndroid.muatLokasiAwal() }
+-            val pintasan = runBlocking { kontainerAndroid.daftarLokasiPintasan() }
++            val (lokasiAwal, pintasan) = runBlocking { kontainerAndroid.muatLokasiAwalDanPintasan() }
+             val kontainerApp = kontainerAndroid.keKontainerAplikasi(lokasiAwal, pintasan)
+             durasiList.add(mark.elapsedNow().inWholeMilliseconds)
+             assertTrue(kontainerApp.lokasiPintasan.isNotEmpty())
+diff --git a/androidApp/src/main/kotlin/org/fm/com/MainActivity.kt b/androidApp/src/main/kotlin/org/fm/com/MainActivity.kt
+--- a/androidApp/src/main/kotlin/org/fm/com/MainActivity.kt
++++ b/androidApp/src/main/kotlin/org/fm/com/MainActivity.kt
+@@ -35,8 +35,7 @@
+             var urutanEvent by remember { mutableLongStateOf(0L) }
+ 
+             LaunchedEffect(kontainerAndroid) {
+-                val lokasiAwal = kontainerAndroid.muatLokasiAwal()
+-                val pintasan = kontainerAndroid.daftarLokasiPintasan()
++                val (lokasiAwal, pintasan) = kontainerAndroid.muatLokasiAwalDanPintasan()
+                 daftarPintasan = pintasan
+                 kontainerAplikasi = kontainerAndroid.keKontainerAplikasi(lokasiAwal, pintasan)
+             }
+diff --git a/shared/src/androidMain/kotlin/org/fm/com/di/KontainerAndroid.kt b/shared/src/androidMain/kotlin/org/fm/com/di/KontainerAndroid.kt
+--- a/shared/src/androidMain/kotlin/org/fm/com/di/KontainerAndroid.kt
++++ b/shared/src/androidMain/kotlin/org/fm/com/di/KontainerAndroid.kt
+@@ -39,23 +39,37 @@
+     val repositoriRiwayatPencarian: RepositoriRiwayatPencarian,
+     val lokasiRuangKerja: LokasiBerkas
+ ) {
++    private suspend fun bacaTreeTersimpan(): List<LokasiBerkas> =
++        (safPenyediaLokasi.daftarTreeTersimpan() as? HasilOperasi.Sukses)?.nilai.orEmpty()
++
++    private fun susunPintasan(treeTersimpan: List<LokasiBerkas>): List<LokasiBerkas> = buildList {
++        add(lokasiRuangKerja)
++        for (tree in treeTersimpan) {
++            if (none { it.pengenal == tree.pengenal && it.jenis == tree.jenis }) {
++                add(tree)
++            }
++        }
++    }
++
+     suspend fun muatLokasiAwal(): LokasiBerkas = withContext(Dispatchers.IO) {
+-        val treeTersimpan = (safPenyediaLokasi.daftarTreeTersimpan() as? HasilOperasi.Sukses)?.nilai.orEmpty()
+-        treeTersimpan.firstOrNull() ?: lokasiRuangKerja
++        bacaTreeTersimpan().firstOrNull() ?: lokasiRuangKerja
+     }
+ 
+     suspend fun daftarLokasiPintasan(): List<LokasiBerkas> = withContext(Dispatchers.IO) {
+-        val treeTersimpan = (safPenyediaLokasi.daftarTreeTersimpan() as? HasilOperasi.Sukses)?.nilai.orEmpty()
+-        buildList {
+-            add(lokasiRuangKerja)
+-            for (tree in treeTersimpan) {
+-                if (none { it.pengenal == tree.pengenal && it.jenis == tree.jenis }) {
+-                    add(tree)
+-                }
+-            }
+-        }
++        susunPintasan(bacaTreeTersimpan())
+     }
+ 
++    /**
++     * Jalur startup: satu kali baca tree SAF tersimpan (tiap tree memicu query ke provider)
++     * untuk menurunkan lokasi awal sekaligus daftar pintasan, menggantikan pemanggilan
++     * [muatLokasiAwal] lalu [daftarLokasiPintasan] yang membaca ulang daftar yang sama.
++     */
++    suspend fun muatLokasiAwalDanPintasan(): Pair<LokasiBerkas, List<LokasiBerkas>> =
++        withContext(Dispatchers.IO) {
++            val treeTersimpan = bacaTreeTersimpan()
++            (treeTersimpan.firstOrNull() ?: lokasiRuangKerja) to susunPintasan(treeTersimpan)
++        }
++
+     fun keKontainerAplikasi(
+         lokasiAwal: LokasiBerkas,
+         pintasan: List<LokasiBerkas>
