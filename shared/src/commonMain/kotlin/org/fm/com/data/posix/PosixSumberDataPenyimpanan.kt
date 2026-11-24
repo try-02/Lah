@@ -278,13 +278,6 @@ class PosixSumberDataPenyimpanan(
                 } else {
                     null
                 }
-                        return@withContext HasilOperasi.Gagal(
-                            "Target sudah ada, perlu konfirmasi timpa: $namaBaru",
-                            PenyebabGalat.KONFLIK
-                        )
-                    } else {
-                        null
-                    }
                 try {
                     fileSystem.atomicMove(sourcePath, targetPath)
                     hapusBackupAman(backupPath)
@@ -395,13 +388,6 @@ class PosixSumberDataPenyimpanan(
             } else {
                 null
             }
-                    return@withContext HasilOperasi.Gagal(
-                        "Target sudah ada, perlu konfirmasi timpa: $targetPath",
-                        PenyebabGalat.KONFLIK
-                    )
-                } else {
-                    null
-                }
 
             try {
                 if (pindah) {
@@ -437,18 +423,11 @@ class PosixSumberDataPenyimpanan(
         tujuan: Path,
         dikunjungi: MutableSet<Path> = HashSet()
     ) {
-         currentCoroutineContext().ensureActive()
-         val meta = fileSystem.metadata(sumber)
+        currentCoroutineContext().ensureActive()
+        val meta = fileSystem.metadata(sumber)
         if (meta.symlinkTarget != null) {
             throw IOException("Salin rekursif POSIX tidak mendukung tautan simbolik: $sumber")
         }
-         if (meta.isDirectory) {
-            val kanon = runCatching { fileSystem.canonicalize(sumber) }.getOrDefault(sumber)
-            if (!dikunjungi.add(kanon)) {
-                throw IOException("Siklus direktori terdeteksi pada: $sumber")
-            }
-        currentCoroutineContext().ensureActive()
-        val meta = fileSystem.metadata(sumber)
         if (meta.isDirectory) {
             val kanon = runCatching { fileSystem.canonicalize(sumber) }.getOrDefault(sumber)
             if (!dikunjungi.add(kanon)) {

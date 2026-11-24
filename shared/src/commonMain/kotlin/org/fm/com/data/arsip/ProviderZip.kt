@@ -958,7 +958,7 @@ class ProviderZip(
                     cdSizeFinal = cdSize
                     cdOffsetFinal = cdOffset
                     batasAkhirCd = posisiEocdAbsolut
-                 }
+                }
 
                 if (cdOffsetFinal < 0L || cdSizeFinal < 0L || cdOffsetFinal > batasAkhirCd || cdSizeFinal > batasAkhirCd - cdOffsetFinal) {
                     return HasilScanCd.Rusak("Struktur Central Directory ZIP tidak konsisten (arsip rusak)")
@@ -970,6 +970,7 @@ class ProviderZip(
             HasilScanCd.Rusak(e.message ?: "Gagal memvalidasi struktur ZIP (arsip rusak)")
         }
     }
+
     private fun bacaDaftarCentralDirectory(
         handle: okio.FileHandle,
         cdOffset: Long,
@@ -1060,6 +1061,9 @@ class ProviderZip(
 
     private fun u32Le(buf: ByteArray, off: Int): Long =
         (buf[off].toLong() and 0xFFL) or
+            ((buf[off + 1].toLong() and 0xFFL) shl 8) or
+            ((buf[off + 2].toLong() and 0xFFL) shl 16) or
+            ((buf[off + 3].toLong() and 0xFFL) shl 24)
 
     private fun u64Le(buf: ByteArray, off: Int): Long =
         (buf[off].toLong() and 0xFFL) or
