@@ -1,0 +1,160 @@
+diff -ruN a/shared/src/androidMain/kotlin/org/fm/com/data/saf/SafOperasiBerkas.kt b/shared/src/androidMain/kotlin/org/fm/com/data/saf/SafOperasiBerkas.kt
+--- a/shared/src/androidMain/kotlin/org/fm/com/data/saf/SafOperasiBerkas.kt	2026-11-22 16:17:18.000000000 +0000
++++ b/shared/src/androidMain/kotlin/org/fm/com/data/saf/SafOperasiBerkas.kt	2026-11-24 04:22:37.730639407 +0000
+@@ -89,7 +89,7 @@
+ 
+             if (parentUri != null) {
+                 val konflikUri = cariAnakBernama(parentUri, namaBaru, ignoreCase = true)
+-                if (konflikUri != null && konflikUri != docUri) {
++                if (konflikUri != null && !apakahDokumenSama(konflikUri, docUri)) {
+                     if (!permintaan.konfirmasi) {
+                         return@withContext HasilOperasi.Gagal(
+                             "Nama target sudah ada di folder: $namaBaru",
+diff -ruN a/shared/src/commonMain/kotlin/org/fm/com/domain/usecase/SalinPindahkanBerkasUseCase.kt b/shared/src/commonMain/kotlin/org/fm/com/domain/usecase/SalinPindahkanBerkasUseCase.kt
+--- a/shared/src/commonMain/kotlin/org/fm/com/domain/usecase/SalinPindahkanBerkasUseCase.kt	2026-11-22 16:17:20.000000000 +0000
++++ b/shared/src/commonMain/kotlin/org/fm/com/domain/usecase/SalinPindahkanBerkasUseCase.kt	2026-11-24 04:22:37.730394556 +0000
+@@ -91,6 +91,19 @@
+         val readerHasil = repositoriBerkas.bukaUntukBaca(sumber)
+         if (readerHasil is HasilOperasi.Gagal) {
+             if (readerHasil.penyebab == PenyebabGalat.VALIDASI) {
++                if (sumber.jenis == tujuanInduk.jenis && sumber.jenis != JenisLokasi.POSIX) {
++                    // Backend non-POSIX tidak punya cek awalan path; telusuri pohon sumber sebelum
++                    // menulis apa pun agar pemindahan ke turunan sendiri tidak menghapus salinannya.
++                    when (val turunan = apakahTurunanFolder(sumber, tujuanInduk)) {
++                        is HasilOperasi.Gagal -> return turunan
++                        is HasilOperasi.Sukses -> if (turunan.nilai) {
++                            return HasilOperasi.Gagal(
++                                "Tidak bisa menyalin/memindah folder ke dalam turunannya sendiri",
++                                PenyebabGalat.VALIDASI
++                            )
++                        }
++                    }
++                }
+                 return salinFolderViaStreaming(
+                     sumberFolder = sumber,
+                     namaFolder = namaTarget,
+@@ -210,6 +223,35 @@
+         )
+     }
+ 
++    /**
++     * True bila [kandidat] adalah subfolder (pada kedalaman berapa pun) dari [sumberFolder].
++     * Hanya membaca; BFS dengan penjaga siklus dan berhenti pada kecocokan pertama.
++     */
++    private suspend fun apakahTurunanFolder(
++        sumberFolder: LokasiBerkas,
++        kandidat: LokasiBerkas
++    ): HasilOperasi<Boolean> {
++        val antrean = ArrayDeque<LokasiBerkas>()
++        val dilihat = mutableSetOf("${sumberFolder.jenis.name}:${sumberFolder.pengenal}")
++        antrean.addLast(sumberFolder)
++        while (antrean.isNotEmpty()) {
++            currentCoroutineContext().ensureActive()
++            val folder = antrean.removeFirst()
++            val daftarAnak = when (val hasil = repositoriBerkas.daftarIsi(folder).first()) {
++                is HasilOperasi.Sukses -> hasil.nilai
++                is HasilOperasi.Gagal -> return hasil
++            }
++            for (anak in daftarAnak) {
++                if (anak.jenis != JenisBerkas.FOLDER) continue
++                if (anak.lokasi == kandidat) return HasilOperasi.Sukses(true)
++                if (dilihat.add("${anak.lokasi.jenis.name}:${anak.lokasi.pengenal}")) {
++                    antrean.addLast(anak.lokasi)
++                }
++            }
++        }
++        return HasilOperasi.Sukses(false)
++    }
++
+     private suspend fun salinFolderViaStreaming(
+         sumberFolder: LokasiBerkas,
+         namaFolder: String,
+diff -ruN a/shared/src/commonMain/kotlin/org/fm/com/presentation/editor/LayarEditor.kt b/shared/src/commonMain/kotlin/org/fm/com/presentation/editor/LayarEditor.kt
+--- a/shared/src/commonMain/kotlin/org/fm/com/presentation/editor/LayarEditor.kt	2026-11-22 22:00:30.000000000 +0000
++++ b/shared/src/commonMain/kotlin/org/fm/com/presentation/editor/LayarEditor.kt	2026-11-24 04:22:37.732570698 +0000
+@@ -723,8 +723,8 @@
+         urutanSinkronTerakhir = tab.urutanSinkronTeks
+     }
+ 
+-    LaunchedEffect(tab.idTab, tab.urutanSinkronTeks, tab.isiSaatIni.length) {
+-        if (tab.urutanSinkronTeks != urutanSinkronTerakhir || tab.isiSaatIni.length != panjangTeksLokal) {
++    LaunchedEffect(tab.idTab, tab.urutanSinkronTeks) {
++        if (tab.urutanSinkronTeks != urutanSinkronTerakhir) {
+             isiUlangDariTeks(tab.isiSaatIni)
+             urutanSinkronTerakhir = tab.urutanSinkronTeks
+         }
+diff -ruN a/shared/src/iosMain/kotlin/org/fm/com/data/ios/DokumenAliranTulis.kt b/shared/src/iosMain/kotlin/org/fm/com/data/ios/DokumenAliranTulis.kt
+--- a/shared/src/iosMain/kotlin/org/fm/com/data/ios/DokumenAliranTulis.kt	2026-11-22 16:17:22.000000000 +0000
++++ b/shared/src/iosMain/kotlin/org/fm/com/data/ios/DokumenAliranTulis.kt	2026-11-24 04:22:37.731748908 +0000
+@@ -42,7 +42,8 @@
+     private val targetUrl: NSURL,
+     private val apakahDokumenBaru: Boolean,
+     override val lokasiTarget: LokasiBerkas? = null,
+-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
++    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
++    private val timpa: Boolean = true
+ ) : SumberTulisBerkas {
+     private enum class Status { AKTIF, SELESAI, BATAL }
+ 
+@@ -53,6 +54,9 @@
+     private var tempHandle: NSFileHandle? = null
+     private var totalByteDitulis: Long = 0L
+ 
++    /** True hanya setelah sesi ini sendiri yang membuat berkas target; jaga agar tidak menghapus berkas pihak lain. */
++    private var targetDibuatSesiIni = false
++
+     override suspend fun tulis(potongan: PotonganIsi): HasilOperasi<Unit> = mutex.withLock {
+         withContext(ioDispatcher) {
+             currentCoroutineContext().ensureActive()
+@@ -134,6 +138,12 @@
+                             val errorPtr = alloc<ObjCObjectVar<NSError?>>()
+                             val targetPath = coordinatedTarget.path
+                             val targetExists = targetPath != null && fileManager.fileExistsAtPath(targetPath)
++                            if (apakahDokumenBaru && !timpa && targetExists) {
++                                return@koordinasiTulis gagalkan(
++                                    "Berkas sudah dibuat pihak lain saat penulisan berlangsung",
++                                    PenyebabGalat.KONFLIK
++                                )
++                            }
+                             val sukses = if (targetExists) {
+                                 fileManager.replaceItemAtURL(
+                                     originalItemURL = coordinatedTarget,
+@@ -145,6 +155,7 @@
+                                 )
+                             } else {
+                                 fileManager.moveItemAtURL(temp, toURL = coordinatedTarget, error = errorPtr.ptr)
++                                    .also { if (it) targetDibuatSesiIni = true }
+                             }
+                             if (!sukses) {
+                                 val err = errorPtr.value
+@@ -248,6 +259,7 @@
+     }
+ 
+     private fun hapusTargetBaru() {
++        if (!targetDibuatSesiIni) return
+         val path = targetUrl.path ?: return
+         val parentUrl = targetUrl.URLByDeletingLastPathComponent
+         val lepasTarget = targetUrl.startAccessingSecurityScopedResource()
+diff -ruN a/shared/src/iosMain/kotlin/org/fm/com/data/ios/IosSumberDataPenyimpanan.kt b/shared/src/iosMain/kotlin/org/fm/com/data/ios/IosSumberDataPenyimpanan.kt
+--- a/shared/src/iosMain/kotlin/org/fm/com/data/ios/IosSumberDataPenyimpanan.kt	2026-11-22 16:17:22.000000000 +0000
++++ b/shared/src/iosMain/kotlin/org/fm/com/data/ios/IosSumberDataPenyimpanan.kt	2026-11-24 04:22:37.731995404 +0000
+@@ -96,7 +96,8 @@
+                 targetUrl = url,
+                 apakahDokumenBaru = !info.ada,
+                 lokasiTarget = DokumenPemetaanLokasi.keLokasi(url, lokasi.label),
+-                ioDispatcher = ioDispatcher
++                ioDispatcher = ioDispatcher,
++                timpa = timpa
+             )
+         )
+     }
+@@ -141,7 +142,8 @@
+                 targetUrl = targetUrl,
+                 apakahDokumenBaru = !infoTarget.ada,
+                 lokasiTarget = DokumenPemetaanLokasi.keLokasi(targetUrl, nama),
+-                ioDispatcher = ioDispatcher
++                ioDispatcher = ioDispatcher,
++                timpa = timpa
+             )
+         )
+     }

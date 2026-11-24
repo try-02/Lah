@@ -91,6 +91,19 @@ class SalinPindahkanBerkasUseCase(
         val readerHasil = repositoriBerkas.bukaUntukBaca(sumber)
         if (readerHasil is HasilOperasi.Gagal) {
             if (readerHasil.penyebab == PenyebabGalat.VALIDASI) {
+                if (sumber.jenis == tujuanInduk.jenis && sumber.jenis != JenisLokasi.POSIX) {
+                    // Backend non-POSIX tidak punya cek awalan path; telusuri pohon sumber sebelum
+                    // menulis apa pun agar pemindahan ke turunan sendiri tidak menghapus salinannya.
+                    when (val turunan = apakahTurunanFolder(sumber, tujuanInduk)) {
+                        is HasilOperasi.Gagal -> return turunan
+                        is HasilOperasi.Sukses -> if (turunan.nilai) {
+                            return HasilOperasi.Gagal(
+                                "Tidak bisa menyalin/memindah folder ke dalam turunannya sendiri",
+                                PenyebabGalat.VALIDASI
+                            )
+                        }
+                    }
+                }
                 return salinFolderViaStreaming(
                     sumberFolder = sumber,
                     namaFolder = namaTarget,
@@ -208,6 +221,35 @@ class SalinPindahkanBerkasUseCase(
                 ukuranByte = totalByte
             )
         )
+    }
+
+    /**
+     * True bila [kandidat] adalah subfolder (pada kedalaman berapa pun) dari [sumberFolder].
+     * Hanya membaca; BFS dengan penjaga siklus dan berhenti pada kecocokan pertama.
+     */
+    private suspend fun apakahTurunanFolder(
+        sumberFolder: LokasiBerkas,
+        kandidat: LokasiBerkas
+    ): HasilOperasi<Boolean> {
+        val antrean = ArrayDeque<LokasiBerkas>()
+        val dilihat = mutableSetOf("${sumberFolder.jenis.name}:${sumberFolder.pengenal}")
+        antrean.addLast(sumberFolder)
+        while (antrean.isNotEmpty()) {
+            currentCoroutineContext().ensureActive()
+            val folder = antrean.removeFirst()
+            val daftarAnak = when (val hasil = repositoriBerkas.daftarIsi(folder).first()) {
+                is HasilOperasi.Sukses -> hasil.nilai
+                is HasilOperasi.Gagal -> return hasil
+            }
+            for (anak in daftarAnak) {
+                if (anak.jenis != JenisBerkas.FOLDER) continue
+                if (anak.lokasi == kandidat) return HasilOperasi.Sukses(true)
+                if (dilihat.add("${anak.lokasi.jenis.name}:${anak.lokasi.pengenal}")) {
+                    antrean.addLast(anak.lokasi)
+                }
+            }
+        }
+        return HasilOperasi.Sukses(false)
     }
 
     private suspend fun salinFolderViaStreaming(

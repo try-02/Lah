@@ -96,7 +96,8 @@ class IosSumberDataPenyimpanan internal constructor(
                 targetUrl = url,
                 apakahDokumenBaru = !info.ada,
                 lokasiTarget = DokumenPemetaanLokasi.keLokasi(url, lokasi.label),
-                ioDispatcher = ioDispatcher
+                ioDispatcher = ioDispatcher,
+                timpa = timpa
             )
         )
     }
@@ -141,7 +142,8 @@ class IosSumberDataPenyimpanan internal constructor(
                 targetUrl = targetUrl,
                 apakahDokumenBaru = !infoTarget.ada,
                 lokasiTarget = DokumenPemetaanLokasi.keLokasi(targetUrl, nama),
-                ioDispatcher = ioDispatcher
+                ioDispatcher = ioDispatcher,
+                timpa = timpa
             )
         )
     }

@@ -723,8 +723,8 @@ private fun AreaTeksEditor(
         urutanSinkronTerakhir = tab.urutanSinkronTeks
     }
 
-    LaunchedEffect(tab.idTab, tab.urutanSinkronTeks, tab.isiSaatIni.length) {
-        if (tab.urutanSinkronTeks != urutanSinkronTerakhir || tab.isiSaatIni.length != panjangTeksLokal) {
+    LaunchedEffect(tab.idTab, tab.urutanSinkronTeks) {
+        if (tab.urutanSinkronTeks != urutanSinkronTerakhir) {
             isiUlangDariTeks(tab.isiSaatIni)
             urutanSinkronTerakhir = tab.urutanSinkronTeks
         }

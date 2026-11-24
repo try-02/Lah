@@ -89,7 +89,7 @@ class SafOperasiBerkas(
 
             if (parentUri != null) {
                 val konflikUri = cariAnakBernama(parentUri, namaBaru, ignoreCase = true)
-                if (konflikUri != null && konflikUri != docUri) {
+                if (konflikUri != null && !apakahDokumenSama(konflikUri, docUri)) {
                     if (!permintaan.konfirmasi) {
                         return@withContext HasilOperasi.Gagal(
                             "Nama target sudah ada di folder: $namaBaru",

@@ -42,7 +42,8 @@ class DokumenAliranTulis(
     private val targetUrl: NSURL,
     private val apakahDokumenBaru: Boolean,
     override val lokasiTarget: LokasiBerkas? = null,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val timpa: Boolean = true
 ) : SumberTulisBerkas {
     private enum class Status { AKTIF, SELESAI, BATAL }
 
@@ -52,6 +53,9 @@ class DokumenAliranTulis(
     private var tempUrl: NSURL? = null
     private var tempHandle: NSFileHandle? = null
     private var totalByteDitulis: Long = 0L
+
+    /** True hanya setelah sesi ini sendiri yang membuat berkas target; jaga agar tidak menghapus berkas pihak lain. */
+    private var targetDibuatSesiIni = false
 
     override suspend fun tulis(potongan: PotonganIsi): HasilOperasi<Unit> = mutex.withLock {
         withContext(ioDispatcher) {
@@ -134,6 +138,12 @@ class DokumenAliranTulis(
                             val errorPtr = alloc<ObjCObjectVar<NSError?>>()
                             val targetPath = coordinatedTarget.path
                             val targetExists = targetPath != null && fileManager.fileExistsAtPath(targetPath)
+                            if (apakahDokumenBaru && !timpa && targetExists) {
+                                return@koordinasiTulis gagalkan(
+                                    "Berkas sudah dibuat pihak lain saat penulisan berlangsung",
+                                    PenyebabGalat.KONFLIK
+                                )
+                            }
                             val sukses = if (targetExists) {
                                 fileManager.replaceItemAtURL(
                                     originalItemURL = coordinatedTarget,
@@ -145,6 +155,7 @@ class DokumenAliranTulis(
                                 )
                             } else {
                                 fileManager.moveItemAtURL(temp, toURL = coordinatedTarget, error = errorPtr.ptr)
+                                    .also { if (it) targetDibuatSesiIni = true }
                             }
                             if (!sukses) {
                                 val err = errorPtr.value
@@ -248,6 +259,7 @@ class DokumenAliranTulis(
     }
 
     private fun hapusTargetBaru() {
+        if (!targetDibuatSesiIni) return
         val path = targetUrl.path ?: return
         val parentUrl = targetUrl.URLByDeletingLastPathComponent
         val lepasTarget = targetUrl.startAccessingSecurityScopedResource()
