@@ -705,28 +705,22 @@ class ProviderZip(
         batas: KebijakanBatasArsip,
         tolakZipSlipFatal: Boolean = true
     ): HasilOperasi<RingkasanIsiArsip> {
-        val cdInfo = scanCentralDirectoryZip(pathSumber.fileSystem, pathSumber.path, batas.batasJumlahEntriMaks)
-        when (cdInfo) {
+        val daftarCd = when (val cdInfo = scanCentralDirectoryZip(pathSumber.fileSystem, pathSumber.path, batas.batasJumlahEntriMaks)) {
             is HasilScanCd.Rusak -> return HasilOperasi.Gagal(cdInfo.pesan, PenyebabGalat.VALIDASI)
-            is HasilScanCd.Valid -> {
-                if (tolakZipSlipFatal) {
-                    for (entry in cdInfo.entri) {
-                        val valPath = ValidasiPathArsip.validasi(entry.rawName, entry.adalahFolder)
-                        if (valPath is HasilValidasiPathArsip.TidakSah) {
-                            return HasilOperasi.Gagal(valPath.alasan, PenyebabGalat.VALIDASI)
-                        }
-                    }
+            is HasilScanCd.Valid -> cdInfo.entri
+        }
+        if (tolakZipSlipFatal) {
+            for (entry in daftarCd) {
+                val valPath = ValidasiPathArsip.validasi(entry.rawName, entry.adalahFolder)
+                if (valPath is HasilValidasiPathArsip.TidakSah) {
+                    return HasilOperasi.Gagal(valPath.alasan, PenyebabGalat.VALIDASI)
                 }
             }
         }
 
-        val petaCd = if (cdInfo is HasilScanCd.Valid) {
-            cdInfo.entri.associateBy {
-                val valP = ValidasiPathArsip.validasi(it.rawName, it.adalahFolder)
-                if (valP is HasilValidasiPathArsip.Sah) valP.jalurNormal else it.rawName
-            }
-        } else {
-            emptyMap()
+        val petaCd = daftarCd.associateBy {
+            val valP = ValidasiPathArsip.validasi(it.rawName, it.adalahFolder)
+            if (valP is HasilValidasiPathArsip.Sah) valP.jalurNormal else it.rawName
         }
 
         val zipTerbuka = try {
@@ -787,26 +781,24 @@ class ProviderZip(
             }
 
             // Tambahkan entri CD terenkripsi atau tidak muncul di Okio jika ada
-            if (cdInfo is HasilScanCd.Valid) {
-                for (entry in cdInfo.entri) {
-                    val valPath = ValidasiPathArsip.validasi(entry.rawName, entry.adalahFolder)
-                    if (valPath is HasilValidasiPathArsip.Sah && sudahAda.add(valPath.jalurNormal)) {
-                        val ukuranAsli = if (entry.adalahFolder) null else entry.uncompressedSize
-                        if (!entry.adalahFolder && ukuranAsli != null) totalUkuran += ukuranAsli
-                        daftarEntri.add(
-                            EntriArsip(
-                                jalurInternal = valPath.jalurNormal,
-                                nama = valPath.namaSegmenAkhir,
-                                adalahFolder = entry.adalahFolder,
-                                ukuranTidakTerkompresiByte = ukuranAsli,
-                                ukuranTerkompresiByte = if (entry.adalahFolder) null else entry.compressedSize,
-                                waktuUbahEpochMs = null,
-                                terenkripsi = entry.terenkripsi,
-                                metodeKompresi = entry.metodeKompresi,
-                                adalahTautanSimbolik = entry.adalahTautan
-                            )
+            for (entry in daftarCd) {
+                val valPath = ValidasiPathArsip.validasi(entry.rawName, entry.adalahFolder)
+                if (valPath is HasilValidasiPathArsip.Sah && sudahAda.add(valPath.jalurNormal)) {
+                    val ukuranAsli = if (entry.adalahFolder) null else entry.uncompressedSize
+                    if (!entry.adalahFolder && ukuranAsli != null) totalUkuran += ukuranAsli
+                    daftarEntri.add(
+                        EntriArsip(
+                            jalurInternal = valPath.jalurNormal,
+                            nama = valPath.namaSegmenAkhir,
+                            adalahFolder = entry.adalahFolder,
+                            ukuranTidakTerkompresiByte = ukuranAsli,
+                            ukuranTerkompresiByte = if (entry.adalahFolder) null else entry.compressedSize,
+                            waktuUbahEpochMs = null,
+                            terenkripsi = entry.terenkripsi,
+                            metodeKompresi = entry.metodeKompresi,
+                            adalahTautanSimbolik = entry.adalahTautan
                         )
-                    }
+                    )
                 }
             }
 
