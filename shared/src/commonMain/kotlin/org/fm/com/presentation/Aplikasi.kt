@@ -19,6 +19,7 @@ import org.fm.com.di.buatKontainerPreview
 import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.model.JenisTargetBookmark
+import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.usecase.HasilResolusiBeranda
 import org.fm.com.presentation.arsip.IntentArsip
@@ -39,6 +40,7 @@ import org.fm.com.presentation.filemanager.DaftarBerkasLayar
 import org.fm.com.presentation.filemanager.IntentFilemanager
 import org.fm.com.presentation.filemanager.ViewModelFilemanager
 import org.fm.com.presentation.filemanager.ViewModelOperasiMassal
+import org.fm.com.presentation.komponen.DialogIzinMemoriSistem
 import org.fm.com.presentation.komponen.PenanganKembaliSistem
 import org.fm.com.presentation.navigasi.NavigasiUtama
 import org.fm.com.presentation.navigasi.TabUtama
@@ -67,7 +69,11 @@ fun Aplikasi(
     pesanEksternal: Pair<Long, String>? = null,
     lokasiPintasan: List<LokasiBerkas> = kontainer.lokasiPintasan,
     onPilihFolder: (() -> Unit)? = null,
-    onSiapkanAksesLokasi: (suspend (LokasiBerkas) -> LokasiBerkas)? = null
+    onSiapkanAksesLokasi: (suspend (LokasiBerkas) -> LokasiBerkas)? = null,
+    izinMemoriInternalAktif: Boolean? = null,
+    tampilkanDialogIzinMemori: Boolean = false,
+    onMintaIzinMemoriInternal: (() -> Unit)? = null,
+    onTutupDialogIzinMemori: ((Boolean) -> Unit)? = null
 ) {
     TemaAplikasi {
         val scope = rememberCoroutineScope()
@@ -175,6 +181,17 @@ fun Aplikasi(
 
         LaunchedEffect(wordWrapUmumAktif) {
             vmEditor.prosesIntent(IntentEditor.SetWordWrapUmum(wordWrapUmumAktif))
+        }
+
+        LaunchedEffect(izinMemoriInternalAktif) {
+            if (izinMemoriInternalAktif == false) {
+                val lok = lokasiAktifFm
+                if (lok != null && lok.jenis == JenisLokasi.POSIX &&
+                    lok.pengenal != kontainer.lokasiAwal.pengenal
+                ) {
+                    vmFilemanager.prosesIntent(IntentFilemanager.Segarkan)
+                }
+            }
         }
 
         LaunchedEffect(kontainer) {
@@ -486,6 +503,15 @@ fun Aplikasi(
                     )
                 }
             }
+        }
+
+        if (tampilkanDialogIzinMemori && izinMemoriInternalAktif == false && onMintaIzinMemoriInternal != null) {
+            DialogIzinMemoriSistem(
+                terbuka = true,
+                onBukaPengaturanIzin = onMintaIzinMemoriInternal,
+                onGunakanSafSaja = { onTutupDialogIzinMemori?.invoke(true) },
+                onNanti = { onTutupDialogIzinMemori?.invoke(false) }
+            )
         }
     }
 }

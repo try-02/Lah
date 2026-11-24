@@ -60,7 +60,9 @@ fun LayarPengaturan(
     modifier: Modifier = Modifier,
     lokasiAktifFileManager: LokasiBerkas? = null,
     lokasiPintasan: List<LokasiBerkas> = emptyList(),
-    onPilihFolderSistemUntukBeranda: (() -> Unit)? = null
+    onPilihFolderSistemUntukBeranda: (() -> Unit)? = null,
+    izinMemoriInternalAktif: Boolean? = null,
+    onMintaIzinMemoriInternal: (() -> Unit)? = null
 ) {
     val statePengaturan by viewModelPengaturan.state.collectAsStateWithLifecycle()
     val stateBeranda by viewModelBeranda.state.collectAsStateWithLifecycle()
@@ -179,6 +181,47 @@ fun LayarPengaturan(
                         onClick = { viewModelBeranda.prosesIntent(IntentBeranda.ResetKeBawaan) }
                     ) {
                         Text("Reset ke Bawaan")
+                    }
+                }
+            }
+
+            if (izinMemoriInternalAktif != null && onMintaIzinMemoriInternal != null) {
+                HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
+                JudulBagianPengaturan("Izin Penyimpanan Sistem")
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(MaterialTheme.shapes.medium)
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = if (izinMemoriInternalAktif) {
+                            "Akses Semua Berkas: Aktif"
+                        } else {
+                            "Akses Semua Berkas: Belum Aktif (Mode SAF)"
+                        },
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = if (izinMemoriInternalAktif) {
+                            "Memori internal (/storage/emulated/0) dapat diakses langsung. Folder privat aplikasi (Android/data & Termux) tetap mengikuti batasan OS."
+                        } else {
+                            "Aktifkan untuk membuka /storage/emulated/0 langsung tanpa memilih subfolder SAF satu per satu."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (izinMemoriInternalAktif) {
+                        OutlinedButton(onClick = onMintaIzinMemoriInternal) {
+                            Text("Kelola di Pengaturan Sistem")
+                        }
+                    } else {
+                        Button(onClick = onMintaIzinMemoriInternal) {
+                            Text("Izinkan Memori Internal")
+                        }
                     }
                 }
             }

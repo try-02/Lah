@@ -223,4 +223,40 @@ class SafAdapterTest {
         assertFalse(SafOperasiBerkas.apakahKonflikDuplikatProvider("Main.kt", "Main.kt.txt"))
         assertTrue(SafOperasiBerkas.apakahKonflikDuplikatProvider("Main.kt", "Main (1).kt"))
     }
+
+    @Test
+    fun resolusiIndukDanRootTreeTermuxSertaExternalStorageAkurat() {
+        assertTrue(
+            SafOperasiBerkas.apakahRootTreeSaf(
+                treeDocId = "/data/data/com.termux/files/home",
+                docId = "/data/data/com.termux/files/home/"
+            )
+        )
+        assertFalse(
+            SafOperasiBerkas.apakahRootTreeSaf(
+                treeDocId = "/data/data/com.termux/files/home",
+                docId = "/data/data/com.termux/files/home/script.sh"
+            )
+        )
+        assertEquals(
+            "/data/data/com.termux/files/home/proyek",
+            SafOperasiBerkas.kandidatIndukDocId(
+                docId = "/data/data/com.termux/files/home/proyek/script.sh",
+                treeDocId = "/data/data/com.termux/files/home"
+            )
+        )
+        assertEquals(
+            "primary:",
+            SafOperasiBerkas.kandidatIndukDocId(
+                docId = "primary:catatan.txt",
+                treeDocId = "primary:"
+            )
+        )
+        assertNull(
+            SafOperasiBerkas.kandidatIndukDocId(
+                docId = "/data/data/com.termux/files/home",
+                treeDocId = "/data/data/com.termux/files/home"
+            )
+        )
+    }
 }

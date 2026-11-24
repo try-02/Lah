@@ -1,6 +1,8 @@
 package org.fm.com.di
 
 import android.content.Context
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okio.FileSystem
@@ -30,6 +32,8 @@ import org.fm.com.domain.repository.RepositoriRiwayatPencarian
 import org.fm.com.presentation.filemanager.AksiPlatformBerkasAndroid
 import org.koin.dsl.module
 
+private const val KUNCI_PROMPT_IZIN_MEMORI = "android.prompt_izin_memori_selesai"
+
 class KontainerAndroid internal constructor(
     private val appContext: Context,
     val database: DatabaseAplikasi,
@@ -39,10 +43,14 @@ class KontainerAndroid internal constructor(
     val repositoriRiwayatPencarian: RepositoriRiwayatPencarian,
     val lokasiRuangKerja: LokasiBerkas
 ) {
+    val lokasiMemoriInternalSaatIni: LokasiBerkas?
+        get() = PengelolaIzinPenyimpanan.buatLokasiMemoriInternalJikaDiizinkan(appContext)
+
     private suspend fun bacaTreeTersimpan(): List<LokasiBerkas> =
         (safPenyediaLokasi.daftarTreeTersimpan() as? HasilOperasi.Sukses)?.nilai.orEmpty()
 
     private fun susunPintasan(treeTersimpan: List<LokasiBerkas>): List<LokasiBerkas> = buildList {
+        lokasiMemoriInternalSaatIni?.let { add(it) }
         add(lokasiRuangKerja)
         for (tree in treeTersimpan) {
             if (none { it.pengenal == tree.pengenal && it.jenis == tree.jenis }) {
@@ -52,23 +60,38 @@ class KontainerAndroid internal constructor(
     }
 
     suspend fun muatLokasiAwal(): LokasiBerkas = withContext(Dispatchers.IO) {
-        bacaTreeTersimpan().firstOrNull() ?: lokasiRuangKerja
+        lokasiMemoriInternalSaatIni ?: bacaTreeTersimpan().firstOrNull() ?: lokasiRuangKerja
     }
 
     suspend fun daftarLokasiPintasan(): List<LokasiBerkas> = withContext(Dispatchers.IO) {
         susunPintasan(bacaTreeTersimpan())
     }
 
-    /**
-     * Jalur startup: satu kali baca tree SAF tersimpan (tiap tree memicu query ke provider)
-     * untuk menurunkan lokasi awal sekaligus daftar pintasan, menggantikan pemanggilan
-     * [muatLokasiAwal] lalu [daftarLokasiPintasan] yang membaca ulang daftar yang sama.
-     */
     suspend fun muatLokasiAwalDanPintasan(): Pair<LokasiBerkas, List<LokasiBerkas>> =
         withContext(Dispatchers.IO) {
             val treeTersimpan = bacaTreeTersimpan()
-            (treeTersimpan.firstOrNull() ?: lokasiRuangKerja) to susunPintasan(treeTersimpan)
+            val lokasiAwal = lokasiMemoriInternalSaatIni ?: treeTersimpan.firstOrNull() ?: lokasiRuangKerja
+            lokasiAwal to susunPintasan(treeTersimpan)
         }
+
+    suspend fun perluTampilkanPromptIzinMemori(): Boolean = withContext(Dispatchers.IO) {
+        if (PengelolaIzinPenyimpanan.sudahPunyaIzinSemuaBerkas()) return@withContext false
+        val sudahSelesai = runCatching {
+            database.preferensiEntityQueries.ambilNilai(KUNCI_PROMPT_IZIN_MEMORI).executeAsOneOrNull()
+        }.getOrNull()
+        sudahSelesai != "true"
+    }
+
+    @OptIn(ExperimentalTime::class)
+    suspend fun tandaiPromptIzinMemoriSelesai() = withContext(Dispatchers.IO) {
+        runCatching {
+            database.preferensiEntityQueries.simpanNilai(
+                kunci = KUNCI_PROMPT_IZIN_MEMORI,
+                nilai = "true",
+                waktu_diubah = Clock.System.now().toEpochMilliseconds()
+            )
+        }
+    }
 
     fun keKontainerAplikasi(
         lokasiAwal: LokasiBerkas,

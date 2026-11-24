@@ -55,6 +55,10 @@ class OperasiDasarUseCaseTest {
         val sukses = renameUc(sumber, "baru.txt")
         assertIs<HasilOperasi.Sukses<*>>(sukses)
         assertEquals("baru.txt", repo.data("/root/baru.txt")?.nama)
+
+        val suksesDenganInduk = renameUc(LokasiBerkas("/root/baru.txt", JenisLokasi.POSIX, "baru.txt"), "akhir.txt", induk = root)
+        assertIs<HasilOperasi.Sukses<*>>(suksesDenganInduk)
+        assertEquals("akhir.txt", repo.data("/root/akhir.txt")?.nama)
     }
 
     @Test

@@ -92,7 +92,9 @@ fun DaftarBerkasLayar(
     onBandingkanBerkas: ((ItemBerkasUi, ItemBerkasUi) -> Unit)? = null,
     onBukaArsip: ((ItemBerkasUi) -> Unit)? = null,
     onBookmarkItem: ((LokasiBerkas, JenisBerkas, Boolean) -> Unit)? = null,
-    onJadikanBeranda: ((LokasiBerkas) -> Unit)? = null
+    onJadikanBeranda: ((LokasiBerkas) -> Unit)? = null,
+    izinMemoriInternalAktif: Boolean? = null,
+    onMintaIzinMemoriInternal: (() -> Unit)? = null
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val defaultStateMassal = remember { MutableStateFlow(StateOperasiMassal()) }
@@ -648,6 +650,44 @@ fun DaftarBerkasLayar(
                                 contentDescription = "Aktif",
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+                if (izinMemoriInternalAktif == false && onMintaIzinMemoriInternal != null) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(MaterialTheme.shapes.small)
+                            .clickable {
+                                tampilSwitcherLokasi = false
+                                onMintaIzinMemoriInternal()
+                            }
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = IkonAplikasi.Folder,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Izinkan Akses Memori Internal",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Buka /storage/emulated/0 langsung tanpa pilih folder SAF",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }

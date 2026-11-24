@@ -26,7 +26,11 @@ fun App(
     pesanEksternal: Pair<Long, String>? = null,
     lokasiPintasan: List<LokasiBerkas> = kontainer.lokasiPintasan,
     onPilihFolder: (() -> Unit)? = null,
-    onSiapkanAksesLokasi: (suspend (LokasiBerkas) -> LokasiBerkas)? = null
+    onSiapkanAksesLokasi: (suspend (LokasiBerkas) -> LokasiBerkas)? = null,
+    izinMemoriInternalAktif: Boolean? = null,
+    tampilkanDialogIzinMemori: Boolean = false,
+    onMintaIzinMemoriInternal: (() -> Unit)? = null,
+    onTutupDialogIzinMemori: ((Boolean) -> Unit)? = null
 ) {
     Aplikasi(
         kontainer = kontainer,
@@ -34,7 +38,11 @@ fun App(
         pesanEksternal = pesanEksternal,
         lokasiPintasan = lokasiPintasan,
         onPilihFolder = onPilihFolder,
-        onSiapkanAksesLokasi = onSiapkanAksesLokasi
+        onSiapkanAksesLokasi = onSiapkanAksesLokasi,
+        izinMemoriInternalAktif = izinMemoriInternalAktif,
+        tampilkanDialogIzinMemori = tampilkanDialogIzinMemori,
+        onMintaIzinMemoriInternal = onMintaIzinMemoriInternal,
+        onTutupDialogIzinMemori = onTutupDialogIzinMemori
     )
 }
 

@@ -250,9 +250,10 @@ class ViewModelFilemanager(
 
     private fun eksekusiRename(sumber: LokasiBerkas, namaBaru: String, konfirmasi: Boolean) {
         val uc = gantiNamaBerkasUseCase ?: return laporkanOperasiTakDidukung()
+        val indukSaatIni = _state.value.lokasiSaatIni
         viewModelScope.launch {
             _state.update { it.copy(dialogRenameItem = null, konfirmasiTimpa = null, sedangMemuat = true) }
-            when (val hasil = uc(sumber, namaBaru, konfirmasi = konfirmasi)) {
+            when (val hasil = uc(sumber, namaBaru, konfirmasi = konfirmasi, induk = indukSaatIni)) {
                 is HasilOperasi.Sukses -> {
                     _state.update { it.copy(pesanInfo = "Nama berhasil diubah menjadi '${hasil.nilai.nama}'") }
                     segarkan()

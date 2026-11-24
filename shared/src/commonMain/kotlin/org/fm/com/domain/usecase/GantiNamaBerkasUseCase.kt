@@ -14,14 +14,15 @@ class GantiNamaBerkasUseCase(
     suspend operator fun invoke(
         sumber: LokasiBerkas,
         namaBaru: String,
-        konfirmasi: Boolean = false
+        konfirmasi: Boolean = false,
+        induk: LokasiBerkas? = null
     ): HasilOperasi<EntitasBerkas> {
         val namaBersih = namaBaru.trim()
         if (!ValidasiNama.sah(namaBersih)) {
             return HasilOperasi.Gagal("Nama baru tidak sah: $namaBaru", PenyebabGalat.VALIDASI)
         }
         return repositoriOperasi.gantiNama(
-            PermintaanOperasi(sumber = sumber, namaBaru = namaBersih, konfirmasi = konfirmasi)
+            PermintaanOperasi(sumber = sumber, tujuan = induk, namaBaru = namaBersih, konfirmasi = konfirmasi)
         )
     }
 }
