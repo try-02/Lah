@@ -552,7 +552,7 @@ class SafOperasiBerkas(
                 ?: return HasilOperasi.Gagal("Penyedia SAF gagal membuat dokumen baru", PenyebabGalat.TIDAK_DIKETAHUI)
             val entitas = bacaSatuEntitas(createdUri)
                 ?: return HasilOperasi.Gagal("Gagal membaca dokumen yang baru dibuat", PenyebabGalat.TIDAK_DITEMUKAN)
-            if (entitas.nama != nama && !konfirmasiTimpa) {
+            if (apakahKonflikDuplikatProvider(nama, entitas.nama) && !konfirmasiTimpa) {
                 runCatching { DocumentsContract.deleteDocument(contentResolver, createdUri) }
                 return HasilOperasi.Gagal("Nama target bentrok dengan item yang sudah ada: $nama", PenyebabGalat.KONFLIK)
             }
@@ -620,13 +620,31 @@ class SafOperasiBerkas(
                 else -> "application/octet-stream"
             }
         }
+
+        internal fun apakahIdDokumenSama(
+            authorityA: String?,
+            docIdA: String?,
+            authorityB: String?,
+            docIdB: String?
+        ): Boolean = authorityA == authorityB && !docIdA.isNullOrBlank() && docIdA == docIdB
+
+        internal fun apakahKonflikDuplikatProvider(namaDiminta: String, namaAktual: String): Boolean {
+            if (namaAktual == namaDiminta) return false
+            // Sebagian provider menambahkan ekstensi otomatis (mis. Main.kt -> Main.kt.txt) untuk text/plain.
+            if (namaAktual.startsWith("$namaDiminta.", ignoreCase = true)) return false
+            return true
+        }
     }
 
     private fun apakahDokumenSama(uriA: Uri, uriB: Uri): Boolean {
         if (uriA == uriB) return true
         return runCatching {
-            uriA.authority == uriB.authority &&
-                DocumentsContract.getDocumentId(uriA) == DocumentsContract.getDocumentId(uriB)
+            apakahIdDokumenSama(
+                authorityA = uriA.authority,
+                docIdA = DocumentsContract.getDocumentId(uriA),
+                authorityB = uriB.authority,
+                docIdB = DocumentsContract.getDocumentId(uriB)
+            )
         }.getOrDefault(false)
     }
 }

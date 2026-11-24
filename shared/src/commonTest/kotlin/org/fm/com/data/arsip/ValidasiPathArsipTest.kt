@@ -6,6 +6,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import okio.Buffer
 import okio.FileSystem
@@ -13,6 +15,9 @@ import okio.buffer
 import okio.use
 import org.fm.com.data.DataBerkas
 import org.fm.com.data.SumberMemoriPenyimpanan
+import org.fm.com.domain.model.EntitasBerkas
+import org.fm.com.domain.model.KemampuanPenyimpanan
+import org.fm.com.domain.repository.RepositoriBerkas
 import org.fm.com.domain.arsip.MatriksArsip
 import org.fm.com.domain.arsip.RegistriArsipProvider
 import org.fm.com.domain.io.PotonganIsi
@@ -307,6 +312,162 @@ class ValidasiPathArsipTest {
         assertIs<HasilOperasi.Gagal>(
             providerTar.daftarEntri(LokasiBerkas("/rusak.tar", JenisLokasi.POSIX, "rusak.tar"), FormatArsip.TAR)
         )
+    }
+
+    @Test
+    fun kompresiZipDanTarGagalJikaSubfolderGagalDibaca() = runTest {
+        val storage = siapkanPenyimpananContoh()
+        storage.berkas.simpan(DataBerkas("/src/terkunci", "terkunci", JenisLokasi.POSIX, adalahFolder = true))
+        val repoGagalSub = object : RepositoriBerkas {
+            override fun kapabilitas(lokasi: LokasiBerkas): KemampuanPenyimpanan? = storage.kapabilitas(lokasi)
+            override fun daftarIsi(lokasi: LokasiBerkas): Flow<HasilOperasi<List<EntitasBerkas>>> =
+                if (lokasi.pengenal == "/src/terkunci") {
+                    flowOf(HasilOperasi.Gagal("Izin folder ditolak", PenyebabGalat.IZIN_DITOLAK))
+                } else {
+                    storage.daftarIsi(lokasi)
+                }
+            override suspend fun bukaUntukBaca(lokasi: LokasiBerkas) = storage.bukaUntukBaca(lokasi)
+            override suspend fun bukaUntukTulis(lokasi: LokasiBerkas, timpa: Boolean) = storage.bukaUntukTulis(lokasi, timpa)
+            override suspend fun bukaUntukTulisDi(induk: LokasiBerkas, nama: String, timpa: Boolean) =
+                storage.bukaUntukTulisDi(induk, nama, timpa)
+        }
+        val adapter = buatAdapterArsipPlatform()
+        val root = LokasiBerkas("/", JenisLokasi.POSIX, "Root")
+        val sumberSrc = listOf(ItemSumberKompresi(LokasiBerkas("/src", JenisLokasi.POSIX, "src"), "src", true))
+
+        val gagalZip = assertIs<HasilOperasi.Gagal>(
+            ProviderZip(repoGagalSub, storage, adapter).buatArsip(sumberSrc, root, "gagal.zip", FormatArsip.ZIP)
+        )
+        assertEquals(PenyebabGalat.IZIN_DITOLAK, gagalZip.penyebab)
+
+        val gagalTar = assertIs<HasilOperasi.Gagal>(
+            ProviderTar(repoGagalSub, storage, adapter).buatArsip(sumberSrc, root, "gagal.tar", FormatArsip.TAR)
+        )
+        assertEquals(PenyebabGalat.IZIN_DITOLAK, gagalTar.penyebab)
+    }
+
+    @Test
+    fun zip64DenganJalurTraversalDitolakTanpaEkstraksi() = runTest {
+        val storage = siapkanPenyimpananContoh()
+        val providerZip = ProviderZip(storage, storage, buatAdapterArsipPlatform())
+
+        val namaJahat = "../../jahat64.txt".encodeToByteArray()
+        val payload = "JAHAT64".encodeToByteArray()
+        val zipBytes = Buffer().apply {
+            // Local File Header (30 + nama + payload)
+            writeIntLe(0x04034B50)
+            writeShortLe(45)
+            writeShortLe(0x0800)
+            writeShortLe(0)
+            writeShortLe(0)
+            writeShortLe(0x0021)
+            writeIntLe(0)
+            writeIntLe(payload.size)
+            writeIntLe(payload.size)
+            writeShortLe(namaJahat.size)
+            writeShortLe(0)
+            write(namaJahat)
+            write(payload)
+            val cdOffset = size
+
+            // Central Directory Entry (46 + nama)
+            writeIntLe(0x02014B50)
+            writeShortLe(45)
+            writeShortLe(45)
+            writeShortLe(0x0800)
+            writeShortLe(0)
+            writeShortLe(0)
+            writeShortLe(0x0021)
+            writeIntLe(0)
+            writeIntLe(payload.size)
+            writeIntLe(payload.size)
+            writeShortLe(namaJahat.size)
+            writeShortLe(0)
+            writeShortLe(0)
+            writeShortLe(0)
+            writeShortLe(0)
+            writeIntLe(0)
+            writeIntLe(0)
+            write(namaJahat)
+            val cdSize = size - cdOffset
+            val zip64EocdOffset = size
+
+            // Zip64 End of Central Directory Record (56 byte)
+            writeIntLe(0x06064B50)
+            writeLongLe(44L)
+            writeShortLe(45)
+            writeShortLe(45)
+            writeIntLe(0)
+            writeIntLe(0)
+            writeLongLe(1L)
+            writeLongLe(1L)
+            writeLongLe(cdSize)
+            writeLongLe(cdOffset)
+
+            // Zip64 End of Central Directory Locator (20 byte)
+            writeIntLe(0x07064B50)
+            writeIntLe(0)
+            writeLongLe(zip64EocdOffset)
+            writeIntLe(1)
+
+            // Standard EOCD dengan penanda Zip64
+            writeIntLe(0x06054B50)
+            writeShortLe(0)
+            writeShortLe(0)
+            writeShortLe(0xFFFF)
+            writeShortLe(0xFFFF)
+            writeIntLe(-1)
+            writeIntLe(-1)
+            writeShortLe(0)
+        }.readByteArray()
+
+        storage.berkas.simpan(DataBerkas("/jahat64.zip", "jahat64.zip", JenisLokasi.POSIX, adalahFolder = false), zipBytes)
+        val lok = LokasiBerkas("/jahat64.zip", JenisLokasi.POSIX, "jahat64.zip")
+        assertEquals(PenyebabGalat.VALIDASI, assertIs<HasilOperasi.Gagal>(providerZip.daftarEntri(lok, FormatArsip.ZIP)).penyebab)
+        assertEquals(
+            PenyebabGalat.VALIDASI,
+            assertIs<HasilOperasi.Gagal>(
+                providerZip.ekstrak(lok, FormatArsip.ZIP, LokasiBerkas("/keluar", JenisLokasi.POSIX, "keluar"), OpsiEkstrakArsip(konfirmasiPengguna = true))
+            ).penyebab
+        )
+        assertEquals(null, storage.berkas.data("/keluar/jahat64.txt"))
+    }
+
+    @Test
+    fun gzipMultiMemberTerbacaLengkapDanToleranTrailingZero() = runTest {
+        val storage = siapkanPenyimpananContoh()
+        val providerGzip = ProviderGzip(storage, buatAdapterArsipPlatform())
+        val root = LokasiBerkas("/", JenisLokasi.POSIX, "Root")
+
+        storage.berkas.simpan(DataBerkas("/a.txt", "a.txt", JenisLokasi.POSIX, false), "abc".encodeToByteArray())
+        storage.berkas.simpan(DataBerkas("/b.txt", "b.txt", JenisLokasi.POSIX, false), "def".encodeToByteArray())
+
+        assertIs<HasilOperasi.Sukses<*>>(
+            providerGzip.buatArsip(listOf(ItemSumberKompresi(LokasiBerkas("/a.txt", JenisLokasi.POSIX, "a.txt"), "a.txt", false)), root, "a.gz", FormatArsip.GZIP)
+        )
+        assertIs<HasilOperasi.Sukses<*>>(
+            providerGzip.buatArsip(listOf(ItemSumberKompresi(LokasiBerkas("/b.txt", JenisLokasi.POSIX, "b.txt"), "b.txt", false)), root, "b.gz", FormatArsip.GZIP)
+        )
+        val bytesA = storage.berkas.isiDari("/a.gz")!!
+        val bytesB = storage.berkas.isiDari("/b.gz")!!
+
+        storage.berkas.simpan(
+            DataBerkas("/multi.txt.gz", "multi.txt.gz", JenisLokasi.POSIX, false),
+            bytesA + bytesB
+        )
+        val bacaMulti = assertIs<HasilOperasi.Sukses<SumberIsiBerkas>>(
+            providerGzip.bukaEntriUntukBaca(LokasiBerkas("/multi.txt.gz", JenisLokasi.POSIX, "multi.txt.gz"), FormatArsip.GZIP, "multi.txt")
+        ).nilai
+        assertEquals("abcdef", bacaSemuaDariSumber(bacaMulti).decodeToString())
+
+        storage.berkas.simpan(
+            DataBerkas("/multi_pad.txt.gz", "multi_pad.txt.gz", JenisLokasi.POSIX, false),
+            bytesA + bytesB + ByteArray(16) { 0 }
+        )
+        val bacaPad = assertIs<HasilOperasi.Sukses<SumberIsiBerkas>>(
+            providerGzip.bukaEntriUntukBaca(LokasiBerkas("/multi_pad.txt.gz", JenisLokasi.POSIX, "multi_pad.txt.gz"), FormatArsip.GZIP, "multi_pad.txt")
+        ).nilai
+        assertEquals("abcdef", bacaSemuaDariSumber(bacaPad).decodeToString())
     }
 
     private suspend fun siapkanPenyimpananContoh(): SumberMemoriPenyimpanan {

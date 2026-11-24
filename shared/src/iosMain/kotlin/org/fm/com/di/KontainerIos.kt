@@ -5,6 +5,8 @@ package org.fm.com.di
 import kotlin.time.Clock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okio.FileSystem
 import org.fm.com.data.RepositoriRouterBerkas
@@ -47,6 +49,9 @@ class KontainerIos internal constructor(
     val repositoriRiwayatPencarian: RepositoriRiwayatPencarian,
     val lokasiDokumenApp: LokasiBerkas
 ) {
+    private val aksesAktifLock = Mutex()
+    private val urlAktif = HashMap<String, NSURL>()
+
     suspend fun simpanBookmarkLokasi(lokasi: LokasiBerkas, bookmarkBase64: String?) = withContext(Dispatchers.IO) {
         if (bookmarkBase64.isNullOrBlank()) return@withContext
         val kunci = "$PREFIX_KUNCI_BOOKMARK${lokasi.pengenal}"
@@ -62,22 +67,88 @@ class KontainerIos internal constructor(
     suspend fun siapkanAksesLokasi(lokasi: LokasiBerkas): LokasiBerkas = withContext(Dispatchers.IO) {
         if (lokasi.jenis != JenisLokasi.IOS) return@withContext lokasi
         val kunci = "$PREFIX_KUNCI_BOOKMARK${lokasi.pengenal}"
-        val bookmarkBase64 = runCatching {
+        val kunciTanpaSlash = "$PREFIX_KUNCI_BOOKMARK${lokasi.pengenal.trimEnd('/')}"
+        val bookmarkTepat = runCatching {
             database.preferensiEntityQueries.ambilNilai(kunci).executeAsOneOrNull()
-        }.getOrNull() ?: return@withContext lokasi
+        ?: if (kunciTanpaSlash != kunci) {
+                    database.preferensiEntityQueries.ambilNilai(kunciTanpaSlash).executeAsOneOrNull()
+                } else {
+                    null
+                }
+        }.getOrNull()
+        if (bookmarkTepat != null) {
+            return@withContext aktifkanBookmark(bookmarkTepat, lokasi, perbaruiLokasi = true)
+        }
+ 
+        // Jika lokasi berupa subfolder dari folder Document Picker, aktifkan bookmark folder induk terdekat.
+        val targetNorm = normalisasiPathUntukPrefix(lokasi.pengenal)
+        val semuaPref = runCatching {
+            database.preferensiEntityQueries.semuaPreferensi().executeAsList()
+        }.getOrNull().orEmpty()
+        val kandidatInduk = semuaPref
+            .asSequence()
+            .filter { it.kunci.startsWith(PREFIX_KUNCI_BOOKMARK) }
+            .map { pref ->
+                normalisasiPathUntukPrefix(pref.kunci.removePrefix(PREFIX_KUNCI_BOOKMARK)) to pref.nilai
+            }
+            .filter { (indukNorm, _) ->
+                indukNorm.isNotEmpty() &&
+                    (targetNorm == indukNorm || targetNorm.startsWith("$indukNorm/"))
+            }
+            .maxByOrNull { (indukNorm, _) -> indukNorm.length }
 
+        if (kandidatInduk != null) {
+            aktifkanBookmark(kandidatInduk.second, lokasi, perbaruiLokasi = false)
+        }
+        lokasi
+    }
+
+    suspend fun lepaskanSemuaAksesKeamanan() = withContext(Dispatchers.IO) {
+        aksesAktifLock.withLock {
+            for (url in urlAktif.values) {
+                url.stopAccessingSecurityScopedResource()
+            }
+            urlAktif.clear()
+        }
+    }
+
+    private suspend fun aktifkanBookmark(
+        bookmarkBase64: String,
+        lokasi: LokasiBerkas,
+        perbaruiLokasi: Boolean
+    ): LokasiBerkas {
         when (val hasil = PenyimpanBookmarkKeamanan.selesaikanDanSegarkanBookmark(bookmarkBase64)) {
             is HasilOperasi.Sukses -> {
                 val url = hasil.nilai.url
-                url.startAccessingSecurityScopedResource()
-                val lokasiBaru = DokumenPemetaanLokasi.keLokasi(url, lokasi.label)
-                hasil.nilai.bookmarkBaruBase64?.let { bmBaru ->
-                    simpanBookmarkLokasi(lokasiBaru, bmBaru)
+                val kunciUrl = normalisasiPathUntukPrefix(url.absoluteString ?: url.path ?: lokasi.pengenal)
+                aksesAktifLock.withLock {
+                    if (kunciUrl !in urlAktif && url.startAccessingSecurityScopedResource()) {
+                        urlAktif[kunciUrl] = url
+                    }
                 }
-                lokasiBaru
+                val lokasiBaru = if (perbaruiLokasi) {
+                    DokumenPemetaanLokasi.keLokasi(url, lokasi.label)
+                } else {
+                    lokasi
+                }
+                hasil.nilai.bookmarkBaruBase64?.let { bmBaru ->
+                    val lokasiSimpan = if (perbaruiLokasi) lokasiBaru else DokumenPemetaanLokasi.keLokasi(url)
+                    simpanBookmarkLokasi(lokasiSimpan, bmBaru)
+                }
+                return lokasiBaru
             }
-            is HasilOperasi.Gagal -> lokasi
+            is HasilOperasi.Gagal -> return lokasi
         }
+    }
+
+    private fun normalisasiPathUntukPrefix(pengenal: String): String {
+        val url = if (pengenal.startsWith("file://")) {
+            NSURL.URLWithString(pengenal)
+        } else {
+            NSURL.fileURLWithPath(pengenal)
+        }
+        val p = url?.URLByStandardizingPath?.path ?: url?.path ?: pengenal.removePrefix("file://")
+        return p.trimEnd('/')
     }
 
     fun keKontainerAplikasi(): KontainerAplikasi = buatKontainerAplikasi(

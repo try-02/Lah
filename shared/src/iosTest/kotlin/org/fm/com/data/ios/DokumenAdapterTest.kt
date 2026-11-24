@@ -1,3 +1,138 @@
+diff --git a/shared/src/iosTest/kotlin/org/fm/com/data/ios/DokumenAdapterTest.kt b/shared/src/iosTest/kotlin/org/fm/com/data/ios/DokumenAdapterTest.kt
+--- a/shared/src/iosTest/kotlin/org/fm/com/data/ios/DokumenAdapterTest.kt
++++ b/shared/src/iosTest/kotlin/org/fm/com/data/ios/DokumenAdapterTest.kt
+@@ -1,5 +1,6 @@
+ @file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
+ 
+ package org.fm.com.data.ios
+ 
++import app.cash.sqldelight.driver.native.NativeSqliteDriver
+ import kotlin.test.Test
+ import kotlin.test.assertEquals
+@@ -14,15 +15,24 @@
+ import kotlinx.coroutines.flow.first
+ import kotlinx.coroutines.test.runTest
+ import okio.Buffer
++import okio.FileSystem
++import org.fm.com.data.RepositoriRouterBerkas
++import org.fm.com.data.persistensi.DatabaseAplikasi
+ import org.fm.com.data.persistensi.MemoriRepositoriBeranda
+ import org.fm.com.data.persistensi.MemoriRepositoriBookmark
++import org.fm.com.data.persistensi.SqlDelightRepositoriRiwayatLokasi
++import org.fm.com.data.persistensi.SqlDelightRepositoriRiwayatPencarian
++import org.fm.com.data.persistensi.buatDatabaseAplikasi
++import org.fm.com.data.posix.PosixSumberDataPenyimpanan
++import org.fm.com.di.KontainerIos
+ import org.fm.com.domain.io.PotonganIsi
+ import org.fm.com.domain.io.SumberIsiBerkas
+ import org.fm.com.domain.model.EntitasBerkas
+ import org.fm.com.domain.model.EntitasBookmark
+ import org.fm.com.domain.model.HasilOperasi
+ import org.fm.com.domain.model.JenisBerkas
+ import org.fm.com.domain.model.JenisLokasi
+ import org.fm.com.domain.model.LokasiBerkas
+ import org.fm.com.domain.model.OperasiBerkas
+ import org.fm.com.domain.model.PenyebabGalat
++import org.fm.com.domain.model.PlatformPenyimpanan
+ import org.fm.com.domain.model.StatusKetersediaanBookmark
+@@ -188,4 +198,87 @@
+             fm.removeItemAtURL(rootUrl, null)
+         }
+     }
++
+    @Test
+    fun tulisBaruTanpaTimpaMenolakJikaBerkasDibuatPihakLainSebelumSelesai() = runTest {
+        val fm = NSFileManager.defaultManager
+        val rootPath = NSTemporaryDirectory() + "fm_ios_race_" + NSUUID.UUID().UUIDString
+        val rootUrl = NSURL.fileURLWithPath(rootPath, isDirectory = true)
+        memScoped {
+            val errPtr = alloc<ObjCObjectVar<NSError?>>()
+            assertTrue(fm.createDirectoryAtURL(rootUrl, true, null, errPtr.ptr))
+        }
+        try {
+            val adapter = IosSumberDataPenyimpanan()
+            val lokasiRoot = DokumenPemetaanLokasi.keLokasi(rootUrl, "Race")
++
+            val writerKita = assertIs<HasilOperasi.Sukses<*>>(
+                adapter.bukaUntukTulisDi(lokasiRoot, "balapan.txt", timpa = false)
+            ).nilai as org.fm.com.domain.io.SumberTulisBerkas
+            assertIs<HasilOperasi.Sukses<Unit>>(writerKita.tulis(PotonganIsi("MILIK_KITA".encodeToByteArray(), true)))
++
+            // Pihak lain menulis file bernama sama sebelum sesi kita selesai()
+            val writerLain = assertIs<HasilOperasi.Sukses<*>>(
+                adapter.bukaUntukTulisDi(lokasiRoot, "balapan.txt", timpa = false)
+            ).nilai as org.fm.com.domain.io.SumberTulisBerkas
+            assertIs<HasilOperasi.Sukses<Unit>>(writerLain.tulis(PotonganIsi("MILIK_LAIN".encodeToByteArray(), true)))
+            assertIs<HasilOperasi.Sukses<Unit>>(writerLain.selesai())
++
+            val hasilKita = assertIs<HasilOperasi.Gagal>(writerKita.selesai())
+            assertEquals(PenyebabGalat.KONFLIK, hasilKita.penyebab)
++
+            val daftar = assertIs<HasilOperasi.Sukses<List<EntitasBerkas>>>(adapter.daftarIsi(lokasiRoot).first()).nilai
+            val reader = assertIs<HasilOperasi.Sukses<SumberIsiBerkas>>(adapter.bukaUntukBaca(daftar.single().lokasi)).nilai
+            val buf = Buffer()
+            try {
+                while (true) {
+                    when (val pot = reader.potongan()) {
+                        is SumberIsiBerkas.HasilPotongan.Isi -> {
+                            if (pot.potongan.data.isNotEmpty()) buf.write(pot.potongan.data)
+                            if (pot.potongan.selesai) break
+                        }
+                        is SumberIsiBerkas.HasilPotongan.Gagal -> error(pot.pesan)
+                    }
+                }
+            } finally {
+                reader.tutup()
+            }
+            assertEquals("MILIK_LAIN", buf.readByteArray().decodeToString())
+        } finally {
+            fm.removeItemAtURL(rootUrl, null)
+        }
+    }
++
+    @Test
+    fun kontainerIosMenyimpanDanMenyiapkanAksesUntukSubfolderDariBookmarkInduk() = runTest {
+        val fm = NSFileManager.defaultManager
+        val rootPath = NSTemporaryDirectory() + "fm_ios_bm_" + NSUUID.UUID().UUIDString
+        val rootUrl = NSURL.fileURLWithPath(rootPath, isDirectory = true)
+        val subUrl = rootUrl.URLByAppendingPathComponent("proyek/sub")!!
+        memScoped {
+            val errPtr = alloc<ObjCObjectVar<NSError?>>()
+            assertTrue(fm.createDirectoryAtURL(subUrl, true, null, errPtr.ptr))
+        }
+        val namaDb = "test_kontainer_" + NSUUID.UUID().UUIDString + ".db"
+        val driver = NativeSqliteDriver(DatabaseAplikasi.Schema, namaDb)
+        try {
+            val db = buatDatabaseAplikasi(driver)
+            val router = RepositoriRouterBerkas(
+                mapOf(
+                    JenisLokasi.IOS to IosSumberDataPenyimpanan(),
+                    JenisLokasi.POSIX to PosixSumberDataPenyimpanan(FileSystem.SYSTEM, PlatformPenyimpanan.IOS)
+                )
+            )
+            val lokasiRoot = DokumenPemetaanLokasi.keLokasi(rootUrl, "Akar")
+            val kontainer = KontainerIos(
+                database = db,
+                routerBerkas = router,
+                repositoriRiwayat = SqlDelightRepositoriRiwayatLokasi(db),
+                repositoriRiwayatPencarian = SqlDelightRepositoriRiwayatPencarian(db),
+                lokasiDokumenApp = lokasiRoot
+            )
+            val bmBase64 = (PenyimpanBookmarkKeamanan.buatBookmarkBase64(rootUrl) as? HasilOperasi.Sukses)?.nilai
+            kontainer.simpanBookmarkLokasi(lokasiRoot, bmBase64)
++
+            val lokasiSub = DokumenPemetaanLokasi.keLokasi(subUrl, "sub")
+            val siap = kontainer.siapkanAksesLokasi(lokasiSub)
+            assertEquals(lokasiSub, siap)
+            assertIs<HasilOperasi.Sukses<List<EntitasBerkas>>>(router.daftarIsi(siap).first())
+            kontainer.lepaskanSemuaAksesKeamanan()
+        } finally {
+            driver.close()
+            fm.removeItemAtURL(rootUrl, null)
+        }
+    }
+ }
+
 @file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
 
 package org.fm.com.data.ios
@@ -14,8 +149,16 @@ import kotlinx.cinterop.ptr
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import okio.Buffer
+import okio.FileSystem
+import org.fm.com.data.RepositoriRouterBerkas
+import org.fm.com.data.persistensi.DatabaseAplikasi
 import org.fm.com.data.persistensi.MemoriRepositoriBeranda
 import org.fm.com.data.persistensi.MemoriRepositoriBookmark
+import org.fm.com.data.persistensi.SqlDelightRepositoriRiwayatLokasi
+import org.fm.com.data.persistensi.SqlDelightRepositoriRiwayatPencarian
+import org.fm.com.data.persistensi.buatDatabaseAplikasi
+import org.fm.com.data.posix.PosixSumberDataPenyimpanan
+import org.fm.com.di.KontainerIos
 import org.fm.com.domain.io.PotonganIsi
 import org.fm.com.domain.io.SumberIsiBerkas
 import org.fm.com.domain.model.EntitasBerkas
@@ -159,6 +302,98 @@ class DokumenAdapterTest {
             ).nilai
             assertIs<StatusKetersediaanBookmark.Tersedia>(bookmarkUseCase.periksaKetersediaanSatu(terganti))
         } finally {
+            fm.removeItemAtURL(rootUrl, null)
+        }
+    }
+
+    @Test
+    fun tulisBaruTanpaTimpaMenolakJikaBerkasDibuatPihakLainSebelumSelesai() = runTest {
+        val fm = NSFileManager.defaultManager
+        val rootPath = NSTemporaryDirectory() + "fm_ios_race_" + NSUUID.UUID().UUIDString
+        val rootUrl = NSURL.fileURLWithPath(rootPath, isDirectory = true)
+        memScoped {
+            val errPtr = alloc<ObjCObjectVar<NSError?>>()
+            assertTrue(fm.createDirectoryAtURL(rootUrl, true, null, errPtr.ptr))
+        }
+        try {
+            val adapter = IosSumberDataPenyimpanan()
+            val lokasiRoot = DokumenPemetaanLokasi.keLokasi(rootUrl, "Race")
+
+            val writerKita = assertIs<HasilOperasi.Sukses<*>>(
+                adapter.bukaUntukTulisDi(lokasiRoot, "balapan.txt", timpa = false)
+            ).nilai as org.fm.com.domain.io.SumberTulisBerkas
+            assertIs<HasilOperasi.Sukses<Unit>>(writerKita.tulis(PotonganIsi("MILIK_KITA".encodeToByteArray(), true)))
+
+            // Pihak lain menulis file bernama sama sebelum sesi kita selesai()
+            val writerLain = assertIs<HasilOperasi.Sukses<*>>(
+                adapter.bukaUntukTulisDi(lokasiRoot, "balapan.txt", timpa = false)
+            ).nilai as org.fm.com.domain.io.SumberTulisBerkas
+            assertIs<HasilOperasi.Sukses<Unit>>(writerLain.tulis(PotonganIsi("MILIK_LAIN".encodeToByteArray(), true)))
+            assertIs<HasilOperasi.Sukses<Unit>>(writerLain.selesai())
+
+            val hasilKita = assertIs<HasilOperasi.Gagal>(writerKita.selesai())
+            assertEquals(PenyebabGalat.KONFLIK, hasilKita.penyebab)
+
+            val daftar = assertIs<HasilOperasi.Sukses<List<EntitasBerkas>>>(adapter.daftarIsi(lokasiRoot).first()).nilai
+            val reader = assertIs<HasilOperasi.Sukses<SumberIsiBerkas>>(adapter.bukaUntukBaca(daftar.single().lokasi)).nilai
+            val buf = Buffer()
+            try {
+                while (true) {
+                    when (val pot = reader.potongan()) {
+                        is SumberIsiBerkas.HasilPotongan.Isi -> {
+                            if (pot.potongan.data.isNotEmpty()) buf.write(pot.potongan.data)
+                            if (pot.potongan.selesai) break
+                        }
+                        is SumberIsiBerkas.HasilPotongan.Gagal -> error(pot.pesan)
+                    }
+                }
+            } finally {
+                reader.tutup()
+            }
+            assertEquals("MILIK_LAIN", buf.readByteArray().decodeToString())
+        } finally {
+            fm.removeItemAtURL(rootUrl, null)
+        }
+    }
+
+    @Test
+    fun kontainerIosMenyimpanDanMenyiapkanAksesUntukSubfolderDariBookmarkInduk() = runTest {
+        val fm = NSFileManager.defaultManager
+        val rootPath = NSTemporaryDirectory() + "fm_ios_bm_" + NSUUID.UUID().UUIDString
+        val rootUrl = NSURL.fileURLWithPath(rootPath, isDirectory = true)
+        val subUrl = rootUrl.URLByAppendingPathComponent("proyek/sub")!!
+        memScoped {
+            val errPtr = alloc<ObjCObjectVar<NSError?>>()
+            assertTrue(fm.createDirectoryAtURL(subUrl, true, null, errPtr.ptr))
+        }
+        val namaDb = "test_kontainer_" + NSUUID.UUID().UUIDString + ".db"
+        val driver = NativeSqliteDriver(DatabaseAplikasi.Schema, namaDb)
+        try {
+            val db = buatDatabaseAplikasi(driver)
+            val router = RepositoriRouterBerkas(
+                mapOf(
+                    JenisLokasi.IOS to IosSumberDataPenyimpanan(),
+                    JenisLokasi.POSIX to PosixSumberDataPenyimpanan(FileSystem.SYSTEM, PlatformPenyimpanan.IOS)
+                )
+            )
+            val lokasiRoot = DokumenPemetaanLokasi.keLokasi(rootUrl, "Akar")
+            val kontainer = KontainerIos(
+                database = db,
+                routerBerkas = router,
+                repositoriRiwayat = SqlDelightRepositoriRiwayatLokasi(db),
+                repositoriRiwayatPencarian = SqlDelightRepositoriRiwayatPencarian(db),
+                lokasiDokumenApp = lokasiRoot
+            )
+            val bmBase64 = (PenyimpanBookmarkKeamanan.buatBookmarkBase64(rootUrl) as? HasilOperasi.Sukses)?.nilai
+            kontainer.simpanBookmarkLokasi(lokasiRoot, bmBase64)
+
+            val lokasiSub = DokumenPemetaanLokasi.keLokasi(subUrl, "sub")
+            val siap = kontainer.siapkanAksesLokasi(lokasiSub)
+            assertEquals(lokasiSub, siap)
+            assertIs<HasilOperasi.Sukses<List<EntitasBerkas>>>(router.daftarIsi(siap).first())
+            kontainer.lepaskanSemuaAksesKeamanan()
+        } finally {
+            driver.close()
             fm.removeItemAtURL(rootUrl, null)
         }
     }

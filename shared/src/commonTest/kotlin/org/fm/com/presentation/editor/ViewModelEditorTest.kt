@@ -484,4 +484,34 @@ class ViewModelEditorTest {
         assertEquals(isiBesar, vm.state.value.tabAktif!!.isiSaatIni)
         assertEquals(3001, vm.state.value.tabAktif!!.jumlahBaris)
     }
+
+    @Test
+    fun simpanSebagaiMenimpaTabBersihYangTerbukaMenggabungkanTanpaDuplikatBasi() = runTest {
+        val repo = ImplementasiRepositoriBerkas()
+        repo.simpan(DataBerkas("/dok", "dok", JenisLokasi.POSIX, adalahFolder = true))
+        repo.simpan(
+            DataBerkas("/dok/target.txt", "target.txt", JenisLokasi.POSIX, adalahFolder = false),
+            "isi lama".encodeToByteArray()
+        )
+        val vm = buatVmLengkap(repo, UnconfinedTestDispatcher(testScheduler))
+        vm.prosesIntent(IntentEditor.SetLokasiFolderSimpan(LokasiBerkas("/dok", JenisLokasi.POSIX, "dok")))
+
+        vm.prosesIntent(IntentEditor.BukaLokasi(LokasiBerkas("/dok/target.txt", JenisLokasi.POSIX, "target.txt")))
+        vm.state.first { it.tabAktif?.statusMuat == StatusMuatTab.SIAP }
+
+        vm.prosesIntent(IntentEditor.BuatTabKosong("draft.txt"))
+        val idDraft = vm.state.value.tabAktif!!.idTab
+        vm.prosesIntent(IntentEditor.UbahTeks(idDraft, "isi baru dari draft"))
+        vm.prosesIntent(IntentEditor.SimpanTab(idDraft))
+        assertNotNull(vm.state.value.dialogSimpanSebagai)
+
+        vm.prosesIntent(IntentEditor.EksekusiSimpanSebagai("target.txt", paksaTimpa = true))
+        val stAkhir = vm.state.first { !it.sedangMenyimpan && it.dialogSimpanSebagai == null }
+
+        assertEquals(1, stAkhir.jumlahTab)
+        assertEquals("isi baru dari draft", stAkhir.tabAktif?.isiSaatIni)
+        assertEquals("isi baru dari draft", stAkhir.tabAktif?.isiTersimpan)
+        assertFalse(stAkhir.tabAktif!!.adaPerubahanBelumTersimpan)
+        assertEquals("isi baru dari draft", repo.isiDari("/dok/target.txt")?.decodeToString())
+    }
 }

@@ -128,7 +128,7 @@ class SalinPindahkanBerkasUseCase(
         }
 
         val targetPraTulis = writer.lokasiTarget
-        if (targetPraTulis != null && targetPraTulis.jenis == sumber.jenis && targetPraTulis.pengenal == sumber.pengenal) {
+        if (targetPraTulis != null && samaLokasi(targetPraTulis, sumber)) {
             withContext(NonCancellable) {
                 reader.tutup()
                 writer.batalkan()
@@ -203,7 +203,7 @@ class SalinPindahkanBerkasUseCase(
                 PenyebabGalat.TIDAK_DIKETAHUI
             )
 
-        if (apakahPindah && !(lokasiHasil.jenis == sumber.jenis && lokasiHasil.pengenal == sumber.pengenal)) {
+        if (apakahPindah && !samaLokasi(lokasiHasil, sumber)) {
             val hapusHasil = repositoriOperasi.hapus(PermintaanOperasi(sumber = sumber, konfirmasi = true))
             if (hapusHasil is HasilOperasi.Gagal) {
                 return HasilOperasi.Gagal(
@@ -243,7 +243,7 @@ class SalinPindahkanBerkasUseCase(
             }
             for (anak in daftarAnak) {
                 if (anak.jenis != JenisBerkas.FOLDER) continue
-                if (anak.lokasi == kandidat) return HasilOperasi.Sukses(true)
+                if (samaLokasi(anak.lokasi, kandidat)) return HasilOperasi.Sukses(true)
                 if (dilihat.add("${anak.lokasi.jenis.name}:${anak.lokasi.pengenal}")) {
                     antrean.addLast(anak.lokasi)
                 }
@@ -251,6 +251,9 @@ class SalinPindahkanBerkasUseCase(
         }
         return HasilOperasi.Sukses(false)
     }
+
+    private fun samaLokasi(a: LokasiBerkas, b: LokasiBerkas): Boolean =
+        a.jenis == b.jenis && a.pengenal == b.pengenal
 
     private suspend fun salinFolderViaStreaming(
         sumberFolder: LokasiBerkas,
@@ -261,7 +264,7 @@ class SalinPindahkanBerkasUseCase(
         folderTerbuatBaru: MutableSet<String>,
         dikunjungi: MutableSet<String>
     ): HasilOperasi<EntitasBerkas> {
-        if (sumberFolder == tujuanInduk) {
+        if (samaLokasi(sumberFolder, tujuanInduk)) {
             return HasilOperasi.Gagal(
                 "Tidak bisa menyalin/memindah folder ke dalam dirinya sendiri",
                 PenyebabGalat.VALIDASI
@@ -288,7 +291,7 @@ class SalinPindahkanBerkasUseCase(
         }
 
         for (anak in daftarAnak) {
-            if (anak.lokasi == tujuanInduk) {
+            if (samaLokasi(anak.lokasi, tujuanInduk)) {
                 return HasilOperasi.Gagal(
                     "Tidak bisa menyalin/memindah folder ke dalam turunannya sendiri",
                     PenyebabGalat.VALIDASI
@@ -312,7 +315,7 @@ class SalinPindahkanBerkasUseCase(
                     PenyebabGalat.VALIDASI
                 )
             }
-            if (folderTujuanSudahAda.lokasi == sumberFolder) {
+            if (samaLokasi(folderTujuanSudahAda.lokasi, sumberFolder)) {
                 return if (apakahPindah) {
                     HasilOperasi.Sukses(folderTujuanSudahAda)
                 } else {
@@ -373,7 +376,7 @@ class SalinPindahkanBerkasUseCase(
             }
         }
 
-        if (apakahPindah && entitasFolderTujuan.lokasi != sumberFolder) {
+        if (apakahPindah && !samaLokasi(entitasFolderTujuan.lokasi, sumberFolder)) {
             val hapusSumber = repositoriOperasi.hapus(
                 PermintaanOperasi(sumber = sumberFolder, konfirmasi = true)
             )

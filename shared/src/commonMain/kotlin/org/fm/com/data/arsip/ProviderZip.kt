@@ -718,7 +718,6 @@ class ProviderZip(
                     }
                 }
             }
-            HasilScanCd.Zip64GunakanOkio -> Unit
         }
 
         val petaCd = if (cdInfo is HasilScanCd.Valid) {
@@ -877,7 +876,6 @@ class ProviderZip(
 
     private sealed interface HasilScanCd {
         data class Valid(val entri: List<InfoCdZip>) : HasilScanCd
-        data object Zip64GunakanOkio : HasilScanCd
         data class Rusak(val pesan: String) : HasilScanCd
     }
 
@@ -919,74 +917,142 @@ class ProviderZip(
                 val jumlahEntri = u16Le(tail, posisiEocd + 10)
                 val cdSize = u32Le(tail, posisiEocd + 12)
                 val cdOffset = u32Le(tail, posisiEocd + 16)
-
-                if (jumlahEntri == 0xFFFF || cdSize == 0xFFFFFFFFL || cdOffset == 0xFFFFFFFFL) {
-                    return HasilScanCd.Zip64GunakanOkio
-                }
-                if (jumlahEntri > batasEntriMaks) {
-                    return HasilScanCd.Rusak("Jumlah entri arsip melebihi batas maksimal ($batasEntriMaks)")
-                }
                 val posisiEocdAbsolut = offsetTail + posisiEocd
-                if (cdOffset + cdSize > posisiEocdAbsolut) {
+
+                val apakahZip64 = jumlahEntri == 0xFFFF || cdSize == 0xFFFFFFFFL || cdOffset == 0xFFFFFFFFL
+                val jumlahFinal: Int
+                val cdSizeFinal: Long
+                val cdOffsetFinal: Long
+                val batasAkhirCd: Long
+
+                if (apakahZip64) {
+                    if (posisiEocdAbsolut < 20L) {
+                        return HasilScanCd.Rusak("Penanda Zip64 End of Central Directory Locator tidak ditemukan")
+                    }
+                    val loc = handle.source(posisiEocdAbsolut - 20L).buffer().use { it.readByteArray(20L) }
+                    if (u32Le(loc, 0) != 0x07064B50L) {
+                        return HasilScanCd.Rusak("Penanda Zip64 End of Central Directory Locator tidak valid")
+                    }
+                    val zip64EocdOffset = u64Le(loc, 8)
+                    val batasLocator = posisiEocdAbsolut - 20L
+                    if (zip64EocdOffset < 0L || zip64EocdOffset > batasLocator || 56L > batasLocator - zip64EocdOffset) {
+                        return HasilScanCd.Rusak("Offset Zip64 End of Central Directory tidak konsisten (arsip rusak)")
+                    }
+                    val rec = handle.source(zip64EocdOffset).buffer().use { it.readByteArray(56L) }
+                    if (u32Le(rec, 0) != 0x06064B50L) {
+                        return HasilScanCd.Rusak("Record Zip64 End of Central Directory tidak valid")
+                    }
+                    val jumlah64 = u64Le(rec, 32)
+                    cdSizeFinal = u64Le(rec, 40)
+                    cdOffsetFinal = u64Le(rec, 48)
+                    if (jumlah64 < 0L || jumlah64 > batasEntriMaks.toLong()) {
+                        return HasilScanCd.Rusak("Jumlah entri arsip melebihi batas maksimal ($batasEntriMaks)")
+                    }
+                    jumlahFinal = jumlah64.toInt()
+                    batasAkhirCd = zip64EocdOffset
+                } else {
+                    if (jumlahEntri > batasEntriMaks) {
+                        return HasilScanCd.Rusak("Jumlah entri arsip melebihi batas maksimal ($batasEntriMaks)")
+                    }
+                    jumlahFinal = jumlahEntri
+                    cdSizeFinal = cdSize
+                    cdOffsetFinal = cdOffset
+                    batasAkhirCd = posisiEocdAbsolut
+                 }
+
+                if (cdOffsetFinal < 0L || cdSizeFinal < 0L || cdOffsetFinal > batasAkhirCd || cdSizeFinal > batasAkhirCd - cdOffsetFinal) {
                     return HasilScanCd.Rusak("Struktur Central Directory ZIP tidak konsisten (arsip rusak)")
                 }
 
-                val entri = ArrayList<InfoCdZip>(jumlahEntri)
-                handle.source(cdOffset).buffer().use { src ->
-                    val hdr = Buffer()
-                    repeat(jumlahEntri) {
-                        src.readFully(hdr, 46L)
-                        val sig = hdr.readIntLe()
-                        if (sig != 0x02014B50) {
-                            return HasilScanCd.Rusak("Header entri ZIP rusak (signature Central Directory tidak cocok)")
-                        }
-                        hdr.skip(4) // versionMadeBy, versionNeeded
-                        val bitFlag = hdr.readShortLe().toInt() and 0xFFFF
-                        val method = hdr.readShortLe().toInt() and 0xFFFF
-                        hdr.skip(8) // time, date, crc32
-                        val compressedSize = hdr.readIntLe().toLong() and 0xFFFFFFFFL
-                        val uncompressedSize = hdr.readIntLe().toLong() and 0xFFFFFFFFL
-                        val nameLen = hdr.readShortLe().toInt() and 0xFFFF
-                        val extraLen = hdr.readShortLe().toInt() and 0xFFFF
-                        val commentLen = hdr.readShortLe().toInt() and 0xFFFF
-                        hdr.skip(4) // diskStart, internalAttr
-                        val externalAttr = hdr.readIntLe().toLong() and 0xFFFFFFFFL
-                        hdr.skip(4) // localHeaderOffset
-
-                        val nameBytes = src.readByteArray(nameLen.toLong())
-                        if (extraLen > 0) src.skip(extraLen.toLong())
-                        if (commentLen > 0) src.skip(commentLen.toLong())
-
-                        val rawName = nameBytes.decodeToString()
-                        val adalahFolder = rawName.endsWith("/") ||
-                            rawName.endsWith("\\") ||
-                            ((externalAttr and 0x10L) != 0L && uncompressedSize == 0L)
-                        val adalahTautan = ((externalAttr ushr 16) and 0xF000L) == 0xA000L
-                        val terenkripsi = (bitFlag and 0x0001) != 0
-                        val namaMetode = when (method) {
-                            0 -> "STORED"
-                            8 -> "DEFLATED"
-                            99 -> "AES"
-                            else -> "M$method"
-                        }
-                        entri.add(
-                            InfoCdZip(
-                                rawName = rawName,
-                                adalahFolder = adalahFolder,
-                                uncompressedSize = uncompressedSize,
-                                compressedSize = compressedSize,
-                                terenkripsi = terenkripsi,
-                                adalahTautan = adalahTautan,
-                                metodeKompresi = namaMetode
-                            )
-                        )
-                    }
-                }
-                HasilScanCd.Valid(entri)
+                bacaDaftarCentralDirectory(handle, cdOffsetFinal, jumlahFinal)
             }
         } catch (e: Exception) {
             HasilScanCd.Rusak(e.message ?: "Gagal memvalidasi struktur ZIP (arsip rusak)")
         }
+    }
+    private fun bacaDaftarCentralDirectory(
+        handle: okio.FileHandle,
+        cdOffset: Long,
+        jumlahEntri: Int
+    ): HasilScanCd {
+        val entri = ArrayList<InfoCdZip>(jumlahEntri)
+        handle.source(cdOffset).buffer().use { src ->
+            val hdr = Buffer()
+            repeat(jumlahEntri) {
+                src.readFully(hdr, 46L)
+                val sig = hdr.readIntLe()
+                if (sig != 0x02014B50) {
+                    return HasilScanCd.Rusak("Header entri ZIP rusak (signature Central Directory tidak cocok)")
+                }
+                hdr.skip(4) // versionMadeBy, versionNeeded
+                val bitFlag = hdr.readShortLe().toInt() and 0xFFFF
+                val method = hdr.readShortLe().toInt() and 0xFFFF
+                hdr.skip(8) // time, date, crc32
+                var compressedSize = hdr.readIntLe().toLong() and 0xFFFFFFFFL
+                var uncompressedSize = hdr.readIntLe().toLong() and 0xFFFFFFFFL
+                val nameLen = hdr.readShortLe().toInt() and 0xFFFF
+                val extraLen = hdr.readShortLe().toInt() and 0xFFFF
+                val commentLen = hdr.readShortLe().toInt() and 0xFFFF
+                hdr.skip(4) // diskStart, internalAttr
+                val externalAttr = hdr.readIntLe().toLong() and 0xFFFFFFFFL
+                hdr.skip(4) // localHeaderOffset
+
+                val nameBytes = src.readByteArray(nameLen.toLong())
+                if (extraLen > 0) {
+                    if (compressedSize == 0xFFFFFFFFL || uncompressedSize == 0xFFFFFFFFL) {
+                        val extra = src.readByteArray(extraLen.toLong())
+                        var p = 0
+                        while (p + 4 <= extra.size) {
+                            val headerId = u16Le(extra, p)
+                            val dataSize = u16Le(extra, p + 2)
+                            val dataStart = p + 4
+                            val dataEnd = dataStart + dataSize
+                            if (dataEnd > extra.size) break
+                            if (headerId == 0x0001) {
+                                var q = dataStart
+                                if (uncompressedSize == 0xFFFFFFFFL && q + 8 <= dataEnd) {
+                                    uncompressedSize = u64Le(extra, q)
+                                    q += 8
+                                }
+                                if (compressedSize == 0xFFFFFFFFL && q + 8 <= dataEnd) {
+                                    compressedSize = u64Le(extra, q)
+                                }
+                                break
+                            }
+                            p = dataEnd
+                        }
+                    } else {
+                        src.skip(extraLen.toLong())
+                    }
+                }
+                if (commentLen > 0) src.skip(commentLen.toLong())
+
+                val rawName = nameBytes.decodeToString()
+                val adalahFolder = rawName.endsWith("/") ||
+                    rawName.endsWith("\\") ||
+                    ((externalAttr and 0x10L) != 0L && uncompressedSize == 0L)
+                val adalahTautan = ((externalAttr ushr 16) and 0xF000L) == 0xA000L
+                val terenkripsi = (bitFlag and 0x0001) != 0
+                val namaMetode = when (method) {
+                    0 -> "STORED"
+                    8 -> "DEFLATED"
+                    99 -> "AES"
+                    else -> "M$method"
+                }
+                entri.add(
+                    InfoCdZip(
+                        rawName = rawName,
+                        adalahFolder = adalahFolder,
+                        uncompressedSize = uncompressedSize,
+                        compressedSize = compressedSize,
+                        terenkripsi = terenkripsi,
+                        adalahTautan = adalahTautan,
+                        metodeKompresi = namaMetode
+                    )
+                )
+            }
+        }
+        return HasilScanCd.Valid(entri)
     }
 
     private fun u16Le(buf: ByteArray, off: Int): Int =
@@ -994,7 +1060,14 @@ class ProviderZip(
 
     private fun u32Le(buf: ByteArray, off: Int): Long =
         (buf[off].toLong() and 0xFFL) or
+
+    private fun u64Le(buf: ByteArray, off: Int): Long =
+        (buf[off].toLong() and 0xFFL) or
             ((buf[off + 1].toLong() and 0xFFL) shl 8) or
             ((buf[off + 2].toLong() and 0xFFL) shl 16) or
-            ((buf[off + 3].toLong() and 0xFFL) shl 24)
+            ((buf[off + 3].toLong() and 0xFFL) shl 24) or
+            ((buf[off + 4].toLong() and 0xFFL) shl 32) or
+            ((buf[off + 5].toLong() and 0xFFL) shl 40) or
+            ((buf[off + 6].toLong() and 0xFFL) shl 48) or
+            ((buf[off + 7].toLong() and 0xFFL) shl 56)
 }

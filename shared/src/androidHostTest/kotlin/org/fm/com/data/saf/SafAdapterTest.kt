@@ -199,4 +199,28 @@ class SafAdapterTest {
             backendSafSimulasi.berkas.isiDari("/saf_root/sub/asal.txt")?.decodeToString()
         )
     }
+
+    @Test
+    fun perbandinganIdDokumenDanAutoEkstensiProviderSafAkurat() {
+        assertTrue(
+            SafOperasiBerkas.apakahIdDokumenSama(
+                authorityA = "com.android.externalstorage.documents",
+                docIdA = "primary:Dokumen/catatan.txt",
+                authorityB = "com.android.externalstorage.documents",
+                docIdB = "primary:Dokumen/catatan.txt"
+            )
+        )
+        assertFalse(
+            SafOperasiBerkas.apakahIdDokumenSama(
+                authorityA = "com.android.externalstorage.documents",
+                docIdA = "primary:Dokumen/catatan.txt",
+                authorityB = "com.android.providers.downloads.documents",
+                docIdB = "primary:Dokumen/catatan.txt"
+            )
+        )
+
+        assertFalse(SafOperasiBerkas.apakahKonflikDuplikatProvider("Main.kt", "Main.kt"))
+        assertFalse(SafOperasiBerkas.apakahKonflikDuplikatProvider("Main.kt", "Main.kt.txt"))
+        assertTrue(SafOperasiBerkas.apakahKonflikDuplikatProvider("Main.kt", "Main (1).kt"))
+    }
 }

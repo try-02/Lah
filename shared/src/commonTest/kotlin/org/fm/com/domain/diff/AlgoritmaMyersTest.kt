@@ -113,4 +113,21 @@ class AlgoritmaMyersTest {
         assertTrue(patch.contains("-baris tetap nomor 12345"))
         assertTrue(patch.contains("+baris DIUBAH nomor 12345"))
     }
+
+    @Test
+    fun pembelahanTidakSeimbangRibuanFragmenTidakMemicuStackOverflow() {
+        val barisA = ArrayList<String>(4000)
+        val barisB = ArrayList<String>(4000)
+        for (i in 0 until 2000) {
+            barisA.add("sama_$i")
+            barisA.add("lama_$i")
+            barisB.add("sama_$i")
+            barisB.add("baru_$i")
+        }
+        val hasil = AlgoritmaMyers.bandingkanBaris(barisA, barisB)
+        assertEquals(2000, hasil.statistik.jumlahBarisSama)
+        assertEquals(2000, hasil.statistik.jumlahBarisHapus)
+        assertEquals(2000, hasil.statistik.jumlahBarisTambah)
+        assertEquals(2000, hasil.statistik.jumlahBlokPerubahan)
+    }
 }

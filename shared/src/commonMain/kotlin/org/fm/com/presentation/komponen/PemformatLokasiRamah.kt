@@ -158,28 +158,25 @@ object PemformatLokasiRamah {
 
     private fun decodePercentUtf8(input: String): String {
         if ('%' !in input) return input
-        val bytes = ByteArray(input.length)
-        var outLen = 0
+        val bytes = ArrayList<Byte>(input.length)
         var i = 0
         while (i < input.length) {
             val c = input[i]
             if (c == '%' && i + 2 < input.length) {
                 val b = hexKeByte(input[i + 1], input[i + 2])
                 if (b != null) {
-                    bytes[outLen++] = b
+                    bytes.add(b)
                     i += 3
                     continue
                 }
             }
             val chBytes = c.toString().encodeToByteArray()
             for (b in chBytes) {
-                if (outLen < bytes.size) {
-                    bytes[outLen++] = b
-                }
+                bytes.add(b)
             }
             i++
         }
-        return bytes.decodeToString(0, outLen)
+        return bytes.toByteArray().decodeToString()
     }
 
     private fun hexKeByte(h1: Char, h2: Char): Byte? {

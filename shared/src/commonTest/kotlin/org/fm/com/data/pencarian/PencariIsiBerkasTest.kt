@@ -136,4 +136,27 @@ class PencariIsiBerkasTest {
         assertEquals(2, sebagian.size)
         assertFalse(sebagian.first().selesai)
     }
+
+    @Test
+    fun barisPanjangDenganUtf8MultiByteDiBatasBufferTetapUtuhDanNomorBarisSatu() = runTest {
+        val repo = ImplementasiRepositoriBerkas()
+        repo.simpan(DataBerkas("/akar", "akar", JenisLokasi.POSIX, adalahFolder = true))
+        // Emoji 4 byte tepat melintasi batas buffer 256 KiB (262_144) tanpa karakter baris baru.
+        val teksPanjang = "a".repeat(262_142) + "🚀 target_ketemu"
+        repo.simpan(
+            DataBerkas("/akar/satu_baris.txt", "satu_baris.txt", JenisLokasi.POSIX, adalahFolder = false),
+            teksPanjang.encodeToByteArray()
+        )
+
+        val pencari = PencariIsiBerkas(repo, UnconfinedTestDispatcher(testScheduler))
+        val hasil = pencari.cariIsi(
+            LokasiBerkas("/akar", JenisLokasi.POSIX, "akar"),
+            FilterCariIsi(kueri = "🚀 target_ketemu")
+        ).last()
+
+        assertNull(hasil.galatFatal)
+        assertEquals(0, hasil.jumlahBinerDilewati)
+        assertEquals(1, hasil.daftarHasil.size)
+        assertEquals(1, hasil.daftarHasil.single().daftarBarisCocok.single().nomorBaris)
+    }
 }

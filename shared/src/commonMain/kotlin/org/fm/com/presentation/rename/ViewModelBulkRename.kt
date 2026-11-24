@@ -67,6 +67,7 @@ data class StateBulkRename(
     val bolehLanjutKonfirmasi: Boolean
         get() = terbuka &&
             !sedangMengeksekusi &&
+            !sedangMemuatIsiFolder &&
             galatAngkaNomor == null &&
             pratinjau.dapatDieksekusi
 }
@@ -297,6 +298,7 @@ class ViewModelBulkRename(
 
     private fun mintaKonfirmasiEksekusi() {
         val st = _state.value
+        if (st.sedangMemuatIsiFolder) return
         val (konfig, galatAngka) = parseKonfigurasiNomor(st.angkaAwalInput, st.langkahInput)
         if (konfig == null || galatAngka != null) {
             _state.update { it.copy(galatAngkaNomor = galatAngka) }

@@ -156,7 +156,13 @@ class SafSumberDataPenyimpanan internal constructor(
         }
 
         val entitasBaru = opSaf.bacaSatuEntitas(createdUri)
-        if (entitasBaru != null && entitasBaru.nama != nama && !timpa) {
+        if (entitasBaru != null &&
+            SafOperasiBerkas.apakahKonflikDuplikatProvider(nama, entitasBaru.nama) &&
+            !timpa
+        ) {
+             runCatching { DocumentsContract.deleteDocument(contentResolver, createdUri) }
+             return HasilOperasi.Gagal("Berkas sudah ada, perlu konfirmasi timpa: $nama", PenyebabGalat.KONFLIK)
+         }
             runCatching { DocumentsContract.deleteDocument(context.contentResolver, createdUri) }
             return HasilOperasi.Gagal("Berkas sudah ada, perlu konfirmasi timpa: $nama", PenyebabGalat.KONFLIK)
         }

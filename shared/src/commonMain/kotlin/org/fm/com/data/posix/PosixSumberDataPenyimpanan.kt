@@ -263,8 +263,21 @@ class PosixSumberDataPenyimpanan(
                         ?: return@withContext HasilOperasi.Gagal("Sumber tidak ditemukan", PenyebabGalat.TIDAK_DITEMUKAN)
                     return@withContext HasilOperasi.Sukses(saatIni)
                 }
-                val backupPath = siapkanBackupJikaAda(targetPath, parentPath, permintaan.konfirmasi)
-                    ?: if (fileSystem.exists(targetPath)) {
+                if (fileSystem.exists(targetPath) && !permintaan.konfirmasi) {
+                    return@withContext HasilOperasi.Gagal(
+                        "Target sudah ada, perlu konfirmasi timpa: $namaBaru",
+                        PenyebabGalat.KONFLIK
+                    )
+                }
+                val backupPath = if (fileSystem.exists(targetPath)) {
+                    siapkanBackupJikaAda(targetPath, parentPath, true)
+                        ?: return@withContext HasilOperasi.Gagal(
+                            "Gagal menyiapkan cadangan target sebelum menimpa: $namaBaru",
+                            PenyebabGalat.IZIN_DITOLAK
+                        )
+                } else {
+                    null
+                }
                         return@withContext HasilOperasi.Gagal(
                             "Target sudah ada, perlu konfirmasi timpa: $namaBaru",
                             PenyebabGalat.KONFLIK
@@ -367,8 +380,21 @@ class PosixSumberDataPenyimpanan(
                     )
                 }
             }
-            val backupPath = siapkanBackupJikaAda(targetPath, targetParentPath, permintaan.konfirmasi)
-                ?: if (fileSystem.exists(targetPath)) {
+            if (fileSystem.exists(targetPath) && !permintaan.konfirmasi) {
+                return@withContext HasilOperasi.Gagal(
+                    "Target sudah ada, perlu konfirmasi timpa: $targetPath",
+                    PenyebabGalat.KONFLIK
+                )
+            }
+            val backupPath = if (fileSystem.exists(targetPath)) {
+                siapkanBackupJikaAda(targetPath, targetParentPath, true)
+                    ?: return@withContext HasilOperasi.Gagal(
+                        "Gagal menyiapkan cadangan target sebelum menimpa: $targetPath",
+                        PenyebabGalat.IZIN_DITOLAK
+                    )
+            } else {
+                null
+            }
                     return@withContext HasilOperasi.Gagal(
                         "Target sudah ada, perlu konfirmasi timpa: $targetPath",
                         PenyebabGalat.KONFLIK
@@ -406,13 +432,31 @@ class PosixSumberDataPenyimpanan(
         }
     }
 
-    private suspend fun salinRekursif(sumber: Path, tujuan: Path) {
+    private suspend fun salinRekursif(
+        sumber: Path,
+        tujuan: Path,
+        dikunjungi: MutableSet<Path> = HashSet()
+    ) {
+         currentCoroutineContext().ensureActive()
+         val meta = fileSystem.metadata(sumber)
+        if (meta.symlinkTarget != null) {
+            throw IOException("Salin rekursif POSIX tidak mendukung tautan simbolik: $sumber")
+        }
+         if (meta.isDirectory) {
+            val kanon = runCatching { fileSystem.canonicalize(sumber) }.getOrDefault(sumber)
+            if (!dikunjungi.add(kanon)) {
+                throw IOException("Siklus direktori terdeteksi pada: $sumber")
+            }
         currentCoroutineContext().ensureActive()
         val meta = fileSystem.metadata(sumber)
         if (meta.isDirectory) {
+            val kanon = runCatching { fileSystem.canonicalize(sumber) }.getOrDefault(sumber)
+            if (!dikunjungi.add(kanon)) {
+                throw IOException("Siklus direktori terdeteksi pada: $sumber")
+            }
             fileSystem.createDirectory(tujuan, mustCreate = false)
             for (anak in fileSystem.list(sumber)) {
-                salinRekursif(anak, tujuan / anak.name)
+                salinRekursif(anak, tujuan / anak.name, dikunjungi)
             }
         } else {
             fileSystem.source(sumber).buffer().use { src ->
@@ -655,7 +699,7 @@ private class SumberOkioTulis(
                     status = Status.BATAL
                 }
                 throw e
-            } catch (e: IOException) {
+            } catch (e: Exception) {
                 gagalkan(e.message ?: "Gagal menyimpan berkas target", PenyebabGalat.TIDAK_DIKETAHUI)
             }
         }

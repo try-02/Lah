@@ -181,16 +181,23 @@ fun Aplikasi(
             val prefAwal = kontainer.preferensiUseCase.ambilPreferensi()
             vmEditor.prosesIntent(IntentEditor.SetWordWrapUmum(prefAwal.wordWrapUmum))
 
-            val resolusi = kontainer.berandaUseCase.selesaikanLokasiAwal(onSiapkanAksesLokasi)
-            val lokasiAwalSiap = onSiapkanAksesLokasi?.invoke(resolusi.lokasiDigunakan) ?: resolusi.lokasiDigunakan
-            vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasiAwalSiap))
-            vmPencarian.prosesIntent(IntentPencarian.SetFolderAkar(lokasiAwalSiap))
-            if (resolusi is HasilResolusiBeranda.IzinAtauLokasiHilang) {
-                vmFilemanager.prosesIntent(
-                    IntentFilemanager.SetPesanInfo(
-                        "Beranda tersimpan tidak dapat diakses (${resolusi.pesan}). Dibuka di folder bawaan."
+            if (vmFilemanager.state.value.lokasiSaatIni == null) {
+                val resolusi = kontainer.berandaUseCase.selesaikanLokasiAwal(onSiapkanAksesLokasi)
+                val lokasiAwalSiap = when (resolusi) {
+                    is HasilResolusiBeranda.GunakanKhusus -> resolusi.lokasiDigunakan
+                    is HasilResolusiBeranda.GunakanBawaan,
+                    is HasilResolusiBeranda.IzinAtauLokasiHilang ->
+                        onSiapkanAksesLokasi?.invoke(resolusi.lokasiDigunakan) ?: resolusi.lokasiDigunakan
+                }
+                vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lokasiAwalSiap))
+                vmPencarian.prosesIntent(IntentPencarian.SetFolderAkar(lokasiAwalSiap))
+                if (resolusi is HasilResolusiBeranda.IzinAtauLokasiHilang) {
+                    vmFilemanager.prosesIntent(
+                        IntentFilemanager.SetPesanInfo(
+                            "Beranda tersimpan tidak dapat diakses (${resolusi.pesan}). Dibuka di folder bawaan."
+                        )
                     )
-                )
+                }
             }
         }
 

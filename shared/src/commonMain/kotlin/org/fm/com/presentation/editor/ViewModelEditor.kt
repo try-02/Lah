@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.OperasiBerkas
+import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.SidikIsiBerkas
 import org.fm.com.domain.repository.RepositoriBerkas
 import org.fm.com.domain.model.HasilOperasi
@@ -612,17 +613,28 @@ class ViewModelEditor(
                     }
                 }
                 is HasilSimpanBerkas.KonflikEksternal -> {
-                    _state.update {
-                        it.copy(
-                            sedangMenyimpan = false,
-                            konfirmasiKonflikSimpan = PermintaanKonfirmasiKonflikSimpan(
-                                idTab = idTab,
-                                namaBerkas = tab.namaBerkas,
-                                pesan = hasil.pesan,
-                                berkasHilangDiDisk = hasil.berkasHilangDiDisk,
-                                tutupSetelahSimpan = tutupSetelahSimpan
+                    if (hasil.berkasHilangDiDisk &&
+                        lokasi.jenis == JenisLokasi.SAF &&
+                        _state.value.lokasiFolderSimpanDefault != null
+                    ) {
+                        _state.update { it.copy(sedangMenyimpan = false) }
+                        bukaDialogSimpanSebagai(idTab, tutupSetelahSimpan = tutupSetelahSimpan)
+                        _state.update {
+                            it.copy(pesanInfo = "Berkas asli di SAF tidak lagi ditemukan. Simpan ulang sebagai berkas baru.")
+                        }
+                    } else {
+                        _state.update {
+                            it.copy(
+                                sedangMenyimpan = false,
+                                konfirmasiKonflikSimpan = PermintaanKonfirmasiKonflikSimpan(
+                                    idTab = idTab,
+                                    namaBerkas = tab.namaBerkas,
+                                    pesan = hasil.pesan,
+                                    berkasHilangDiDisk = hasil.berkasHilangDiDisk,
+                                    tutupSetelahSimpan = tutupSetelahSimpan
+                                )
                             )
-                        )
+                        }
                     }
                 }
                 is HasilSimpanBerkas.KonflikTujuan -> {
@@ -835,10 +847,54 @@ class ViewModelEditor(
             when (hasil) {
                 is HasilSimpanBerkas.Sukses -> {
                     val idBaru = buatIdTabLokasi(hasil.lokasiHasil)
-                    val tabLainAdaIdSama = idBaru != tab.idTab &&
-                        _state.value.daftarTab.any { it.idTab == idBaru }
+                    val tabDuplikat = if (idBaru != tab.idTab) {
+                        _state.value.daftarTab.firstOrNull { it.idTab == idBaru }
+                    } else {
+                        null
+                    }
+                    val tabLainKotor = tabDuplikat?.adaPerubahanBelumTersimpan == true
+                    val hapusTabDuplikatBersih = tabDuplikat != null && !tabLainKotor
 
-                    if (tabLainAdaIdSama) {
+                    if (hapusTabDuplikatBersih) {
+                        pekerjaanMuat.remove(idBaru)?.cancel()
+                        sejarahPerTab.remove(idBaru)
+                        sejarahPerTab.remove(tab.idTab)?.let { sej ->
+                            sejarahPerTab[idBaru] = sej
+                        }
+                        pekerjaanMuat.remove(tab.idTab)?.let { j ->
+                            pekerjaanMuat[idBaru] = j
+                        }
+                        _state.update { st ->
+                            val daftarBaru = st.daftarTab.mapNotNull { item ->
+                                when (item.idTab) {
+                                    idBaru -> null
+                                    tab.idTab -> item.copy(
+                                        idTab = idBaru,
+                                        lokasi = hasil.lokasiHasil,
+                                        namaBerkas = hasil.namaHasil,
+                                        hanyaBacaPermanen = false,
+                                        isiTersimpan = snapshotIsi,
+                                        ukuranByteAsli = hasil.sidikBaru.ukuranByte,
+                                        waktuUbahTerakhirMs = hasil.waktuSimpanEpochMs,
+                                        sidikIsiTersimpan = hasil.sidikBaru
+                                    )
+                                    else -> item
+                                }
+                            }
+                            st.copy(
+                                daftarTab = daftarBaru,
+                                idTabAktif = if (st.idTabAktif == tab.idTab || st.idTabAktif == idBaru) idBaru else st.idTabAktif
+                            )
+                        }
+                    } else if (tabDuplikat != null) {
+                        perbaruiTab(idBaru) {
+                            it.copy(
+                                isiTersimpan = snapshotIsi,
+                                ukuranByteAsli = hasil.sidikBaru.ukuranByte,
+                                waktuUbahTerakhirMs = hasil.waktuSimpanEpochMs,
+                                sidikIsiTersimpan = hasil.sidikBaru
+                            )
+                        }
                         perbaruiTab(tab.idTab) {
                             it.copy(
                                 lokasi = hasil.lokasiHasil,
@@ -889,7 +945,7 @@ class ViewModelEditor(
                         )
                     }
                     if (permintaan.tutupSetelahSimpan) {
-                        val idTargetTutup = if (tabLainAdaIdSama) tab.idTab else idBaru
+                        val idTargetTutup = if (tabDuplikat != null && tabLainKotor) tab.idTab else idBaru
                         hapusTabInternal(idTargetTutup)
                     }
                 }

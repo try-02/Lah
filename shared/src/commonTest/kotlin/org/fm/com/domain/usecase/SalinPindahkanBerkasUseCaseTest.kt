@@ -170,4 +170,42 @@ class SalinPindahkanBerkasUseCaseTest {
         assertEquals(1, pass2.berhasil.size)
         assertEquals("isi baru", repo.isiDari("/root/tujuan/sama.txt")?.decodeToString())
     }
+
+    @Test
+    fun pindahFolderSafKeTurunannyaSendiriDitolakMeskiLabelBerbedaDanSumberUtuh() = runTest {
+        val memori = SumberMemoriPenyimpanan()
+        val safTanpaMoveNative = object : SumberDataPenyimpanan {
+            override fun kapabilitas(lokasi: LokasiBerkas): KemampuanPenyimpanan? = memori.kapabilitas(lokasi)
+            override fun daftarIsi(lokasi: LokasiBerkas): Flow<HasilOperasi<List<EntitasBerkas>>> = memori.daftarIsi(lokasi)
+            override suspend fun bukaUntukBaca(lokasi: LokasiBerkas): HasilOperasi<SumberIsiBerkas> = memori.bukaUntukBaca(lokasi)
+            override suspend fun bukaUntukTulis(lokasi: LokasiBerkas, timpa: Boolean) = memori.bukaUntukTulis(lokasi, timpa)
+            override suspend fun bukaUntukTulisDi(induk: LokasiBerkas, nama: String, timpa: Boolean) =
+                memori.bukaUntukTulisDi(induk, nama, timpa)
+            override suspend fun buatFolder(permintaan: PermintaanOperasi) = memori.buatFolder(permintaan)
+            override suspend fun buatBerkasKosong(permintaan: PermintaanOperasi) = memori.buatBerkasKosong(permintaan)
+            override suspend fun gantiNama(permintaan: PermintaanOperasi) = memori.gantiNama(permintaan)
+            override suspend fun hapus(permintaan: PermintaanOperasi) = memori.hapus(permintaan)
+            override suspend fun salin(permintaan: PermintaanOperasi) =
+                HasilOperasi.Gagal("Tidak didukung", PenyebabGalat.TIDAK_DIDUKUNG)
+            override suspend fun pindah(permintaan: PermintaanOperasi) =
+                HasilOperasi.Gagal("Tidak didukung", PenyebabGalat.TIDAK_DIDUKUNG)
+        }
+        memori.berkas.simpan(DataBerkas("content://tree/A", "A", JenisLokasi.SAF, adalahFolder = true))
+        memori.berkas.simpan(DataBerkas("content://tree/A/B", "B", JenisLokasi.SAF, adalahFolder = true))
+        memori.berkas.simpan(DataBerkas("content://tree/A/B/C", "C", JenisLokasi.SAF, adalahFolder = true))
+        memori.berkas.simpan(
+            DataBerkas("content://tree/A/penting.txt", "penting.txt", JenisLokasi.SAF, adalahFolder = false),
+            "DATA_PENTING".encodeToByteArray()
+        )
+
+        val uc = SalinPindahkanBerkasUseCase(safTanpaMoveNative, safTanpaMoveNative)
+        val hasil = uc(
+            daftarSumber = listOf(LokasiBerkas("content://tree/A", JenisLokasi.SAF, "A")),
+            tujuanInduk = LokasiBerkas("content://tree/A/B/C", JenisLokasi.SAF, label = null),
+            apakahPindah = true
+        )
+        assertTrue(hasil.adaGagal)
+        assertEquals(PenyebabGalat.VALIDASI, hasil.gagal.single().penyebab)
+        assertEquals("DATA_PENTING", memori.berkas.isiDari("content://tree/A/penting.txt")?.decodeToString())
+    }
 }

@@ -8,6 +8,7 @@ import java.io.File
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.OutputStream
 import java.util.zip.CRC32
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -106,8 +107,21 @@ class SafAliranTulis(
                     }
                 }
 
-                val outStream = contentResolver.openOutputStream(targetDocUri, "wt")
-                    ?: return@withContext gagalkanTulis(
+                val outStream = try {
+                    bukaOutputStreamTarget()
+                } catch (e: UnsupportedOperationException) {
+                    pulihkanDariCadangan()
+                    return@withContext gagalkanTulis(
+                        e.message ?: "Penyedia SAF tidak mendukung mode penulisan target",
+                        PenyebabGalat.TIDAK_DIDUKUNG
+                    )
+                } catch (e: IllegalArgumentException) {
+                    pulihkanDariCadangan()
+                    return@withContext gagalkanTulis(
+                        e.message ?: "Mode penulisan SAF tidak didukung target",
+                        PenyebabGalat.TIDAK_DIDUKUNG
+                    )
+                } ?: return@withContext gagalkanTulis(
                         "Gagal membuka aliran target SAF untuk penulisan",
                         PenyebabGalat.IZIN_DITOLAK
                     )
@@ -188,7 +202,7 @@ class SafAliranTulis(
         val backup = berkasBackup ?: return
         if (!backup.exists()) return
         try {
-            contentResolver.openOutputStream(targetDocUri, "wt")?.use { os ->
+            bukaOutputStreamTarget()?.use { os ->
                 backup.inputStream().use { input ->
                     input.copyTo(os)
                 }
@@ -196,6 +210,22 @@ class SafAliranTulis(
             }
         } catch (_: Exception) {
         }
+    }
+
+    private fun bukaOutputStreamTarget(): OutputStream? {
+        val daftarMode = arrayOf("wt", "rwt", "w")
+        var galatModeTerakhir: Exception? = null
+        for (mode in daftarMode) {
+            try {
+                return contentResolver.openOutputStream(targetDocUri, mode)
+            } catch (e: UnsupportedOperationException) {
+                galatModeTerakhir = e
+            } catch (e: IllegalArgumentException) {
+                galatModeTerakhir = e
+            }
+        }
+        if (galatModeTerakhir != null) throw galatModeTerakhir
+        return null
     }
 
     private fun verifikasiHasilBacaUlang(): String? {

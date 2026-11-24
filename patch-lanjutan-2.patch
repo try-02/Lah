@@ -1,0 +1,176 @@
+diff --git a/shared/src/commonMain/kotlin/org/fm/com/domain/diff/AlgoritmaMyers.kt b/shared/src/commonMain/kotlin/org/fm/com/domain/diff/AlgoritmaMyers.kt
+--- a/shared/src/commonMain/kotlin/org/fm/com/domain/diff/AlgoritmaMyers.kt
++++ b/shared/src/commonMain/kotlin/org/fm/com/domain/diff/AlgoritmaMyers.kt
+@@ -19,6 +19,11 @@
+         val xAkhir: Int,
+         val yAkhir: Int
+     )
++
++    private sealed interface TugasMyers {
++        data class Rentang(val sa: Int, val ea: Int, val sb: Int, val eb: Int) : TugasMyers
++        data class TambahSama(val awalA: Int, val awalB: Int, val panjang: Int) : TugasMyers
++    }
+ 
+     fun pecahMenjadiBaris(teks: String): List<String> {
+         if (teks.isEmpty()) return emptyList()
+@@ -163,68 +168,78 @@
+                 return null
+             }
+ 
+-            fun rekursiMyers(sa: Int, ea: Int, sb: Int, eb: Int) {
+-                cekBatal()
+-                var curSa = sa
+-                var curEa = ea
+-                var curSb = sb
+-                var curEb = eb
++            val tumpukan = ArrayDeque<TugasMyers>()
++            tumpukan.addLast(TugasMyers.Rentang(aStart, aEnd, bStart, bEnd))
+ 
+-                var prefLokal = 0
+-                while (curSa + prefLokal < curEa &&
+-                    curSb + prefLokal < curEb &&
+-                    sama(curSa + prefLokal, curSb + prefLokal)
+-                ) {
+-                    prefLokal++
+-                }
+-                for (i in 0 until prefLokal) {
+-                    operasi.add(OpBaris(JenisOp.SAMA, curSa + i, curSb + i))
+-                }
+-                curSa += prefLokal
+-                curSb += prefLokal
+-
+-                var sufLokal = 0
+-                while (curEa - 1 - sufLokal >= curSa &&
+-                    curEb - 1 - sufLokal >= curSb &&
+-                    sama(curEa - 1 - sufLokal, curEb - 1 - sufLokal)
+-                ) {
+-                    sufLokal++
+-                }
+-                curEa -= sufLokal
+-                curEb -= sufLokal
+-
+-                val n = curEa - curSa
+-                val m = curEb - curSb
+-                when {
+-                    n == 0 && m == 0 -> Unit
+-                    n == 0 -> {
+-                        for (j in curSb until curEb) {
+-                            operasi.add(OpBaris(JenisOp.TAMBAH, null, j))
++            while (tumpukan.isNotEmpty()) {
++                when (val tugas = tumpukan.removeLast()) {
++                    is TugasMyers.TambahSama -> {
++                        for (i in 0 until tugas.panjang) {
++                            operasi.add(OpBaris(JenisOp.SAMA, tugas.awalA + i, tugas.awalB + i))
+                         }
+                     }
+-                    m == 0 -> {
+-                        for (i in curSa until curEa) {
+-                            operasi.add(OpBaris(JenisOp.HAPUS, i, null))
++                    is TugasMyers.Rentang -> {
++                        cekBatal()
++                        var curSa = tugas.sa
++                        var curEa = tugas.ea
++                        var curSb = tugas.sb
++                        var curEb = tugas.eb
++
++                        var prefLokal = 0
++                        while (curSa + prefLokal < curEa &&
++                            curSb + prefLokal < curEb &&
++                            sama(curSa + prefLokal, curSb + prefLokal)
++                        ) {
++                            prefLokal++
+                         }
+-                    }
+-                    else -> {
+-                        val snake = hitungMiddleSnake(curSa, curEa, curSb, curEb)
+-                        if (snake == null) {
+-                            terpotongBatas = true
+-                            for (i in curSa until curEa) {
+-                                operasi.add(OpBaris(JenisOp.HAPUS, i, null))
+-                            }
+-                            for (j in curSb until curEb) {
+-                                operasi.add(OpBaris(JenisOp.TAMBAH, null, j))
+-                            }
+-                        } else {
+-                            rekursiMyers(curSa, curSa + snake.xAwal, curSb, curSb + snake.yAwal)
+-                            for (s in 0 until (snake.xAkhir - snake.xAwal)) {
+-                                operasi.add(
+-                                    OpBaris(
+-                                        JenisOp.SAMA,
+-                                        curSa + snake.xAwal + s,
+-                                        curSb + snake.yAwal + s
++                        for (i in 0 until prefLokal) {
++                            operasi.add(OpBaris(JenisOp.SAMA, curSa + i, curSb + i))
++                        }
++                        curSa += prefLokal
++                        curSb += prefLokal
++
++                        var sufLokal = 0
++                        while (curEa - 1 - sufLokal >= curSa &&
++                            curEb - 1 - sufLokal >= curSb &&
++                            sama(curEa - 1 - sufLokal, curEb - 1 - sufLokal)
++                        ) {
++                            sufLokal++
++                        }
++                        curEa -= sufLokal
++                        curEb -= sufLokal
++
++                        if (sufLokal > 0) {
++                            tumpukan.addLast(TugasMyers.TambahSama(curEa, curEb, sufLokal))
++                        }
++
++                        val n = curEa - curSa
++                        val m = curEb - curSb
++                        when {
++                            n == 0 && m == 0 -> Unit
++                            n == 0 -> {
++                                for (j in curSb until curEb) {
++                                    operasi.add(OpBaris(JenisOp.TAMBAH, null, j))
++                                }
++                            }
++                            m == 0 -> {
++                                for (i in curSa until curEa) {
++                                    operasi.add(OpBaris(JenisOp.HAPUS, i, null))
++                                }
++                            }
++                            else -> {
++                                val snake = hitungMiddleSnake(curSa, curEa, curSb, curEb)
++                                if (snake == null) {
++                                    terpotongBatas = true
++                                    for (i in curSa until curEa) {
++                                        operasi.add(OpBaris(JenisOp.HAPUS, i, null))
++                                    }
++                                    for (j in curSb until curEb) {
++                                        operasi.add(OpBaris(JenisOp.TAMBAH, null, j))
++                                    }
++                                } else {
++                                    // Dorong terbalik ke stack LIFO: kiri -> snake -> kanan
++                                    tumpukan.addLast(
++                                        TugasMyers.Rentang(curSa + snake.xAkhir, curEa, curSb + snake.yAkhir, curEb)
++                                    )
++                                    val snakeLen = snake.xAkhir - snake.xAwal
++                                    if (snakeLen > 0) {
++                                        tumpukan.addLast(
++                                            TugasMyers.TambahSama(curSa + snake.xAwal, curSb + snake.yAwal, snakeLen)
++                                        )
++                                    }
++                                    tumpukan.addLast(
++                                        TugasMyers.Rentang(curSa, curSa + snake.xAwal, curSb, curSb + snake.yAwal)
+                                     )
+-                                )
++                                }
+                             }
+-                            rekursiMyers(curSa + snake.xAkhir, curEa, curSb + snake.yAkhir, curEb)
+                         }
+                     }
+                 }
+-
+-                for (i in 0 until sufLokal) {
+-                    operasi.add(OpBaris(JenisOp.SAMA, curEa + i, curEb + i))
+-                }
+             }
+-
+-            rekursiMyers(aStart, aEnd, bStart, bEnd)
+         }
+ 
+         for (i in 0 until suffix) {

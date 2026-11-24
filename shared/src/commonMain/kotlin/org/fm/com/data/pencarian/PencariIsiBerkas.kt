@@ -372,12 +372,16 @@ class PencariIsiBerkas(
             var sisaByteUtf16: Byte? = null
 
             var nomorBaris = 0
+            var sedangBarisPanjang = false
             var jumlahKecocokanTotal = 0
             val daftarBarisCocok = mutableListOf<KecocokanBarisIsi>()
             var daftarTerpotongBatas = false
 
-            fun prosesSatuBaris(baris: String) {
-                nomorBaris++
+            fun prosesSatuBaris(baris: String, adalahAkhirBaris: Boolean) {
+                if (!sedangBarisPanjang) {
+                    nomorBaris++
+                }
+                sedangBarisPanjang = !adalahAkhirBaris
                 if (baris.indexOf('\u0000') >= 0) {
                     throw BerkasBinerTerdeteksiException()
                 }
@@ -410,11 +414,14 @@ class PencariIsiBerkas(
                     if (indeksLf < 0L) break
                     val barisMentah = buffer.readUtf8(indeksLf)
                     buffer.readByte()
-                    prosesSatuBaris(barisMentah.trimEnd('\r'))
+                    prosesSatuBaris(barisMentah.trimEnd('\r'), adalahAkhirBaris = true)
                 }
                 if (buffer.size >= MAKS_PANJANG_BARIS_BUFFER) {
-                    val blokPanjang = buffer.readUtf8(MAKS_PANJANG_BARIS_BUFFER.toLong())
-                    prosesSatuBaris(blokPanjang.trimEnd('\r'))
+                    val panjangAman = hitungPanjangAmanUtf8(buffer, MAKS_PANJANG_BARIS_BUFFER.toLong())
+                    if (panjangAman > 0L) {
+                        val blokPanjang = buffer.readUtf8(panjangAman)
+                        prosesSatuBaris(blokPanjang.trimEnd('\r'), adalahAkhirBaris = false)
+                    }
                 }
             }
 
@@ -514,7 +521,7 @@ class PencariIsiBerkas(
 
             if (buffer.size > 0L) {
                 val sisaBaris = buffer.readUtf8().trimEnd('\r')
-                prosesSatuBaris(sisaBaris)
+                prosesSatuBaris(sisaBaris, adalahAkhirBaris = true)
             }
 
             if (filter.ukuranMinByte != null && totalByteDibaca < filter.ukuranMinByte) {
@@ -579,6 +586,30 @@ class PencariIsiBerkas(
             if (kontrolIlegal) jumlahKontrol++
         }
         return jumlahKontrol * 20 > panjang
+    }
+
+    private fun hitungPanjangAmanUtf8(buffer: Buffer, maksByte: Long): Long {
+        val n = minOf(buffer.size, maksByte)
+        if (n <= 0L) return 0L
+        var mundur = 0L
+        while (mundur < 4L && mundur < n) {
+            val b = buffer[n - 1L - mundur].toInt() and 0xFF
+            if ((b and 0x80) == 0) {
+                return n
+            }
+            if ((b and 0xC0) == 0xC0) {
+                val panjangHarapan = when {
+                    (b and 0xE0) == 0xC0 -> 2L
+                    (b and 0xF0) == 0xE0 -> 3L
+                    (b and 0xF8) == 0xF0 -> 4L
+                    else -> 1L
+                }
+                val tersedia = mundur + 1L
+                return if (tersedia < panjangHarapan) n - tersedia else n
+            }
+            mundur++
+        }
+        return n
     }
 
     private fun buatPotonganTeks(baris: String, awalCocok: Int, akhirCocok: Int): String {
