@@ -46,6 +46,7 @@ import platform.zlib.deflateInit2_
 import platform.zlib.inflate
 import platform.zlib.inflateEnd
 import platform.zlib.inflateInit2_
+import platform.zlib.inflateReset
 import platform.zlib.z_stream
 import platform.zlib.zlibVersion
 
@@ -120,6 +121,8 @@ private class ZlibInflateSource(
     private var tertutup = false
     private var selesai = false
     private var sumberHabis = false
+    private val apakahGzip = windowBits > 15
+    private var anggotaBaru = false
 
     init {
         memset(stream.ptr, 0, sizeOf<z_stream>().convert())
@@ -171,21 +174,38 @@ private class ZlibInflateSource(
             val tertulis = (kapasitas - stream.avail_out).toInt()
 
             if (kode != Z_OK && kode != Z_STREAM_END && kode != Z_BUF_ERROR) {
+                if (anggotaBaru && tertulis == 0) {
+                    // Padding/sampah setelah anggota GZIP terakhir: sama seperti GZIPInputStream, anggap EOF.
+                    selesai = true
+                    return -1L
+                }
                 throw galatZlib(kode, stream)
             }
 
             if (tertulis > 0) {
+                anggotaBaru = false
                 val outBytes = ByteArray(tertulis) { idx -> output[idx].toByte() }
                 sink.write(outBytes)
             }
 
             if (kode == Z_STREAM_END) {
-                selesai = true
+                if (apakahGzip && (stream.avail_in > 0u || !sumberHabis)) {
+                    // Mungkin ada anggota GZIP berikutnya (concatenated members), seperti GZIPInputStream di Android.
+                    val kodeReset = inflateReset(stream.ptr)
+                    if (kodeReset != Z_OK) throw galatZlib(kodeReset, stream)
+                    anggotaBaru = true
+                } else {
+                    selesai = true
+                }
             }
 
             if (tertulis > 0) return tertulis.toLong()
             if (selesai) return -1L
             if (sumberHabis && stream.avail_in == 0u) {
+                if (anggotaBaru) {
+                    selesai = true
+                    return -1L
+                }
                 throw EOFException("Aliran terkompresi GZIP terpotong sebelum penutup")
             }
             if (sebelumIn == stream.avail_in && sebelumIn > 0u) {
@@ -250,6 +270,9 @@ private class ZlibDeflateSink(
             throw galatZlib(kode, stream)
         }
         val jumlah = UKURAN_BUFFER_ZLIB - stream.avail_out.toInt()
+        if (flush == Z_FINISH && kode == Z_BUF_ERROR && jumlah == 0) {
+            throw IOException("Deflate macet saat finalisasi (Z_BUF_ERROR tanpa keluaran)")
+        }
         if (jumlah > 0) {
             val outBytes = ByteArray(jumlah) { idx -> output[idx].toByte() }
             tempOutBuffer.write(outBytes)
@@ -557,6 +580,9 @@ private class PenulisZipIos(
             throw galatZlib(kode, strm)
         }
         val keluar = UKURAN_BUFFER_ZLIB - strm.avail_out.toInt()
+        if (flush == Z_FINISH && kode == Z_BUF_ERROR && keluar == 0) {
+            throw IOException("Deflate macet saat finalisasi entri (Z_BUF_ERROR tanpa keluaran)")
+        }
         if (keluar > 0) {
             val bytes = ByteArray(keluar) { idx -> output[idx].toByte() }
             tulisBytes(bytes, 0, keluar)

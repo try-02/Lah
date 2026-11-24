@@ -839,9 +839,11 @@ class ProviderTar(
     ): HasilOperasi<List<ItemSiapTar>> {
         val hasil = mutableListOf<ItemSiapTar>()
         val jalurSudahAda = HashSet<String>()
+        var galatBaca: HasilOperasi.Gagal? = null
 
         suspend fun telusuri(lokasi: LokasiBerkas, jalurRelatif: String, adalahFolder: Boolean, waktuMs: Long?) {
             currentCoroutineContext().ensureActive()
+            if (galatBaca != null) return
             val validasi = ValidasiPathArsip.validasi(jalurRelatif, adalahFolder)
             if (validasi !is HasilValidasiPathArsip.Sah) return
             val kunci = validasi.jalurNormal
@@ -853,7 +855,17 @@ class ProviderTar(
             }
             hasil.add(ItemSiapTar(lokasi, kunci, true, waktuMs))
             val anakHasil = repositoriBerkas.daftarIsi(lokasi).first()
-            val daftarAnak = (anakHasil as? HasilOperasi.Sukses)?.nilai.orEmpty()
+            val daftarAnak = when (anakHasil) {
+                is HasilOperasi.Sukses -> anakHasil.nilai
+                is HasilOperasi.Gagal -> {
+                    // Jangan diam-diam membuang isi folder: gagalkan seluruh kompresi.
+                    galatBaca = HasilOperasi.Gagal(
+                        "Gagal membaca isi folder '$kunci': ${anakHasil.pesan}",
+                        anakHasil.penyebab
+                    )
+                    return
+                }
+            }
             for (anak in daftarAnak) {
                 if (anak.jenis == JenisBerkas.TAUTAN) continue
                 telusuri(
@@ -868,6 +880,7 @@ class ProviderTar(
         for (s in daftarSumber) {
             telusuri(s.lokasi, s.namaDalamArsip, s.adalahFolder, null)
         }
+        galatBaca?.let { return it }
         return if (hasil.isEmpty()) {
             HasilOperasi.Gagal("Tidak ada berkas/folder sah untuk diarsipkan", PenyebabGalat.VALIDASI)
         } else {

@@ -65,11 +65,5 @@ jobs:
           name: pos-offline-release-signed-apk
           path: |
             ${{ steps.sign_app.outputs.signedReleaseFile }}
-            androidApp/build/reports/
-            androidApp/build/stability/
-            androidApp/build/compose_compiler/
-            shared/build/reports/
-            shared/build/compose_compiler/
-            iosApp/build/
           retention-days: 1
           if-no-files-found: error

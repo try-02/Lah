@@ -1,0 +1,262 @@
+diff -ruN a/androidApp/src/main/AndroidManifest.xml b/androidApp/src/main/AndroidManifest.xml
+--- a/androidApp/src/main/AndroidManifest.xml	2026-11-22 16:17:18.000000000 +0000
++++ b/androidApp/src/main/AndroidManifest.xml	2026-11-24 04:55:10.031619766 +0000
+@@ -9,6 +9,7 @@
+         android:supportsRtl="true"
+         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+         <activity
++            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|density|fontScale"
+             android:exported="true"
+             android:name=".MainActivity">
+             <intent-filter>
+diff -ruN a/androidApp/src/main/kotlin/org/fm/com/MainActivity.kt b/androidApp/src/main/kotlin/org/fm/com/MainActivity.kt
+--- a/androidApp/src/main/kotlin/org/fm/com/MainActivity.kt	2026-11-23 14:15:16.000000000 +0000
++++ b/androidApp/src/main/kotlin/org/fm/com/MainActivity.kt	2026-11-24 04:55:10.031437591 +0000
+@@ -1,6 +1,7 @@
+ package org.fm.com
+ 
+ import android.app.Activity
++import android.content.Context
+ import android.os.Bundle
+ import androidx.activity.ComponentActivity
+ import androidx.activity.compose.rememberLauncherForActivityResult
+@@ -17,9 +18,26 @@
+ import androidx.compose.runtime.setValue
+ import androidx.compose.ui.tooling.preview.Preview
+ import kotlinx.coroutines.launch
++import org.fm.com.di.KontainerAndroid
+ import org.fm.com.di.KontainerAplikasi
+ import org.fm.com.di.buatKontainerAndroid
+ import org.fm.com.domain.model.HasilOperasi
++import org.fm.com.domain.model.LokasiBerkas
++
++/**
++ * Pemegang tingkat-proses agar [KontainerAplikasi] tidak dibuat ulang saat Activity di-recreate
++ * (rotasi, multi-window, perubahan tema). Kunci ViewModel di `Aplikasi` diturunkan dari hash kontainer,
++ * jadi kontainer baru berarti seluruh ViewModel (termasuk tab editor yang belum disimpan) hilang.
++ * Hanya diakses dari thread utama (komposisi/Activity).
++ */
++private object PemegangKontainer {
++    private var kontainerAndroid: KontainerAndroid? = null
++    var aplikasi: KontainerAplikasi? = null
++    var pintasan: List<LokasiBerkas>? = null
++
++    fun ambilAndroid(context: Context): KontainerAndroid =
++        kontainerAndroid ?: buatKontainerAndroid(context.applicationContext).also { kontainerAndroid = it }
++}
+ 
+ class MainActivity : ComponentActivity() {
+     override fun onCreate(savedInstanceState: Bundle?) {
+@@ -27,17 +45,23 @@
+         super.onCreate(savedInstanceState)
+         setContent {
+             val scope = rememberCoroutineScope()
+-            val kontainerAndroid = remember { buatKontainerAndroid(applicationContext) }
+-            var kontainerAplikasi by remember { mutableStateOf<KontainerAplikasi?>(null) }
+-            var daftarPintasan by remember { mutableStateOf(listOf(kontainerAndroid.lokasiRuangKerja)) }
++            val kontainerAndroid = remember { PemegangKontainer.ambilAndroid(applicationContext) }
++            var kontainerAplikasi by remember { mutableStateOf(PemegangKontainer.aplikasi) }
++            var daftarPintasan by remember {
++                mutableStateOf(PemegangKontainer.pintasan ?: listOf(kontainerAndroid.lokasiRuangKerja))
++            }
+             var permintaanBuka by remember { mutableStateOf<PermintaanBukaLokasi?>(null) }
+             var pesanEksternal by remember { mutableStateOf<Pair<Long, String>?>(null) }
+             var urutanEvent by remember { mutableLongStateOf(0L) }
+ 
+             LaunchedEffect(kontainerAndroid) {
++                if (PemegangKontainer.aplikasi != null) return@LaunchedEffect
+                 val (lokasiAwal, pintasan) = kontainerAndroid.muatLokasiAwalDanPintasan()
++                val kontainerBaru = kontainerAndroid.keKontainerAplikasi(lokasiAwal, pintasan)
++                PemegangKontainer.pintasan = pintasan
++                PemegangKontainer.aplikasi = kontainerBaru
+                 daftarPintasan = pintasan
+-                kontainerAplikasi = kontainerAndroid.keKontainerAplikasi(lokasiAwal, pintasan)
++                kontainerAplikasi = kontainerBaru
+             }
+ 
+             val launcherPilihTree = rememberLauncherForActivityResult(
+@@ -50,6 +74,7 @@
+                                 val lokBaru = hasil.nilai
+                                 if (lokBaru != null) {
+                                     daftarPintasan = kontainerAndroid.daftarLokasiPintasan()
++                                    PemegangKontainer.pintasan = daftarPintasan
+                                     urutanEvent++
+                                     permintaanBuka = PermintaanBukaLokasi(lokBaru, urutanEvent)
+                                 }
+diff -ruN a/shared/src/commonMain/kotlin/org/fm/com/data/arsip/ProviderTar.kt b/shared/src/commonMain/kotlin/org/fm/com/data/arsip/ProviderTar.kt
+--- a/shared/src/commonMain/kotlin/org/fm/com/data/arsip/ProviderTar.kt	2026-11-22 16:23:22.000000000 +0000
++++ b/shared/src/commonMain/kotlin/org/fm/com/data/arsip/ProviderTar.kt	2026-11-24 04:55:10.028220790 +0000
+@@ -839,9 +839,11 @@
+     ): HasilOperasi<List<ItemSiapTar>> {
+         val hasil = mutableListOf<ItemSiapTar>()
+         val jalurSudahAda = HashSet<String>()
++        var galatBaca: HasilOperasi.Gagal? = null
+ 
+         suspend fun telusuri(lokasi: LokasiBerkas, jalurRelatif: String, adalahFolder: Boolean, waktuMs: Long?) {
+             currentCoroutineContext().ensureActive()
++            if (galatBaca != null) return
+             val validasi = ValidasiPathArsip.validasi(jalurRelatif, adalahFolder)
+             if (validasi !is HasilValidasiPathArsip.Sah) return
+             val kunci = validasi.jalurNormal
+@@ -853,7 +855,17 @@
+             }
+             hasil.add(ItemSiapTar(lokasi, kunci, true, waktuMs))
+             val anakHasil = repositoriBerkas.daftarIsi(lokasi).first()
+-            val daftarAnak = (anakHasil as? HasilOperasi.Sukses)?.nilai.orEmpty()
++            val daftarAnak = when (anakHasil) {
++                is HasilOperasi.Sukses -> anakHasil.nilai
++                is HasilOperasi.Gagal -> {
++                    // Jangan diam-diam membuang isi folder: gagalkan seluruh kompresi.
++                    galatBaca = HasilOperasi.Gagal(
++                        "Gagal membaca isi folder '$kunci': ${anakHasil.pesan}",
++                        anakHasil.penyebab
++                    )
++                    return
++                }
++            }
+             for (anak in daftarAnak) {
+                 if (anak.jenis == JenisBerkas.TAUTAN) continue
+                 telusuri(
+@@ -868,6 +880,7 @@
+         for (s in daftarSumber) {
+             telusuri(s.lokasi, s.namaDalamArsip, s.adalahFolder, null)
+         }
++        galatBaca?.let { return it }
+         return if (hasil.isEmpty()) {
+             HasilOperasi.Gagal("Tidak ada berkas/folder sah untuk diarsipkan", PenyebabGalat.VALIDASI)
+         } else {
+diff -ruN a/shared/src/commonMain/kotlin/org/fm/com/data/arsip/ProviderZip.kt b/shared/src/commonMain/kotlin/org/fm/com/data/arsip/ProviderZip.kt
+--- a/shared/src/commonMain/kotlin/org/fm/com/data/arsip/ProviderZip.kt	2026-11-22 16:21:40.000000000 +0000
++++ b/shared/src/commonMain/kotlin/org/fm/com/data/arsip/ProviderZip.kt	2026-11-24 04:55:10.026994157 +0000
+@@ -649,9 +649,11 @@
+     ): HasilOperasi<List<ItemSiapArsip>> {
+         val hasil = mutableListOf<ItemSiapArsip>()
+         val jalurSudahAda = HashSet<String>()
++        var galatBaca: HasilOperasi.Gagal? = null
+ 
+         suspend fun telusuri(lokasi: LokasiBerkas, jalurRelatif: String, adalahFolder: Boolean, waktuMs: Long?) {
+             currentCoroutineContext().ensureActive()
++            if (galatBaca != null) return
+             val validasi = ValidasiPathArsip.validasi(jalurRelatif, adalahFolder)
+             if (validasi !is HasilValidasiPathArsip.Sah) return
+             val kunci = validasi.jalurNormal
+@@ -664,14 +666,23 @@
+ 
+             hasil.add(ItemSiapArsip(lokasi, kunci, true, waktuMs))
+             val anakHasil = repositoriBerkas.daftarIsi(lokasi).first()
+-            if (anakHasil is HasilOperasi.Sukses) {
+-                for (anak in anakHasil.nilai) {
+-                    if (anak.jenis == org.fm.com.domain.model.JenisBerkas.TAUTAN) continue
+-                    telusuri(
+-                        lokasi = anak.lokasi,
+-                        jalurRelatif = "$kunci/${anak.nama}",
+-                        adalahFolder = anak.jenis == org.fm.com.domain.model.JenisBerkas.FOLDER,
+-                        waktuMs = anak.waktuUbahEpochMs
++            when (anakHasil) {
++                is HasilOperasi.Sukses -> {
++                    for (anak in anakHasil.nilai) {
++                        if (anak.jenis == org.fm.com.domain.model.JenisBerkas.TAUTAN) continue
++                        telusuri(
++                            lokasi = anak.lokasi,
++                            jalurRelatif = "$kunci/${anak.nama}",
++                            adalahFolder = anak.jenis == org.fm.com.domain.model.JenisBerkas.FOLDER,
++                            waktuMs = anak.waktuUbahEpochMs
++                        )
++                    }
++                }
++                is HasilOperasi.Gagal -> {
++                    // Jangan diam-diam membuang isi folder: gagalkan seluruh kompresi.
++                    galatBaca = HasilOperasi.Gagal(
++                        "Gagal membaca isi folder '$kunci': ${anakHasil.pesan}",
++                        anakHasil.penyebab
+                     )
+                 }
+             }
+@@ -680,6 +691,7 @@
+         for (item in daftarSumber) {
+             telusuri(item.lokasi, item.namaDalamArsip, item.adalahFolder, null)
+         }
++        galatBaca?.let { return it }
+         return if (hasil.isEmpty()) {
+             HasilOperasi.Gagal("Tidak ada berkas/folder sah untuk diarsipkan", PenyebabGalat.VALIDASI)
+         } else {
+diff -ruN a/shared/src/iosMain/kotlin/org/fm/com/data/arsip/AdapterArsipPlatform.ios.kt b/shared/src/iosMain/kotlin/org/fm/com/data/arsip/AdapterArsipPlatform.ios.kt
+--- a/shared/src/iosMain/kotlin/org/fm/com/data/arsip/AdapterArsipPlatform.ios.kt	2026-11-22 16:17:22.000000000 +0000
++++ b/shared/src/iosMain/kotlin/org/fm/com/data/arsip/AdapterArsipPlatform.ios.kt	2026-11-24 04:55:10.029828636 +0000
+@@ -46,6 +46,7 @@
+ import platform.zlib.inflate
+ import platform.zlib.inflateEnd
+ import platform.zlib.inflateInit2_
++import platform.zlib.inflateReset
+ import platform.zlib.z_stream
+ import platform.zlib.zlibVersion
+ 
+@@ -120,6 +121,8 @@
+     private var tertutup = false
+     private var selesai = false
+     private var sumberHabis = false
++    private val apakahGzip = windowBits > 15
++    private var anggotaBaru = false
+ 
+     init {
+         memset(stream.ptr, 0, sizeOf<z_stream>().convert())
+@@ -171,21 +174,38 @@
+             val tertulis = (kapasitas - stream.avail_out).toInt()
+ 
+             if (kode != Z_OK && kode != Z_STREAM_END && kode != Z_BUF_ERROR) {
++                if (anggotaBaru && tertulis == 0) {
++                    // Padding/sampah setelah anggota GZIP terakhir: sama seperti GZIPInputStream, anggap EOF.
++                    selesai = true
++                    return -1L
++                }
+                 throw galatZlib(kode, stream)
+             }
+ 
+             if (tertulis > 0) {
++                anggotaBaru = false
+                 val outBytes = ByteArray(tertulis) { idx -> output[idx].toByte() }
+                 sink.write(outBytes)
+             }
+ 
+             if (kode == Z_STREAM_END) {
+-                selesai = true
++                if (apakahGzip && (stream.avail_in > 0u || !sumberHabis)) {
++                    // Mungkin ada anggota GZIP berikutnya (concatenated members), seperti GZIPInputStream di Android.
++                    val kodeReset = inflateReset(stream.ptr)
++                    if (kodeReset != Z_OK) throw galatZlib(kodeReset, stream)
++                    anggotaBaru = true
++                } else {
++                    selesai = true
++                }
+             }
+ 
+             if (tertulis > 0) return tertulis.toLong()
+             if (selesai) return -1L
+             if (sumberHabis && stream.avail_in == 0u) {
++                if (anggotaBaru) {
++                    selesai = true
++                    return -1L
++                }
+                 throw EOFException("Aliran terkompresi GZIP terpotong sebelum penutup")
+             }
+             if (sebelumIn == stream.avail_in && sebelumIn > 0u) {
+@@ -250,6 +270,9 @@
+             throw galatZlib(kode, stream)
+         }
+         val jumlah = UKURAN_BUFFER_ZLIB - stream.avail_out.toInt()
++        if (flush == Z_FINISH && kode == Z_BUF_ERROR && jumlah == 0) {
++            throw IOException("Deflate macet saat finalisasi (Z_BUF_ERROR tanpa keluaran)")
++        }
+         if (jumlah > 0) {
+             val outBytes = ByteArray(jumlah) { idx -> output[idx].toByte() }
+             tempOutBuffer.write(outBytes)
+@@ -557,6 +580,9 @@
+             throw galatZlib(kode, strm)
+         }
+         val keluar = UKURAN_BUFFER_ZLIB - strm.avail_out.toInt()
++        if (flush == Z_FINISH && kode == Z_BUF_ERROR && keluar == 0) {
++            throw IOException("Deflate macet saat finalisasi entri (Z_BUF_ERROR tanpa keluaran)")
++        }
+         if (keluar > 0) {
+             val bytes = ByteArray(keluar) { idx -> output[idx].toByte() }
+             tulisBytes(bytes, 0, keluar)

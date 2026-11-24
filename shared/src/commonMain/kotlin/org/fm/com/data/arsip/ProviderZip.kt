@@ -649,9 +649,11 @@ class ProviderZip(
     ): HasilOperasi<List<ItemSiapArsip>> {
         val hasil = mutableListOf<ItemSiapArsip>()
         val jalurSudahAda = HashSet<String>()
+        var galatBaca: HasilOperasi.Gagal? = null
 
         suspend fun telusuri(lokasi: LokasiBerkas, jalurRelatif: String, adalahFolder: Boolean, waktuMs: Long?) {
             currentCoroutineContext().ensureActive()
+            if (galatBaca != null) return
             val validasi = ValidasiPathArsip.validasi(jalurRelatif, adalahFolder)
             if (validasi !is HasilValidasiPathArsip.Sah) return
             val kunci = validasi.jalurNormal
@@ -664,14 +666,23 @@ class ProviderZip(
 
             hasil.add(ItemSiapArsip(lokasi, kunci, true, waktuMs))
             val anakHasil = repositoriBerkas.daftarIsi(lokasi).first()
-            if (anakHasil is HasilOperasi.Sukses) {
-                for (anak in anakHasil.nilai) {
-                    if (anak.jenis == org.fm.com.domain.model.JenisBerkas.TAUTAN) continue
-                    telusuri(
-                        lokasi = anak.lokasi,
-                        jalurRelatif = "$kunci/${anak.nama}",
-                        adalahFolder = anak.jenis == org.fm.com.domain.model.JenisBerkas.FOLDER,
-                        waktuMs = anak.waktuUbahEpochMs
+            when (anakHasil) {
+                is HasilOperasi.Sukses -> {
+                    for (anak in anakHasil.nilai) {
+                        if (anak.jenis == org.fm.com.domain.model.JenisBerkas.TAUTAN) continue
+                        telusuri(
+                            lokasi = anak.lokasi,
+                            jalurRelatif = "$kunci/${anak.nama}",
+                            adalahFolder = anak.jenis == org.fm.com.domain.model.JenisBerkas.FOLDER,
+                            waktuMs = anak.waktuUbahEpochMs
+                        )
+                    }
+                }
+                is HasilOperasi.Gagal -> {
+                    // Jangan diam-diam membuang isi folder: gagalkan seluruh kompresi.
+                    galatBaca = HasilOperasi.Gagal(
+                        "Gagal membaca isi folder '$kunci': ${anakHasil.pesan}",
+                        anakHasil.penyebab
                     )
                 }
             }
@@ -680,6 +691,7 @@ class ProviderZip(
         for (item in daftarSumber) {
             telusuri(item.lokasi, item.namaDalamArsip, item.adalahFolder, null)
         }
+        galatBaca?.let { return it }
         return if (hasil.isEmpty()) {
             HasilOperasi.Gagal("Tidak ada berkas/folder sah untuk diarsipkan", PenyebabGalat.VALIDASI)
         } else {

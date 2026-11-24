@@ -1,6 +1,7 @@
 package org.fm.com
 
 import android.app.Activity
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -17,9 +18,26 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.tooling.preview.Preview
 import kotlinx.coroutines.launch
+import org.fm.com.di.KontainerAndroid
 import org.fm.com.di.KontainerAplikasi
 import org.fm.com.di.buatKontainerAndroid
 import org.fm.com.domain.model.HasilOperasi
+import org.fm.com.domain.model.LokasiBerkas
+
+/**
+ * Pemegang tingkat-proses agar [KontainerAplikasi] tidak dibuat ulang saat Activity di-recreate
+ * (rotasi, multi-window, perubahan tema). Kunci ViewModel di `Aplikasi` diturunkan dari hash kontainer,
+ * jadi kontainer baru berarti seluruh ViewModel (termasuk tab editor yang belum disimpan) hilang.
+ * Hanya diakses dari thread utama (komposisi/Activity).
+ */
+private object PemegangKontainer {
+    private var kontainerAndroid: KontainerAndroid? = null
+    var aplikasi: KontainerAplikasi? = null
+    var pintasan: List<LokasiBerkas>? = null
+
+    fun ambilAndroid(context: Context): KontainerAndroid =
+        kontainerAndroid ?: buatKontainerAndroid(context.applicationContext).also { kontainerAndroid = it }
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,17 +45,23 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             val scope = rememberCoroutineScope()
-            val kontainerAndroid = remember { buatKontainerAndroid(applicationContext) }
-            var kontainerAplikasi by remember { mutableStateOf<KontainerAplikasi?>(null) }
-            var daftarPintasan by remember { mutableStateOf(listOf(kontainerAndroid.lokasiRuangKerja)) }
+            val kontainerAndroid = remember { PemegangKontainer.ambilAndroid(applicationContext) }
+            var kontainerAplikasi by remember { mutableStateOf(PemegangKontainer.aplikasi) }
+            var daftarPintasan by remember {
+                mutableStateOf(PemegangKontainer.pintasan ?: listOf(kontainerAndroid.lokasiRuangKerja))
+            }
             var permintaanBuka by remember { mutableStateOf<PermintaanBukaLokasi?>(null) }
             var pesanEksternal by remember { mutableStateOf<Pair<Long, String>?>(null) }
             var urutanEvent by remember { mutableLongStateOf(0L) }
 
             LaunchedEffect(kontainerAndroid) {
+                if (PemegangKontainer.aplikasi != null) return@LaunchedEffect
                 val (lokasiAwal, pintasan) = kontainerAndroid.muatLokasiAwalDanPintasan()
+                val kontainerBaru = kontainerAndroid.keKontainerAplikasi(lokasiAwal, pintasan)
+                PemegangKontainer.pintasan = pintasan
+                PemegangKontainer.aplikasi = kontainerBaru
                 daftarPintasan = pintasan
-                kontainerAplikasi = kontainerAndroid.keKontainerAplikasi(lokasiAwal, pintasan)
+                kontainerAplikasi = kontainerBaru
             }
 
             val launcherPilihTree = rememberLauncherForActivityResult(
@@ -50,6 +74,7 @@ class MainActivity : ComponentActivity() {
                                 val lokBaru = hasil.nilai
                                 if (lokBaru != null) {
                                     daftarPintasan = kontainerAndroid.daftarLokasiPintasan()
+                                    PemegangKontainer.pintasan = daftarPintasan
                                     urutanEvent++
                                     permintaanBuka = PermintaanBukaLokasi(lokBaru, urutanEvent)
                                 }
