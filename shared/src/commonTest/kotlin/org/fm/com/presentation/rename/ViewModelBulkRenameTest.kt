@@ -78,3 +78,4 @@ class ViewModelBulkRenameTest {
         assertEquals(1, vm.state.value.pratinjau.jumlahTabrakanDenganDisk)
         assertFalse(vm.state.value.bolehLanjutKonfirmasi)
     }
+}
