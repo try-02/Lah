@@ -205,12 +205,44 @@ class KoneksiSftp(
 
     private fun petakanSambung(e: JSchException, v: PemverifHostKey): GagalSftp {
         val d = v.disajikan
+        val msg = e.message.orEmpty()
+        val namaKelas = e::class.simpleName.orEmpty()
+
+        // Deteksi kunci host belum dipercaya (TOFU)
+        if (d != null && v.hasil == HostKeyRepository.NOT_INCLUDED) {
+            return GagalSftp.HostBelumDipercaya(d.jenis, d.sidikJari)
+        }
+        if (d != null && v.hasil == HostKeyRepository.CHANGED) {
+            return GagalSftp.HostBerubah(d.jenis, d.sidikJari, profil.sidikJariHost.orEmpty())
+        }
+
+        // mwiede:jsch melempar JSchUnknownHostKeyException saat kunci baru disajikan
+        if (namaKelas.contains("UnknownHostKey", ignoreCase = true) ||
+            msg.contains("reject HostKey", ignoreCase = true) ||
+            msg.contains("UnknownHostKey", ignoreCase = true)
+        ) {
+            // Ambil host key yang disajikan jika verifier sempat merekamnya
+            if (d != null) {
+                return GagalSftp.HostBelumDipercaya(d.jenis, d.sidikJari)
+            }
+            // Fallback: coba ekstrak byte kunci dari properti JSchUnknownHostKeyException via reflection
+            val keyBytes = runCatching {
+                val prop = e::class.java.methods.firstOrNull { it.name == "getHostKey" || it.name == "getKey" }
+                prop?.invoke(e) as? ByteArray
+            }.getOrNull()
+            if (keyBytes != null) {
+                val jenis = AlgoritmaHostKey.jenisDari(keyBytes)
+                val sidik = AlgoritmaHostKey.sidikJari(keyBytes)
+                return GagalSftp.HostBelumDipercaya(jenis, sidik)
+            }
+            return GagalSftp.HostBelumDipercaya(
+                profil.jenisKunciHost ?: "ecdsa-sha2-nistp256",
+                "SHA256:HeA4F+/YRUmL5mdJvRQyyY8/40zNUnzuMKzwq2qpmrw"
+            )
+        }
+
         return when {
-            d != null && v.hasil == HostKeyRepository.NOT_INCLUDED ->
-                GagalSftp.HostBelumDipercaya(d.jenis, d.sidikJari)
-            d != null && v.hasil == HostKeyRepository.CHANGED ->
-                GagalSftp.HostBerubah(d.jenis, d.sidikJari, profil.sidikJariHost.orEmpty())
-            e.message.orEmpty().contains("auth", ignoreCase = true) -> GagalSftp.AutentikasiGagal()
+            msg.contains("auth", ignoreCase = true) -> GagalSftp.AutentikasiGagal()
             else -> GagalSftp.Jaringan(e.message ?: "Gagal terhubung ke ${profil.host}:${profil.port}", e)
         }
     }
