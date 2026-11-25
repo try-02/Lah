@@ -29,6 +29,7 @@ import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -370,7 +371,7 @@ fun DaftarBerkasLayar(
             HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
 
             Box(modifier = Modifier.weight(1f)) {
-                if (state.sedangMemuat || state.pesanGalat != null || state.daftarItem.isEmpty()) {
+                if (state.progresOperasi == null && (state.sedangMemuat || state.pesanGalat != null || state.daftarItem.isEmpty())) {
                     LayarStatusFilemanager(
                         sedangMemuat = state.sedangMemuat,
                         pesanGalat = state.pesanGalat,
@@ -912,6 +913,46 @@ fun DaftarBerkasLayar(
         IndikatorProgresMassal(
             state = stateMassal,
             onBatal = { viewModelOperasiMassal?.batalkanOperasi() }
+        )
+    }
+
+    state.progresOperasi?.let { prog ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(prog.judul) },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    if (prog.total > 0) {
+                        LinearProgressIndicator(
+                            progress = { prog.progresFloat },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "${prog.diproses} dari ${prog.total}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
+                    if (prog.namaItemSaatIni.isNotBlank()) {
+                        Text(
+                            text = prog.namaItemSaatIni,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { viewModel.prosesIntent(IntentFilemanager.BatalkanOperasiTunggal) }) {
+                    Text("Batalkan")
+                }
+            }
         )
     }
 

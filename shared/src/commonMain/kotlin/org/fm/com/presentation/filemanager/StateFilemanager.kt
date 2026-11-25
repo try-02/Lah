@@ -48,6 +48,17 @@ data class ItemBerkasUi(
 )
 
 @Immutable
+data class StateProgresOperasiTunggal(
+    val judul: String,
+    val diproses: Int = 0,
+    val total: Int = 0,
+    val namaItemSaatIni: String = ""
+) {
+    val progresFloat: Float
+        get() = if (total > 0) (diproses.toFloat() / total.toFloat()).coerceIn(0f, 1f) else 0f
+}
+
+@Immutable
 data class StateFilemanager(
     val lokasiSaatIni: LokasiBerkas? = null,
     val segmenBreadcrumb: List<SegmenLokasi> = emptyList(),
@@ -72,7 +83,8 @@ data class StateFilemanager(
     val dialogBukaDenganItem: ItemBerkasUi? = null,
     val dialogBagikanItem: ItemBerkasUi? = null,
     val konfirmasiTimpa: PermintaanKonfirmasiTimpa? = null,
-    val dapatNavigasiKembali: Boolean = false
+    val dapatNavigasiKembali: Boolean = false,
+    val progresOperasi: StateProgresOperasiTunggal? = null
 ) {
     val jumlahItem: Int get() = daftarItem.size
     val sedangMultiSelect: Boolean get() = itemTerpilih.isNotEmpty()
@@ -102,6 +114,7 @@ sealed interface IntentFilemanager {
     data object TutupKonfirmasiTimpa : IntentFilemanager
     data class BukaDialogHapus(val items: List<LokasiBerkas>?) : IntentFilemanager
     data object EksekusiHapusTerpilih : IntentFilemanager
+    data object BatalkanOperasiTunggal : IntentFilemanager
     data class BukaDialogBukaDengan(val item: ItemBerkasUi?) : IntentFilemanager
     data class BukaDialogBagikan(val item: ItemBerkasUi?) : IntentFilemanager
     data class SetPesanInfo(val pesan: String?) : IntentFilemanager

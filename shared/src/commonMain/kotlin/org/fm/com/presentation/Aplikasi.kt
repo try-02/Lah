@@ -499,7 +499,9 @@ fun Aplikasi(
                                 tujuanPemilihSistem = TujuanPemilihFolderSistem.BERANDA
                                 onPilihFolder()
                             }
-                        } else null
+                        } else null,
+                        izinMemoriInternalAktif = izinMemoriInternalAktif,
+                        onMintaIzinMemoriInternal = onMintaIzinMemoriInternal
                     )
                 }
             }

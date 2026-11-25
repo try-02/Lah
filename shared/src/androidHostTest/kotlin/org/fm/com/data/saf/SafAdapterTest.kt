@@ -258,5 +258,9 @@ class SafAdapterTest {
                 treeDocId = "/data/data/com.termux/files/home"
             )
         )
+
+        assertFalse(SafOperasiBerkas.apakahJalurBerulang("/data/data/com.termux/files/home/src/src/main.kt"))
+        assertTrue(SafOperasiBerkas.apakahJalurBerulang("/data/data/com.termux/files/home/link/link/link/a.txt"))
+        assertTrue(SafOperasiBerkas.apakahJalurBerulang("/home/a/b/a/b/a/b"))
     }
 }

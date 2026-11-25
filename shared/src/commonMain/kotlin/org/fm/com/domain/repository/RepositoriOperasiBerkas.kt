@@ -1,5 +1,7 @@
 package org.fm.com.domain.repository
 
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 import org.fm.com.domain.model.EntitasBerkas
 import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.model.LokasiBerkas
@@ -67,3 +69,10 @@ data class HasilItemGagal(
     val pesan: String,
     val penyebab: PenyebabGalat = PenyebabGalat.TIDAK_DIKETAHUI
 )
+
+/** Opsional di CoroutineContext agar operasi tunggal SAF/berat bisa melaporkan progres tanpa mengubah interface. */
+class PelaporProgresOperasi(
+    val onProgres: (diproses: Int, total: Int, namaItem: String) -> Unit
+) : AbstractCoroutineContextElement(Key) {
+    companion object Key : CoroutineContext.Key<PelaporProgresOperasi>
+}

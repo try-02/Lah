@@ -189,4 +189,26 @@ class ViewModelFilemanagerTest {
         assertEquals(2, finalHasil.berhasil.size)
         assertEquals("baru", repo.isiDari("/root/tujuan/sama.txt")?.decodeToString())
     }
+
+    @Test
+    fun renameGagalTidakMembuatSedangMemuatStuckDanProgresDapatDibatalkan() = runTest {
+        val repo = ImplementasiRepositoriBerkas()
+        repo.simpan(DataBerkas("/root", "root", JenisLokasi.POSIX, adalahFolder = true))
+        repo.simpan(DataBerkas("/root/f.txt", "f.txt", JenisLokasi.POSIX, adalahFolder = false))
+
+        val opLempar = object : org.fm.com.domain.repository.RepositoriOperasiBerkas by ImplementasiRepositoriOperasiBerkas(repo) {
+            override suspend fun gantiNama(permintaan: org.fm.com.domain.repository.PermintaanOperasi): org.fm.com.domain.model.HasilOperasi<org.fm.com.domain.model.EntitasBerkas> {
+                throw IllegalStateException("Simulasi galat tak terduga")
+            }
+        }
+        val vm = ViewModelFilemanager(repositoriBerkas = repo, repositoriOperasi = opLempar)
+        val root = LokasiBerkas("/root", JenisLokasi.POSIX, "root")
+        vm.prosesIntent(IntentFilemanager.BukaLokasi(root))
+        val item = vm.state.first { !it.sedangMemuat && it.daftarItem.size == 1 }.daftarItem.single()
+
+        vm.prosesIntent(IntentFilemanager.EksekusiRename(item.lokasi, "baru.txt"))
+        val stAkhir = vm.state.first { !it.sedangMemuat && it.pesanInfo != null }
+        assertFalse(stAkhir.sedangMemuat)
+        assertEquals("Simulasi galat tak terduga", stAkhir.pesanInfo)
+    }
 }

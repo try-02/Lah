@@ -27,13 +27,15 @@ import org.fm.com.domain.model.JenisBerkas
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.PenyebabGalat
 import org.fm.com.domain.model.ValidasiNama
+import org.fm.com.domain.repository.PelaporProgresOperasi
 import org.fm.com.domain.repository.PermintaanOperasi
 import org.fm.com.domain.repository.RepositoriOperasiBerkas
 
-private const val UKURAN_BUFFER_SALIN_SAF = 16 * 1024
+private const val UKURAN_BUFFER_SALIN_SAF = 32 * 1024
 private const val BATAS_BFS_FOLDER_SAF = 250
 private const val BATAS_KEDALAMAN_REKURSIF_SAF = 32
-private const val BATAS_ITEM_FALLBACK_SAF = 500
+private const val BATAS_ITEM_FALLBACK_SAF = 5_000
+private const val BATAS_ITEM_HAPUS_SAF = 10_000
 
 class SafOperasiBerkas(
     context: Context,
@@ -462,6 +464,7 @@ class SafOperasiBerkas(
             )
         }
 
+        val pelapor = currentCoroutineContext()[PelaporProgresOperasi]
         val adalahFolder = entitasLama.jenis == JenisBerkas.FOLDER
         val konflikUri = cariAnakBernama(parentUri, namaBaru, ignoreCase = true)
         val caseOnly = konflikUri != null && apakahDokumenSama(konflikUri, docUri)
@@ -488,51 +491,113 @@ class SafOperasiBerkas(
             )
         }
 
+        if (adalahFolder) {
+            val pohon = when (val pindai = kumpulkanPohonSaf(docUri, namaBaru, BATAS_ITEM_FALLBACK_SAF, pelapor)) {
+                is HasilOperasi.Sukses -> pindai.nilai
+                is HasilOperasi.Gagal -> return pindai
+            }
+            if (caseOnly) {
+                val namaTemp = ".fm_rn_${Random.nextInt(0x100000, 0xFFFFFF).toString(16)}_$namaBaru"
+                val tempResult = when (val salin = salinPohonSafTerpindai(pohon, parentUri, namaTemp, pelapor)) {
+                    is HasilOperasi.Sukses -> salin.nilai
+                    is HasilOperasi.Gagal -> return salin
+                }
+                val hapusAsal = hapusPohonDariDaftar(pohon)
+                if (hapusAsal is HasilOperasi.Gagal) {
+                    withContext(NonCancellable) { hapusHasilSalinPohon(tempResult) }
+                    return hapusAsal
+                }
+                val renameNativeTemp = runCatching {
+                    DocumentsContract.renameDocument(contentResolver, tempResult.rootTujuanUri, namaBaru)
+                }.getOrNull()
+                val uriFinal = if (renameNativeTemp != null) {
+                    renameNativeTemp
+                } else {
+                    val pohonTemp = PohonSaf(
+                        daftarFolder = pohon.daftarFolder.mapIndexed { idx, f ->
+                            f.copy(uri = tempResult.folderTujuanUris[idx])
+                        },
+                        daftarBerkas = pohon.daftarBerkas.mapIndexed { idx, b ->
+                            b.copy(uri = tempResult.berkasTujuanUris[idx])
+                        }
+                    )
+                    when (val salinFinal = salinPohonSafTerpindai(pohonTemp, parentUri, namaBaru, pelapor)) {
+                        is HasilOperasi.Sukses -> {
+                            withContext(NonCancellable) { hapusHasilSalinPohon(tempResult) }
+                            salinFinal.nilai.rootTujuanUri
+                        }
+                        is HasilOperasi.Gagal -> {
+                            withContext(NonCancellable) {
+                                val pulih = salinPohonSafTerpindai(pohonTemp, parentUri, entitasLama.nama, pelapor = null)
+                                if (pulih is HasilOperasi.Sukses) hapusHasilSalinPohon(tempResult)
+                            }
+                            return salinFinal
+                        }
+                    }
+                }
+                val entitasBaru = bacaSatuEntitas(uriFinal)
+                    ?: return HasilOperasi.Gagal("Gagal membaca folder hasil ganti nama", PenyebabGalat.TIDAK_DITEMUKAN)
+                return HasilOperasi.Sukses(entitasBaru)
+            }
+
+            val hasilSalin = when (val salin = salinPohonSafTerpindai(pohon, parentUri, namaBaru, pelapor)) {
+                is HasilOperasi.Sukses -> salin.nilai
+                is HasilOperasi.Gagal -> return salin
+            }
+            val hapusAsal = hapusPohonDariDaftar(pohon)
+            if (hapusAsal is HasilOperasi.Gagal) {
+                return HasilOperasi.Gagal(
+                    "Folder '$namaBaru' sudah disalin, tetapi gagal menghapus folder asal: ${hapusAsal.pesan}",
+                    hapusAsal.penyebab
+                )
+            }
+            val entitasBaru = bacaSatuEntitas(hasilSalin.rootTujuanUri)
+                ?: return HasilOperasi.Gagal("Gagal membaca folder hasil ganti nama", PenyebabGalat.TIDAK_DITEMUKAN)
+            return HasilOperasi.Sukses(entitasBaru)
+        }
+
         if (caseOnly) {
             val namaTemp = ".fm_rn_${Random.nextInt(0x100000, 0xFFFFFF).toString(16)}_$namaBaru"
-            val tempUri = when (val buatTemp = salinEntriKeNamaBaru(docUri, adalahFolder, parentUri, namaTemp)) {
+            val tempUri = when (val buatTemp = salinBerkasTunggalKeNama(docUri, parentUri, namaTemp)) {
                 is HasilOperasi.Sukses -> buatTemp.nilai
                 is HasilOperasi.Gagal -> return buatTemp
             }
-            val hapusAsal = hapusEntitasTunggalAtauRekursif(docUri, adalahFolder)
-            if (hapusAsal is HasilOperasi.Gagal) {
-                withContext(NonCancellable) { hapusEntitasTunggalAtauRekursif(tempUri, adalahFolder) }
-                return hapusAsal
+            val hapusAsal = runCatching { DocumentsContract.deleteDocument(contentResolver, docUri) }.getOrDefault(false)
+            if (!hapusAsal) {
+                withContext(NonCancellable) { hapusAman(tempUri) }
+                return HasilOperasi.Gagal("Gagal menghapus berkas asal saat ganti nama", PenyebabGalat.IZIN_DITOLAK)
             }
-            val hasilFinal = salinEntriKeNamaBaru(tempUri, adalahFolder, parentUri, namaBaru)
+            val hasilFinal = salinBerkasTunggalKeNama(tempUri, parentUri, namaBaru)
             return when (hasilFinal) {
                 is HasilOperasi.Sukses -> {
-                    withContext(NonCancellable) { hapusEntitasTunggalAtauRekursif(tempUri, adalahFolder) }
+                    withContext(NonCancellable) { hapusAman(tempUri) }
                     val entitasBaru = bacaSatuEntitas(hasilFinal.nilai)
-                        ?: return HasilOperasi.Gagal("Gagal membaca entitas hasil ganti nama", PenyebabGalat.TIDAK_DITEMUKAN)
+                        ?: return HasilOperasi.Gagal("Gagal membaca berkas hasil ganti nama", PenyebabGalat.TIDAK_DITEMUKAN)
                     HasilOperasi.Sukses(entitasBaru)
                 }
                 is HasilOperasi.Gagal -> {
-                    // Pulihkan nama asli dari temp jika tahap akhir gagal
                     withContext(NonCancellable) {
-                        val pulih = salinEntriKeNamaBaru(tempUri, adalahFolder, parentUri, entitasLama.nama)
-                        if (pulih is HasilOperasi.Sukses) {
-                            hapusEntitasTunggalAtauRekursif(tempUri, adalahFolder)
-                        }
+                        val pulih = salinBerkasTunggalKeNama(tempUri, parentUri, entitasLama.nama)
+                        if (pulih is HasilOperasi.Sukses) hapusAman(tempUri)
                     }
                     hasilFinal
                 }
             }
         }
 
-        val targetBaruUri = when (val salin = salinEntriKeNamaBaru(docUri, adalahFolder, parentUri, namaBaru)) {
+        val targetBaruUri = when (val salin = salinBerkasTunggalKeNama(docUri, parentUri, namaBaru)) {
             is HasilOperasi.Sukses -> salin.nilai
             is HasilOperasi.Gagal -> return salin
         }
-        val hapusAsal = hapusEntitasTunggalAtauRekursif(docUri, adalahFolder)
-        if (hapusAsal is HasilOperasi.Gagal) {
+        val terhapus = runCatching { DocumentsContract.deleteDocument(contentResolver, docUri) }.getOrDefault(false)
+        if (!terhapus) {
             return HasilOperasi.Gagal(
-                "Salinan '$namaBaru' sudah dibuat, tetapi gagal menghapus berkas asal: ${hapusAsal.pesan}",
-                hapusAsal.penyebab
+                "Salinan '$namaBaru' sudah dibuat, tetapi gagal menghapus berkas asal",
+                PenyebabGalat.IZIN_DITOLAK
             )
         }
         val entitasBaru = bacaSatuEntitas(targetBaruUri)
-            ?: return HasilOperasi.Gagal("Gagal membaca entitas hasil ganti nama", PenyebabGalat.TIDAK_DITEMUKAN)
+            ?: return HasilOperasi.Gagal("Gagal membaca berkas hasil ganti nama", PenyebabGalat.TIDAK_DITEMUKAN)
         return HasilOperasi.Sukses(entitasBaru)
     }
 
@@ -543,7 +608,7 @@ class SafOperasiBerkas(
         namaBaru: String
     ): HasilOperasi<EntitasBerkas> {
         val namaTemp = ".fm_rn_${Random.nextInt(0x100000, 0xFFFFFF).toString(16)}_$namaBaru"
-        val tempUri = when (val resTemp = salinEntriKeNamaBaru(docUri, adalahFolder = false, parentUri = parentUri, namaBaru = namaTemp)) {
+        val tempUri = when (val resTemp = salinBerkasTunggalKeNama(docUri, parentUri, namaTemp)) {
             is HasilOperasi.Sukses -> resTemp.nilai
             is HasilOperasi.Gagal -> return resTemp
         }
@@ -565,7 +630,7 @@ class SafOperasiBerkas(
                 return HasilOperasi.Gagal("Gagal menghapus berkas target konflik sebelum menimpa", PenyebabGalat.IZIN_DITOLAK)
             }
 
-            val hasilFinal = salinEntriKeNamaBaru(tempUri, adalahFolder = false, parentUri = parentUri, namaBaru = namaBaru)
+            val hasilFinal = salinBerkasTunggalKeNama(tempUri, parentUri, namaBaru)
             return when (hasilFinal) {
                 is HasilOperasi.Sukses -> {
                     withContext(NonCancellable) {
@@ -589,148 +654,248 @@ class SafOperasiBerkas(
         }
     }
 
-    private suspend fun salinEntriKeNamaBaru(
+    private suspend fun salinBerkasTunggalKeNama(
         sumberUri: Uri,
-        adalahFolder: Boolean,
         parentUri: Uri,
         namaBaru: String
     ): HasilOperasi<Uri> {
-        return if (adalahFolder) {
-            salinFolderRekursifSaf(sumberUri, parentUri, namaBaru)
-        } else {
-            val mime = tentukanMimeType(namaBaru)
-            val createdUri = try {
-                DocumentsContract.createDocument(contentResolver, parentUri, mime, namaBaru)
-                    ?: return HasilOperasi.Gagal("Gagal membuat berkas '$namaBaru'", PenyebabGalat.TIDAK_DIKETAHUI)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: SecurityException) {
-                return HasilOperasi.Gagal(e.message ?: "Izin buat berkas ditolak", PenyebabGalat.IZIN_DITOLAK)
-            } catch (e: Exception) {
-                return HasilOperasi.Gagal(e.message ?: "Gagal membuat berkas '$namaBaru'", PenyebabGalat.TIDAK_DIKETAHUI)
-            }
+        val mime = tentukanMimeType(namaBaru)
+        val createdUri = try {
+            DocumentsContract.createDocument(contentResolver, parentUri, mime, namaBaru)
+                ?: return HasilOperasi.Gagal("Gagal membuat berkas '$namaBaru'", PenyebabGalat.TIDAK_DIKETAHUI)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: SecurityException) {
+            return HasilOperasi.Gagal(e.message ?: "Izin buat berkas ditolak", PenyebabGalat.IZIN_DITOLAK)
+        } catch (e: Exception) {
+            return HasilOperasi.Gagal(e.message ?: "Gagal membuat berkas '$namaBaru'", PenyebabGalat.TIDAK_DIKETAHUI)
+        }
 
-            when (val salin = salinDanVerifikasiStreamSaf(sumberUri, createdUri)) {
-                is HasilOperasi.Sukses -> HasilOperasi.Sukses(createdUri)
-                is HasilOperasi.Gagal -> {
-                    withContext(NonCancellable) { hapusAman(createdUri) }
-                    salin
-                }
+        val buffer = ByteArray(UKURAN_BUFFER_SALIN_SAF)
+        return when (val salin = salinDanVerifikasiStreamSaf(sumberUri, createdUri, buffer, CRC32(), CRC32())) {
+            is HasilOperasi.Sukses -> HasilOperasi.Sukses(createdUri)
+            is HasilOperasi.Gagal -> {
+                withContext(NonCancellable) { hapusAman(createdUri) }
+                salin
             }
         }
     }
 
-    private suspend fun salinFolderRekursifSaf(
-        sumberFolderUri: Uri,
-        parentTujuanUri: Uri,
-        namaFolderBaru: String
-    ): HasilOperasi<Uri> {
-        val rootTujuanUri = try {
-            DocumentsContract.createDocument(
-                contentResolver,
-                parentTujuanUri,
-                DocumentsContract.Document.MIME_TYPE_DIR,
-                namaFolderBaru
-            ) ?: return HasilOperasi.Gagal("Gagal membuat folder '$namaFolderBaru'", PenyebabGalat.TIDAK_DIKETAHUI)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: SecurityException) {
-            return HasilOperasi.Gagal(e.message ?: "Izin buat folder ditolak", PenyebabGalat.IZIN_DITOLAK)
-        } catch (e: Exception) {
-            return HasilOperasi.Gagal(e.message ?: "Gagal membuat folder '$namaFolderBaru'", PenyebabGalat.TIDAK_DIKETAHUI)
-        }
+    private data class EntriFolderPohon(
+        val uri: Uri,
+        val docId: String,
+        val nama: String,
+        val indeksFolderInduk: Int
+    )
 
-        val dikunjungi = HashSet<String>()
-        val antrean = ArrayDeque<Triple<Uri, Uri, Int>>()
-        runCatching { DocumentsContract.getDocumentId(sumberFolderUri) }.getOrNull()?.let { dikunjungi.add(it) }
-        antrean.addLast(Triple(sumberFolderUri, rootTujuanUri, 0))
-        var totalItem = 0
+    private data class EntriBerkasPohon(
+        val uri: Uri,
+        val docId: String,
+        val nama: String,
+        val indeksFolderInduk: Int
+    )
 
-        try {
-            while (antrean.isNotEmpty()) {
+    private data class PohonSaf(
+        val daftarFolder: List<EntriFolderPohon>,
+        val daftarBerkas: List<EntriBerkasPohon>
+    ) {
+        val totalItemOperasi: Int get() = daftarFolder.size + daftarBerkas.size
+    }
+
+    private data class HasilSalinPohon(
+        val rootTujuanUri: Uri,
+        val folderTujuanUris: List<Uri>,
+        val berkasTujuanUris: List<Uri>
+    )
+
+    private suspend fun kumpulkanPohonSaf(
+        rootFolderUri: Uri,
+        namaRootTampilan: String,
+        batasTotalItem: Int,
+        pelapor: PelaporProgresOperasi?
+    ): HasilOperasi<PohonSaf> {
+        val rootDocId = runCatching { DocumentsContract.getDocumentId(rootFolderUri) }.getOrNull()
+            ?: rootFolderUri.toString()
+        val daftarFolder = ArrayList<EntriFolderPohon>(32)
+        val daftarBerkas = ArrayList<EntriBerkasPohon>(64)
+        val dikunjungi = HashSet<String>(128)
+        val antrean = ArrayDeque<Pair<Int, Int>>()
+
+        dikunjungi.add(rootDocId)
+        daftarFolder.add(EntriFolderPohon(rootFolderUri, rootDocId, namaRootTampilan, indeksFolderInduk = -1))
+        antrean.addLast(0 to 0)
+
+        while (antrean.isNotEmpty()) {
+            currentCoroutineContext().ensureActive()
+            val (idxInduk, kedalaman) = antrean.removeFirst()
+            if (kedalaman >= BATAS_KEDALAMAN_REKURSIF_SAF) {
+                return HasilOperasi.Gagal(
+                    "Kedalaman folder melebihi batas aman ($BATAS_KEDALAMAN_REKURSIF_SAF tingkat)",
+                    PenyebabGalat.VALIDASI
+                )
+            }
+            pelapor?.onProgres(
+                0,
+                0,
+                "Memindai ${daftarFolder.size} folder, ${daftarBerkas.size} berkas..."
+            )
+
+            val anakList = when (val res = daftarAnakSingkat(daftarFolder[idxInduk].uri)) {
+                is HasilOperasi.Sukses -> res.nilai
+                is HasilOperasi.Gagal -> return res
+            }
+
+            for (anak in anakList) {
                 currentCoroutineContext().ensureActive()
-                val (sumberDir, tujuanDir, kedalaman) = antrean.removeFirst()
-                if (kedalaman >= BATAS_KEDALAMAN_REKURSIF_SAF) {
-                    withContext(NonCancellable) { hapusFolderRekursifBottomUp(rootTujuanUri) }
+                if (!dikunjungi.add(anak.docId)) continue
+                if (apakahJalurBerulang(anak.docId)) {
                     return HasilOperasi.Gagal(
-                        "Kedalaman folder melebihi batas aman ($BATAS_KEDALAMAN_REKURSIF_SAF tingkat)",
+                        "Terdeteksi potensi siklus tautan simbolik pada '${anak.nama}'",
                         PenyebabGalat.VALIDASI
                     )
                 }
-
-                val anakList = when (val res = daftarAnakSingkat(sumberDir)) {
-                    is HasilOperasi.Sukses -> res.nilai
-                    is HasilOperasi.Gagal -> {
-                        withContext(NonCancellable) { hapusFolderRekursifBottomUp(rootTujuanUri) }
-                        return res
-                    }
+                val totalSekarang = daftarFolder.size + daftarBerkas.size
+                if (totalSekarang >= batasTotalItem) {
+                    return HasilOperasi.Gagal(
+                        "Folder berisi lebih dari $batasTotalItem item; operasi fallback SAF dibatalkan agar tidak membebani sistem",
+                        PenyebabGalat.TIDAK_DIDUKUNG
+                    )
                 }
-
-                for (anak in anakList) {
-                    currentCoroutineContext().ensureActive()
-                    if (!dikunjungi.add(anak.docId)) continue
-                    if (apakahJalurBerulang(anak.docId)) {
-                        withContext(NonCancellable) { hapusFolderRekursifBottomUp(rootTujuanUri) }
-                        return HasilOperasi.Gagal(
-                            "Terdeteksi potensi siklus tautan simbolik pada '${anak.nama}'",
-                            PenyebabGalat.VALIDASI
-                        )
-                    }
-                    totalItem++
-                    if (totalItem > BATAS_ITEM_FALLBACK_SAF) {
-                        withContext(NonCancellable) { hapusFolderRekursifBottomUp(rootTujuanUri) }
-                        return HasilOperasi.Gagal(
-                            "Folder berisi lebih dari $BATAS_ITEM_FALLBACK_SAF item; ganti nama fallback SAF dibatalkan agar tidak membebani sistem",
-                            PenyebabGalat.TIDAK_DIDUKUNG
-                        )
-                    }
-                    if (anak.adalahFolder) {
-                        val subTujuan = DocumentsContract.createDocument(
-                            contentResolver,
-                            tujuanDir,
-                            DocumentsContract.Document.MIME_TYPE_DIR,
-                            anak.nama
-                        ) ?: run {
-                            withContext(NonCancellable) { hapusFolderRekursifBottomUp(rootTujuanUri) }
-                            return HasilOperasi.Gagal("Gagal membuat subfolder '${anak.nama}'", PenyebabGalat.TIDAK_DIKETAHUI)
-                        }
-                        antrean.addLast(Triple(anak.uri, subTujuan, kedalaman + 1))
-                    } else {
-                        val mimeAnak = tentukanMimeType(anak.nama)
-                        val berkasTujuan = DocumentsContract.createDocument(
-                            contentResolver,
-                            tujuanDir,
-                            mimeAnak,
-                            anak.nama
-                        ) ?: run {
-                            withContext(NonCancellable) { hapusFolderRekursifBottomUp(rootTujuanUri) }
-                            return HasilOperasi.Gagal("Gagal membuat berkas '${anak.nama}'", PenyebabGalat.TIDAK_DIKETAHUI)
-                        }
-                        val salin = salinDanVerifikasiStreamSaf(anak.uri, berkasTujuan)
-                        if (salin is HasilOperasi.Gagal) {
-                            withContext(NonCancellable) { hapusFolderRekursifBottomUp(rootTujuanUri) }
-                            return salin
-                        }
-                    }
+                if (anak.adalahFolder) {
+                    val idxBaru = daftarFolder.size
+                    daftarFolder.add(EntriFolderPohon(anak.uri, anak.docId, anak.nama, indeksFolderInduk = idxInduk))
+                    antrean.addLast(idxBaru to (kedalaman + 1))
+                } else {
+                    daftarBerkas.add(EntriBerkasPohon(anak.uri, anak.docId, anak.nama, indeksFolderInduk = idxInduk))
                 }
             }
-            return HasilOperasi.Sukses(rootTujuanUri)
+        }
+        return HasilOperasi.Sukses(PohonSaf(daftarFolder, daftarBerkas))
+    }
+
+    private suspend fun salinPohonSafTerpindai(
+        pohon: PohonSaf,
+        parentTujuanUri: Uri,
+        namaFolderBaru: String,
+        pelapor: PelaporProgresOperasi?
+    ): HasilOperasi<HasilSalinPohon> {
+        val folderTujuanUris = ArrayList<Uri>(pohon.daftarFolder.size)
+        val berkasTujuanUris = ArrayList<Uri>(pohon.daftarBerkas.size)
+        val totalOps = pohon.totalItemOperasi
+        var diproses = 0
+        val buffer = ByteArray(UKURAN_BUFFER_SALIN_SAF)
+        val crcSumber = CRC32()
+        val crcAktual = CRC32()
+
+        fun bersihkanSebagian() {
+            for (b in berkasTujuanUris.asReversed()) hapusAman(b)
+            for (f in folderTujuanUris.asReversed()) hapusAman(f)
+        }
+
+        try {
+            for (idx in pohon.daftarFolder.indices) {
+                currentCoroutineContext().ensureActive()
+                val f = pohon.daftarFolder[idx]
+                val parentTarget = if (f.indeksFolderInduk < 0) {
+                    parentTujuanUri
+                } else {
+                    folderTujuanUris[f.indeksFolderInduk]
+                }
+                val namaBuat = if (idx == 0) namaFolderBaru else f.nama
+                pelapor?.onProgres(++diproses, totalOps, namaBuat)
+
+                val dirBaru = DocumentsContract.createDocument(
+                    contentResolver,
+                    parentTarget,
+                    DocumentsContract.Document.MIME_TYPE_DIR,
+                    namaBuat
+                ) ?: run {
+                    withContext(NonCancellable) { bersihkanSebagian() }
+                    return HasilOperasi.Gagal("Gagal membuat folder '$namaBuat'", PenyebabGalat.TIDAK_DIKETAHUI)
+                }
+                folderTujuanUris.add(dirBaru)
+            }
+
+            for (berkas in pohon.daftarBerkas) {
+                currentCoroutineContext().ensureActive()
+                val parentTarget = folderTujuanUris[berkas.indeksFolderInduk]
+                pelapor?.onProgres(++diproses, totalOps, berkas.nama)
+
+                val berkasBaru = DocumentsContract.createDocument(
+                    contentResolver,
+                    parentTarget,
+                    tentukanMimeType(berkas.nama),
+                    berkas.nama
+                ) ?: run {
+                    withContext(NonCancellable) { bersihkanSebagian() }
+                    return HasilOperasi.Gagal("Gagal membuat berkas '${berkas.nama}'", PenyebabGalat.TIDAK_DIKETAHUI)
+                }
+                berkasTujuanUris.add(berkasBaru)
+
+                val salin = salinDanVerifikasiStreamSaf(berkas.uri, berkasBaru, buffer, crcSumber, crcAktual)
+                if (salin is HasilOperasi.Gagal) {
+                    withContext(NonCancellable) { bersihkanSebagian() }
+                    return salin
+                }
+            }
+
+            return HasilOperasi.Sukses(
+                HasilSalinPohon(
+                    rootTujuanUri = folderTujuanUris.first(),
+                    folderTujuanUris = folderTujuanUris,
+                    berkasTujuanUris = berkasTujuanUris
+                )
+            )
         } catch (e: CancellationException) {
-            withContext(NonCancellable) { hapusFolderRekursifBottomUp(rootTujuanUri) }
+            withContext(NonCancellable) { bersihkanSebagian() }
             throw e
+        } catch (e: SecurityException) {
+            withContext(NonCancellable) { bersihkanSebagian() }
+            return HasilOperasi.Gagal(e.message ?: "Izin menyalin folder SAF ditolak", PenyebabGalat.IZIN_DITOLAK)
         } catch (e: Exception) {
-            withContext(NonCancellable) { hapusFolderRekursifBottomUp(rootTujuanUri) }
+            withContext(NonCancellable) { bersihkanSebagian() }
             return HasilOperasi.Gagal(e.message ?: "Gagal menyalin isi folder SAF", PenyebabGalat.TIDAK_DIKETAHUI)
+        }
+    }
+
+    private fun hapusHasilSalinPohon(hasil: HasilSalinPohon) {
+        for (b in hasil.berkasTujuanUris.asReversed()) hapusAman(b)
+        for (f in hasil.folderTujuanUris.asReversed()) hapusAman(f)
+    }
+
+    private suspend fun hapusPohonDariDaftar(pohon: PohonSaf): HasilOperasi<Unit> {
+        return try {
+            for (b in pohon.daftarBerkas.asReversed()) {
+                currentCoroutineContext().ensureActive()
+                if (!DocumentsContract.deleteDocument(contentResolver, b.uri)) {
+                    return HasilOperasi.Gagal("Gagal menghapus berkas asal '${b.nama}'", PenyebabGalat.IZIN_DITOLAK)
+                }
+            }
+            for (f in pohon.daftarFolder.asReversed()) {
+                currentCoroutineContext().ensureActive()
+                if (!DocumentsContract.deleteDocument(contentResolver, f.uri)) {
+                    return HasilOperasi.Gagal("Gagal menghapus folder asal '${f.nama}'", PenyebabGalat.IZIN_DITOLAK)
+                }
+            }
+            HasilOperasi.Sukses(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: SecurityException) {
+            HasilOperasi.Gagal(e.message ?: "Izin hapus folder asal SAF ditolak", PenyebabGalat.IZIN_DITOLAK)
+        } catch (e: Exception) {
+            HasilOperasi.Gagal(e.message ?: "Gagal menghapus folder asal SAF", PenyebabGalat.TIDAK_DIKETAHUI)
         }
     }
 
     private suspend fun salinDanVerifikasiStreamSaf(
         sumberUri: Uri,
-        targetUri: Uri
+        targetUri: Uri,
+        buffer: ByteArray,
+        crcSumber: CRC32,
+        crcAktual: CRC32
     ): HasilOperasi<Unit> {
-        val crcSumber = CRC32()
+        crcSumber.reset()
         var totalByte = 0L
-        val buffer = ByteArray(UKURAN_BUFFER_SALIN_SAF)
         try {
             val inStream = contentResolver.openInputStream(sumberUri)
                 ?: return HasilOperasi.Gagal("Gagal membuka aliran baca sumber SAF", PenyebabGalat.IZIN_DITOLAK)
@@ -760,14 +925,13 @@ class SafOperasiBerkas(
                 return HasilOperasi.Sukses(Unit)
             }
 
-            // Verifikasi baca ulang CRC32 & ukuran byte
             val verifikasiIn = try {
                 contentResolver.openInputStream(targetUri)
             } catch (_: Exception) {
                 null
             }
             if (verifikasiIn != null) {
-                val crcAktual = CRC32()
+                crcAktual.reset()
                 var byteAktual = 0L
                 verifikasiIn.use { ver ->
                     while (true) {
@@ -895,73 +1059,35 @@ class SafOperasiBerkas(
     }
 
     private suspend fun hapusFolderRekursifBottomUp(rootFolderUri: Uri): HasilOperasi<Unit> {
-        val daftarFolderUrut = mutableListOf<Uri>()
-        val daftarBerkas = mutableListOf<Uri>()
-        val antrean = ArrayDeque<Pair<Uri, Int>>()
-        val dikunjungi = HashSet<String>()
-
-        runCatching { DocumentsContract.getDocumentId(rootFolderUri) }.getOrNull()?.let { dikunjungi.add(it) }
-        antrean.addLast(rootFolderUri to 0)
-        var totalItem = 0
-
-        while (antrean.isNotEmpty()) {
-            currentCoroutineContext().ensureActive()
-            val (dirUri, kedalaman) = antrean.removeFirst()
-            if (kedalaman > BATAS_KEDALAMAN_REKURSIF_SAF) {
-                return HasilOperasi.Gagal(
-                    "Kedalaman folder melebihi batas aman hapus SAF ($BATAS_KEDALAMAN_REKURSIF_SAF tingkat)",
-                    PenyebabGalat.VALIDASI
-                )
-            }
-            daftarFolderUrut.add(dirUri)
-
-            val anakList = when (val res = daftarAnakSingkat(dirUri)) {
-                is HasilOperasi.Sukses -> res.nilai
-                is HasilOperasi.Gagal -> return res
-            }
-            for (anak in anakList) {
-                if (!dikunjungi.add(anak.docId)) continue
-                if (apakahJalurBerulang(anak.docId)) {
-                    return HasilOperasi.Gagal(
-                        "Terdeteksi potensi siklus tautan simbolik saat menghapus '${anak.nama}'",
-                        PenyebabGalat.VALIDASI
-                    )
-                }
-                totalItem++
-                if (totalItem > BATAS_ITEM_FALLBACK_SAF * 2) {
-                    return HasilOperasi.Gagal(
-                        "Folder terlalu besar untuk dihapus rekursif via SAF",
-                        PenyebabGalat.TIDAK_DIDUKUNG
-                    )
-                }
-                if (anak.adalahFolder) {
-                    antrean.addLast(anak.uri to (kedalaman + 1))
-                } else {
-                    daftarBerkas.add(anak.uri)
-                }
-            }
+        val pelapor = currentCoroutineContext()[PelaporProgresOperasi]
+        val pohon = when (val res = kumpulkanPohonSaf(rootFolderUri, "", BATAS_ITEM_HAPUS_SAF, pelapor)) {
+            is HasilOperasi.Sukses -> res.nilai
+            is HasilOperasi.Gagal -> return res
         }
-
-        try {
-            for (berkasUri in daftarBerkas) {
+        val totalOps = pohon.totalItemOperasi
+        var diproses = 0
+        return try {
+            for (b in pohon.daftarBerkas.asReversed()) {
                 currentCoroutineContext().ensureActive()
-                if (!DocumentsContract.deleteDocument(contentResolver, berkasUri)) {
+                pelapor?.onProgres(++diproses, totalOps, b.nama)
+                if (!DocumentsContract.deleteDocument(contentResolver, b.uri)) {
                     return HasilOperasi.Gagal("Gagal menghapus salah satu berkas di dalam folder", PenyebabGalat.IZIN_DITOLAK)
                 }
             }
-            for (folderUri in daftarFolderUrut.asReversed()) {
+            for (f in pohon.daftarFolder.asReversed()) {
                 currentCoroutineContext().ensureActive()
-                if (!DocumentsContract.deleteDocument(contentResolver, folderUri)) {
+                pelapor?.onProgres(++diproses, totalOps, f.nama.ifBlank { "folder" })
+                if (!DocumentsContract.deleteDocument(contentResolver, f.uri)) {
                     return HasilOperasi.Gagal("Gagal menghapus folder SAF setelah dikosongkan", PenyebabGalat.IZIN_DITOLAK)
                 }
             }
-            return HasilOperasi.Sukses(Unit)
+            HasilOperasi.Sukses(Unit)
         } catch (e: CancellationException) {
             throw e
         } catch (e: SecurityException) {
-            return HasilOperasi.Gagal(e.message ?: "Izin hapus isi folder SAF ditolak", PenyebabGalat.IZIN_DITOLAK)
+            HasilOperasi.Gagal(e.message ?: "Izin hapus isi folder SAF ditolak", PenyebabGalat.IZIN_DITOLAK)
         } catch (e: Exception) {
-            return HasilOperasi.Gagal(e.message ?: "Gagal menghapus isi folder SAF", PenyebabGalat.TIDAK_DIKETAHUI)
+            HasilOperasi.Gagal(e.message ?: "Gagal menghapus isi folder SAF", PenyebabGalat.TIDAK_DIKETAHUI)
         }
     }
 
