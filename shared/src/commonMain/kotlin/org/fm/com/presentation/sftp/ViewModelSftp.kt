@@ -1,3 +1,5 @@
+@file:Suppress("SdCardPath")
+
 package org.fm.com.presentation.sftp
 
 import androidx.compose.runtime.Immutable
@@ -16,6 +18,7 @@ import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.sftp.HasilUjiKoneksiSftp
 import org.fm.com.domain.sftp.JenisAutentikasi
 import org.fm.com.domain.sftp.LayananKoneksiSftp
+import org.fm.com.domain.sftp.PATH_TERMUX_FILES_BAWAAN
 import org.fm.com.domain.sftp.PengenalSftp
 import org.fm.com.domain.sftp.ProfilSftp
 import org.fm.com.domain.sftp.RahasiaSftp
@@ -41,7 +44,7 @@ data class FormProfilSftpUi(
     val host: String = "127.0.0.1",
     val portInput: String = "8022",
     val namaPengguna: String = "",
-    val pathAwal: String = "/data/data/com.termux/files/home",
+    val pathAwal: String = PATH_TERMUX_FILES_BAWAAN,
     val autentikasi: JenisAutentikasi = JenisAutentikasi.SANDI,
     val sandiInput: String = "",
     val kunciPemInput: String = "",

@@ -1,3 +1,5 @@
+@file:Suppress("SdCardPath")
+
 package org.fm.com.domain.sftp
 
 import kotlinx.coroutines.flow.Flow
@@ -7,6 +9,8 @@ import org.fm.com.domain.model.PenyebabGalat
 
 enum class JenisAutentikasi { SANDI, KUNCI_PRIBADI }
 
+const val PATH_TERMUX_FILES_BAWAAN = "/data/data/com.termux/files"
+
 /** Data NON-rahasia. Aman disimpan di DB biasa (PreferensiEntity). */
 data class ProfilSftp(
     val id: String,
@@ -14,7 +18,7 @@ data class ProfilSftp(
     val host: String = "127.0.0.1",
     val port: Int = 8022,
     val namaPengguna: String,
-    val pathAwal: String = "/data/data/com.termux/files/home",
+    val pathAwal: String = PATH_TERMUX_FILES_BAWAAN,
     val autentikasi: JenisAutentikasi = JenisAutentikasi.SANDI,
     val jenisKunciHost: String? = null,
     val sidikJariHost: String? = null

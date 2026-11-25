@@ -109,6 +109,9 @@ object PemformatLokasiRamah {
             bersih == "/data/data/com.termux/files/home" -> "~/home"
             bersih.startsWith("/data/data/com.termux/files/home/") ->
                 "~/home/${bersih.removePrefix("/data/data/com.termux/files/home/")}"
+            bersih == "/data/data/com.termux/files" -> "termux:files"
+            bersih.startsWith("/data/data/com.termux/files/") ->
+                "termux:${bersih.removePrefix("/data/data/com.termux/files/")}"
             bersih.startsWith("/storage/emulated/0/") ->
                 "sdcard/${bersih.removePrefix("/storage/emulated/0/")}"
             bersih == "/storage/emulated/0" -> "sdcard"
