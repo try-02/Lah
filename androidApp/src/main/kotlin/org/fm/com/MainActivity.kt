@@ -177,15 +177,22 @@ class MainActivity : ComponentActivity() {
                     tampilkanDialogIzinMemori = tampilkanDialogIzinMemori,
                     onMintaIzinMemoriInternal = {
                         tampilkanDialogIzinMemori = false
-                        sedangProsesLauncherIzin = true
-                        val diluncurkan = PengelolaIzinPenyimpanan.luncurkanPengaturanIzinSemuaBerkas(
-                            context = this@MainActivity,
-                            launcher = launcherIzinSemuaBerkas
-                        )
-                        if (!diluncurkan) {
-                            sedangProsesLauncherIzin = false
+                        if (!PengelolaIzinPenyimpanan.apakahManifestDeklarasiIzinSemuaBerkas(this@MainActivity)) {
                             urutanEvent++
-                            pesanEksternal = urutanEvent to "Pengaturan izin semua berkas tidak tersedia di perangkat ini. Gunakan SAF."
+                            pesanEksternal = urutanEvent to
+                                "Izin MANAGE_EXTERNAL_STORAGE belum terpasang di AndroidManifest.xml APK ini."
+                        } else {
+                            sedangProsesLauncherIzin = true
+                            val diluncurkan = PengelolaIzinPenyimpanan.luncurkanPengaturanIzinSemuaBerkas(
+                                context = this@MainActivity,
+                                launcher = launcherIzinSemuaBerkas
+                            )
+                            if (!diluncurkan) {
+                                sedangProsesLauncherIzin = false
+                                urutanEvent++
+                                pesanEksternal = urutanEvent to
+                                    "Pengaturan izin semua berkas tidak tersedia di perangkat ini. Gunakan SAF."
+                            }
                         }
                     },
                     onTutupDialogIzinMemori = { janganTanyaLagi ->

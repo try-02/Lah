@@ -31,8 +31,9 @@ import org.fm.com.domain.repository.PermintaanOperasi
 import org.fm.com.domain.repository.RepositoriOperasiBerkas
 
 private const val UKURAN_BUFFER_SALIN_SAF = 16 * 1024
-private const val BATAS_BFS_FOLDER_SAF = 2_000
-private const val BATAS_KEDALAMAN_REKURSIF_SAF = 64
+private const val BATAS_BFS_FOLDER_SAF = 250
+private const val BATAS_KEDALAMAN_REKURSIF_SAF = 32
+private const val BATAS_ITEM_FALLBACK_SAF = 500
 
 class SafOperasiBerkas(
     context: Context,
@@ -643,6 +644,7 @@ class SafOperasiBerkas(
         val antrean = ArrayDeque<Triple<Uri, Uri, Int>>()
         runCatching { DocumentsContract.getDocumentId(sumberFolderUri) }.getOrNull()?.let { dikunjungi.add(it) }
         antrean.addLast(Triple(sumberFolderUri, rootTujuanUri, 0))
+        var totalItem = 0
 
         try {
             while (antrean.isNotEmpty()) {
@@ -667,6 +669,21 @@ class SafOperasiBerkas(
                 for (anak in anakList) {
                     currentCoroutineContext().ensureActive()
                     if (!dikunjungi.add(anak.docId)) continue
+                    if (apakahJalurBerulang(anak.docId)) {
+                        withContext(NonCancellable) { hapusFolderRekursifBottomUp(rootTujuanUri) }
+                        return HasilOperasi.Gagal(
+                            "Terdeteksi potensi siklus tautan simbolik pada '${anak.nama}'",
+                            PenyebabGalat.VALIDASI
+                        )
+                    }
+                    totalItem++
+                    if (totalItem > BATAS_ITEM_FALLBACK_SAF) {
+                        withContext(NonCancellable) { hapusFolderRekursifBottomUp(rootTujuanUri) }
+                        return HasilOperasi.Gagal(
+                            "Folder berisi lebih dari $BATAS_ITEM_FALLBACK_SAF item; ganti nama fallback SAF dibatalkan agar tidak membebani sistem",
+                            PenyebabGalat.TIDAK_DIDUKUNG
+                        )
+                    }
                     if (anak.adalahFolder) {
                         val subTujuan = DocumentsContract.createDocument(
                             contentResolver,
@@ -717,7 +734,7 @@ class SafOperasiBerkas(
         try {
             val inStream = contentResolver.openInputStream(sumberUri)
                 ?: return HasilOperasi.Gagal("Gagal membuka aliran baca sumber SAF", PenyebabGalat.IZIN_DITOLAK)
-            val outStream = bukaOutputStreamTarget(targetUri)
+            val outStream = bukaOutputStreamTarget(targetUri, preferModeLangsung = true)
                 ?: run {
                     runCatching { inStream.close() }
                     return HasilOperasi.Gagal("Gagal membuka aliran tulis target SAF", PenyebabGalat.IZIN_DITOLAK)
@@ -737,6 +754,10 @@ class SafOperasiBerkas(
                     }
                     dst.flush()
                 }
+            }
+
+            if (totalByte == 0L) {
+                return HasilOperasi.Sukses(Unit)
             }
 
             // Verifikasi baca ulang CRC32 & ukuran byte
@@ -817,8 +838,15 @@ class SafOperasiBerkas(
         }
     }
 
-    private fun bukaOutputStreamTarget(targetUri: Uri): OutputStream? {
-        val daftarMode = arrayOf("wt", "rwt", "w")
+    private fun bukaOutputStreamTarget(
+        targetUri: Uri,
+        preferModeLangsung: Boolean = false
+    ): OutputStream? {
+        val daftarMode = if (preferModeLangsung) {
+            arrayOf("w", "wt", "rwt")
+        } else {
+            arrayOf("wt", "rwt", "w")
+        }
         var galatTerakhir: Exception? = null
         for (mode in daftarMode) {
             try {
@@ -869,15 +897,22 @@ class SafOperasiBerkas(
     private suspend fun hapusFolderRekursifBottomUp(rootFolderUri: Uri): HasilOperasi<Unit> {
         val daftarFolderUrut = mutableListOf<Uri>()
         val daftarBerkas = mutableListOf<Uri>()
-        val antrean = ArrayDeque<Uri>()
+        val antrean = ArrayDeque<Pair<Uri, Int>>()
         val dikunjungi = HashSet<String>()
 
         runCatching { DocumentsContract.getDocumentId(rootFolderUri) }.getOrNull()?.let { dikunjungi.add(it) }
-        antrean.addLast(rootFolderUri)
+        antrean.addLast(rootFolderUri to 0)
+        var totalItem = 0
 
         while (antrean.isNotEmpty()) {
             currentCoroutineContext().ensureActive()
-            val dirUri = antrean.removeFirst()
+            val (dirUri, kedalaman) = antrean.removeFirst()
+            if (kedalaman > BATAS_KEDALAMAN_REKURSIF_SAF) {
+                return HasilOperasi.Gagal(
+                    "Kedalaman folder melebihi batas aman hapus SAF ($BATAS_KEDALAMAN_REKURSIF_SAF tingkat)",
+                    PenyebabGalat.VALIDASI
+                )
+            }
             daftarFolderUrut.add(dirUri)
 
             val anakList = when (val res = daftarAnakSingkat(dirUri)) {
@@ -886,8 +921,21 @@ class SafOperasiBerkas(
             }
             for (anak in anakList) {
                 if (!dikunjungi.add(anak.docId)) continue
+                if (apakahJalurBerulang(anak.docId)) {
+                    return HasilOperasi.Gagal(
+                        "Terdeteksi potensi siklus tautan simbolik saat menghapus '${anak.nama}'",
+                        PenyebabGalat.VALIDASI
+                    )
+                }
+                totalItem++
+                if (totalItem > BATAS_ITEM_FALLBACK_SAF * 2) {
+                    return HasilOperasi.Gagal(
+                        "Folder terlalu besar untuk dihapus rekursif via SAF",
+                        PenyebabGalat.TIDAK_DIDUKUNG
+                    )
+                }
                 if (anak.adalahFolder) {
-                    antrean.addLast(anak.uri)
+                    antrean.addLast(anak.uri to (kedalaman + 1))
                 } else {
                     daftarBerkas.add(anak.uri)
                 }
@@ -1297,6 +1345,27 @@ class SafOperasiBerkas(
     }
 
     internal companion object {
+        internal fun apakahJalurBerulang(docId: String): Boolean {
+            val segmen = docId.split('/').filter { it.isNotEmpty() }
+            if (segmen.size < 4) return false
+            for (i in 0 until segmen.size - 2) {
+                if (segmen[i] == segmen[i + 1] && segmen[i + 1] == segmen[i + 2]) {
+                    return true
+                }
+            }
+            if (segmen.size >= 6) {
+                val n = segmen.size
+                if (segmen[n - 1] == segmen[n - 3] &&
+                    segmen[n - 2] == segmen[n - 4] &&
+                    segmen[n - 3] == segmen[n - 5] &&
+                    segmen[n - 4] == segmen[n - 6]
+                ) {
+                    return true
+                }
+            }
+            return false
+        }
+
         val PROYEKSI_SATU_DOKUMEN = arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,

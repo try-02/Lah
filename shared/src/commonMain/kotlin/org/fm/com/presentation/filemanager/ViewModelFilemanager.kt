@@ -2,11 +2,13 @@ package org.fm.com.presentation.filemanager
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -166,28 +168,39 @@ class ViewModelFilemanager(
         }
         pekerjaanMuatFolder = viewModelScope.launch {
             var sudahCatatRiwayat = false
-            daftarFolderUseCase(lokasi, tampilkanTersembunyi = true).collect { hasil ->
-                when (hasil) {
-                    is HasilOperasi.Sukses -> {
-                        if (!sudahCatatRiwayat) {
-                            sudahCatatRiwayat = true
-                            riwayatLokasiUseCase?.catatKunjungan(lokasi, adalahFolder = true)
-                        }
-                        daftarEntitasMentah = hasil.nilai
-                        perbaruiDaftarTampilan()
+            daftarFolderUseCase(lokasi, tampilkanTersembunyi = true)
+                .catch { e ->
+                    daftarEntitasMentah = emptyList()
+                    _state.update {
+                        it.copy(
+                            daftarItem = emptyList(),
+                            sedangMemuat = false,
+                            pesanGalat = e.message ?: "Gagal memuat daftar berkas"
+                        )
                     }
-                    is HasilOperasi.Gagal -> {
-                        daftarEntitasMentah = emptyList()
-                        _state.update {
-                            it.copy(
-                                daftarItem = emptyList(),
-                                sedangMemuat = false,
-                                pesanGalat = hasil.pesan
-                            )
+                }
+                .collect { hasil ->
+                    when (hasil) {
+                        is HasilOperasi.Sukses -> {
+                            if (!sudahCatatRiwayat) {
+                                sudahCatatRiwayat = true
+                                riwayatLokasiUseCase?.catatKunjungan(lokasi, adalahFolder = true)
+                            }
+                            daftarEntitasMentah = hasil.nilai
+                            perbaruiDaftarTampilan()
+                        }
+                        is HasilOperasi.Gagal -> {
+                            daftarEntitasMentah = emptyList()
+                            _state.update {
+                                it.copy(
+                                    daftarItem = emptyList(),
+                                    sedangMemuat = false,
+                                    pesanGalat = hasil.pesan
+                                )
+                            }
                         }
                     }
                 }
-            }
         }
     }
 
@@ -200,23 +213,35 @@ class ViewModelFilemanager(
         val induk = _state.value.lokasiSaatIni ?: return
         val uc = buatBerkasUseCase ?: return laporkanOperasiTakDidukung()
         viewModelScope.launch {
-            _state.update { it.copy(dialogBuatTerbuka = false, konfirmasiTimpa = null, sedangMemuat = true) }
-            when (val hasil = uc.buatFolder(induk, nama, konfirmasi = konfirmasi)) {
-                is HasilOperasi.Sukses -> {
-                    _state.update { it.copy(pesanInfo = "Folder '${hasil.nilai.nama}' berhasil dibuat") }
-                    segarkan()
-                }
-                is HasilOperasi.Gagal -> {
-                    if (hasil.penyebab == PenyebabGalat.KONFLIK && !konfirmasi) {
-                        _state.update {
-                            it.copy(
-                                sedangMemuat = false,
-                                konfirmasiTimpa = PermintaanKonfirmasiTimpa(JenisAksiTimpa.BUAT_FOLDER, nama)
-                            )
-                        }
-                    } else {
-                        _state.update { it.copy(sedangMemuat = false, pesanInfo = hasil.pesan) }
+            var lanjutSegarkan = false
+            try {
+                _state.update { it.copy(dialogBuatTerbuka = false, konfirmasiTimpa = null, sedangMemuat = true) }
+                when (val hasil = uc.buatFolder(induk, nama, konfirmasi = konfirmasi)) {
+                    is HasilOperasi.Sukses -> {
+                        _state.update { it.copy(pesanInfo = "Folder '${hasil.nilai.nama}' berhasil dibuat") }
+                        lanjutSegarkan = true
+                        segarkan()
                     }
+                    is HasilOperasi.Gagal -> {
+                        if (hasil.penyebab == PenyebabGalat.KONFLIK && !konfirmasi) {
+                            _state.update {
+                                it.copy(
+                                    sedangMemuat = false,
+                                    konfirmasiTimpa = PermintaanKonfirmasiTimpa(JenisAksiTimpa.BUAT_FOLDER, nama)
+                                )
+                            }
+                        } else {
+                            _state.update { it.copy(sedangMemuat = false, pesanInfo = hasil.pesan) }
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(pesanInfo = e.message ?: "Gagal membuat folder") }
+            } finally {
+                if (!lanjutSegarkan) {
+                    _state.update { it.copy(sedangMemuat = false) }
                 }
             }
         }
@@ -226,23 +251,35 @@ class ViewModelFilemanager(
         val induk = _state.value.lokasiSaatIni ?: return
         val uc = buatBerkasUseCase ?: return laporkanOperasiTakDidukung()
         viewModelScope.launch {
-            _state.update { it.copy(dialogBuatTerbuka = false, konfirmasiTimpa = null, sedangMemuat = true) }
-            when (val hasil = uc.buatBerkasKosong(induk, nama, konfirmasi = konfirmasi)) {
-                is HasilOperasi.Sukses -> {
-                    _state.update { it.copy(pesanInfo = "Berkas '${hasil.nilai.nama}' berhasil dibuat") }
-                    segarkan()
-                }
-                is HasilOperasi.Gagal -> {
-                    if (hasil.penyebab == PenyebabGalat.KONFLIK && !konfirmasi) {
-                        _state.update {
-                            it.copy(
-                                sedangMemuat = false,
-                                konfirmasiTimpa = PermintaanKonfirmasiTimpa(JenisAksiTimpa.BUAT_BERKAS, nama)
-                            )
-                        }
-                    } else {
-                        _state.update { it.copy(sedangMemuat = false, pesanInfo = hasil.pesan) }
+            var lanjutSegarkan = false
+            try {
+                _state.update { it.copy(dialogBuatTerbuka = false, konfirmasiTimpa = null, sedangMemuat = true) }
+                when (val hasil = uc.buatBerkasKosong(induk, nama, konfirmasi = konfirmasi)) {
+                    is HasilOperasi.Sukses -> {
+                        _state.update { it.copy(pesanInfo = "Berkas '${hasil.nilai.nama}' berhasil dibuat") }
+                        lanjutSegarkan = true
+                        segarkan()
                     }
+                    is HasilOperasi.Gagal -> {
+                        if (hasil.penyebab == PenyebabGalat.KONFLIK && !konfirmasi) {
+                            _state.update {
+                                it.copy(
+                                    sedangMemuat = false,
+                                    konfirmasiTimpa = PermintaanKonfirmasiTimpa(JenisAksiTimpa.BUAT_BERKAS, nama)
+                                )
+                            }
+                        } else {
+                            _state.update { it.copy(sedangMemuat = false, pesanInfo = hasil.pesan) }
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(pesanInfo = e.message ?: "Gagal membuat berkas") }
+            } finally {
+                if (!lanjutSegarkan) {
+                    _state.update { it.copy(sedangMemuat = false) }
                 }
             }
         }
@@ -252,23 +289,35 @@ class ViewModelFilemanager(
         val uc = gantiNamaBerkasUseCase ?: return laporkanOperasiTakDidukung()
         val indukSaatIni = _state.value.lokasiSaatIni
         viewModelScope.launch {
-            _state.update { it.copy(dialogRenameItem = null, konfirmasiTimpa = null, sedangMemuat = true) }
-            when (val hasil = uc(sumber, namaBaru, konfirmasi = konfirmasi, induk = indukSaatIni)) {
-                is HasilOperasi.Sukses -> {
-                    _state.update { it.copy(pesanInfo = "Nama berhasil diubah menjadi '${hasil.nilai.nama}'") }
-                    segarkan()
-                }
-                is HasilOperasi.Gagal -> {
-                    if (hasil.penyebab == PenyebabGalat.KONFLIK && !konfirmasi) {
-                        _state.update {
-                            it.copy(
-                                sedangMemuat = false,
-                                konfirmasiTimpa = PermintaanKonfirmasiTimpa(JenisAksiTimpa.GANTI_NAMA, namaBaru, sumber)
-                            )
-                        }
-                    } else {
-                        _state.update { it.copy(sedangMemuat = false, pesanInfo = hasil.pesan) }
+            var lanjutSegarkan = false
+            try {
+                _state.update { it.copy(dialogRenameItem = null, konfirmasiTimpa = null, sedangMemuat = true) }
+                when (val hasil = uc(sumber, namaBaru, konfirmasi = konfirmasi, induk = indukSaatIni)) {
+                    is HasilOperasi.Sukses -> {
+                        _state.update { it.copy(pesanInfo = "Nama berhasil diubah menjadi '${hasil.nilai.nama}'") }
+                        lanjutSegarkan = true
+                        segarkan()
                     }
+                    is HasilOperasi.Gagal -> {
+                        if (hasil.penyebab == PenyebabGalat.KONFLIK && !konfirmasi) {
+                            _state.update {
+                                it.copy(
+                                    sedangMemuat = false,
+                                    konfirmasiTimpa = PermintaanKonfirmasiTimpa(JenisAksiTimpa.GANTI_NAMA, namaBaru, sumber)
+                                )
+                            }
+                        } else {
+                            _state.update { it.copy(sedangMemuat = false, pesanInfo = hasil.pesan) }
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(pesanInfo = e.message ?: "Gagal mengganti nama") }
+            } finally {
+                if (!lanjutSegarkan) {
+                    _state.update { it.copy(sedangMemuat = false) }
                 }
             }
         }
@@ -289,25 +338,35 @@ class ViewModelFilemanager(
         val targets = _state.value.dialogHapusItems ?: return
         val uc = hapusBerkasUseCase ?: return laporkanOperasiTakDidukung()
         viewModelScope.launch {
-            _state.update { it.copy(dialogHapusItems = null, sedangMemuat = true) }
-            var jumlahSukses = 0
-            var pesanGagal: String? = null
-            for (lokasi in targets) {
-                when (val hasil = uc(lokasi, konfirmasi = true)) {
-                    is HasilOperasi.Sukses -> jumlahSukses++
-                    is HasilOperasi.Gagal -> if (pesanGagal == null) pesanGagal = hasil.pesan
+            var lanjutSegarkan = false
+            try {
+                _state.update { it.copy(dialogHapusItems = null, sedangMemuat = true) }
+                var jumlahSukses = 0
+                var pesanGagal: String? = null
+                for (lokasi in targets) {
+                    when (val hasil = uc(lokasi, konfirmasi = true)) {
+                        is HasilOperasi.Sukses -> jumlahSukses++
+                        is HasilOperasi.Gagal -> if (pesanGagal == null) pesanGagal = hasil.pesan
+                    }
                 }
-            }
-            val pesanRingkas = when {
-                pesanGagal == null -> "Berhasil menghapus $jumlahSukses item"
-                jumlahSukses > 0 -> "Terhapus $jumlahSukses dari ${targets.size} item. Gagal: $pesanGagal"
-                else -> "Gagal menghapus: $pesanGagal"
-            }
-            _state.update { it.copy(itemTerpilih = emptySet(), pesanInfo = pesanRingkas) }
-            if (jumlahSukses > 0) {
-                segarkan()
-            } else {
-                _state.update { it.copy(sedangMemuat = false) }
+                val pesanRingkas = when {
+                    pesanGagal == null -> "Berhasil menghapus $jumlahSukses item"
+                    jumlahSukses > 0 -> "Terhapus $jumlahSukses dari ${targets.size} item. Gagal: $pesanGagal"
+                    else -> "Gagal menghapus: $pesanGagal"
+                }
+                _state.update { it.copy(itemTerpilih = emptySet(), pesanInfo = pesanRingkas) }
+                if (jumlahSukses > 0) {
+                    lanjutSegarkan = true
+                    segarkan()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(pesanInfo = e.message ?: "Gagal menghapus item") }
+            } finally {
+                if (!lanjutSegarkan) {
+                    _state.update { it.copy(sedangMemuat = false) }
+                }
             }
         }
     }

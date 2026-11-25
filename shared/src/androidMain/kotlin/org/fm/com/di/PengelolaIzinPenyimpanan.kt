@@ -1,8 +1,10 @@
 package org.fm.com.di
 
+import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Environment
 import android.os.storage.StorageManager
@@ -13,6 +15,14 @@ import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.LokasiBerkas
 
 object PengelolaIzinPenyimpanan {
+
+    fun apakahManifestDeklarasiIzinSemuaBerkas(context: Context): Boolean {
+        val info = runCatching {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS)
+        }.getOrNull() ?: return false
+        return info.requestedPermissions?.contains(Manifest.permission.MANAGE_EXTERNAL_STORAGE) == true
+    }
 
     fun sudahPunyaIzinSemuaBerkas(): Boolean =
         runCatching { Environment.isExternalStorageManager() }.getOrDefault(false)
