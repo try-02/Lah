@@ -1,373 +1,121 @@
-Bagian 2: Layer Domain (commonMain)
+1. PengelolaKoneksiSftp.kt
 
-5. shared/src/commonMain/kotlin/org/fm/com/domain/model/LokasiBerkas.kt
+File: shared/src/androidMain/kotlin/org/fm/com/data/sftp/PengelolaKoneksiSftp.kt
 
---- a/shared/src/commonMain/kotlin/org/fm/com/domain/model/LokasiBerkas.kt
-+++ b/shared/src/commonMain/kotlin/org/fm/com/domain/model/LokasiBerkas.kt
-@@ -22,5 +22,8 @@
-     /** Pengenal lokasi dalam sandbox iOS (Document Picker / security scope). */
-     IOS,
-+
-+    /** Pengenal lokasi server SFTP/SSH bebas kredensial (`sftp://<idProfil>/path`). */
-+    SFTP
- }
+Perbarui fungsi petakanPesanRamah di dalam companion object (bagian paling bawah
+file) menjadi:
 
-6. shared/src/commonMain/kotlin/org/fm/com/domain/model/MatriksKemampuan.kt
-
-Daftarkan ANDROID to SFTP secara jujur (aksi share/open-with eksternal butuh URI
-lokal sehingga dinonaktifkan dengan alasan jelas):
-
---- a/shared/src/commonMain/kotlin/org/fm/com/domain/model/MatriksKemampuan.kt
-+++ b/shared/src/commonMain/kotlin/org/fm/com/domain/model/MatriksKemampuan.kt
-@@ -26,6 +26,13 @@
-                     OperasiBerkas.MEMBUAT_TAUTAN_SIMBOLIK to "SAF tidak mendukung symbolic link"
-                 )
-             ),
-+            (PlatformPenyimpanan.ANDROID to JenisLokasi.SFTP) to kemampuan(
-+                PlatformPenyimpanan.ANDROID, JenisLokasi.SFTP,
-+                tidakDidukung = mapOf(
-+                    OperasiBerkas.MEMBAGIKAN to "Berkas SFTP remote tidak memiliki URI lokal; salin ke penyimpanan lokal dahulu",
-+                    OperasiBerkas.MEMBUKA_DENGAN to "Aplikasi sistem tidak dapat membuka path SFTP remote secara langsung"
-+                )
-+            ),
-             (PlatformPenyimpanan.IOS to JenisLokasi.IOS) to kemampuan(
-                 PlatformPenyimpanan.IOS, JenisLokasi.IOS,
-
-7. File Baru: shared/src/commonMain/kotlin/org/fm/com/domain/sftp/ModelSftp.kt
-
-
-
-8. shared/src/commonMain/kotlin/org/fm/com/domain/usecase/TelusuriLokasiUseCase.kt & SalinPindahkanBerkasUseCase.kt
-
---- a/shared/src/commonMain/kotlin/org/fm/com/domain/usecase/TelusuriLokasiUseCase.kt
-+++ b/shared/src/commonMain/kotlin/org/fm/com/domain/usecase/TelusuriLokasiUseCase.kt
-@@ -2,6 +2,7 @@
- 
- import org.fm.com.domain.model.JenisLokasi
- import org.fm.com.domain.model.LokasiBerkas
-+import org.fm.com.domain.sftp.PengenalSftp
- 
- data class SegmenLokasi(
-     val namaTampilan: String,
-@@ -15,6 +16,7 @@
-     ): List<SegmenLokasi> {
-         return when (lokasiSaatIni.jenis) {
-             JenisLokasi.POSIX -> uraiPathPosix(lokasiSaatIni.pengenal)
-+            JenisLokasi.SFTP -> uraiPathSftp(lokasiSaatIni.pengenal)
-             JenisLokasi.SAF, JenisLokasi.IOS -> {
-                 if (riwayatHierarki.isNotEmpty() && riwayatHierarki.last() == lokasiSaatIni) {
-                     riwayatHierarki.map { lok ->
-@@ -47,6 +49,21 @@
-         return segmen
-     }
- 
-+    private fun uraiPathSftp(pengenal: String): List<SegmenLokasi> {
-+        val lok = PengenalSftp.urai(pengenal) ?: return listOf(SegmenLokasi("SFTP", LokasiBerkas(pengenal, JenisLokasi.SFTP, "SFTP")))
-+        val segmen = mutableListOf<SegmenLokasi>()
-+        segmen.add(
-+            SegmenLokasi("Root", LokasiBerkas(PengenalSftp.buat(lok.idProfil, "/"), JenisLokasi.SFTP, "Root"))
-+        )
-+        val bagian = lok.path.split('/').filter { it.isNotBlank() }
-+        var akumulasi = ""
-+        for (nama in bagian) {
-+            akumulasi += "/$nama"
-+            segmen.add(SegmenLokasi(nama, LokasiBerkas(PengenalSftp.buat(lok.idProfil, akumulasi), JenisLokasi.SFTP, nama)))
-+        }
-+        return segmen
-+    }
-+
-     private fun ambilNamaDariPengenal(pengenal: String): String {
-
---- a/shared/src/commonMain/kotlin/org/fm/com/domain/usecase/SalinPindahkanBerkasUseCase.kt
-+++ b/shared/src/commonMain/kotlin/org/fm/com/domain/usecase/SalinPindahkanBerkasUseCase.kt
-@@ -12,6 +12,7 @@
- import org.fm.com.domain.model.LokasiBerkas
- import org.fm.com.domain.model.PenyebabGalat
- import org.fm.com.domain.model.ValidasiNama
-+import org.fm.com.domain.sftp.PengenalSftp
- import org.fm.com.domain.repository.HasilItemGagal
- import org.fm.com.domain.repository.HasilMassal
- import org.fm.com.domain.repository.PermintaanOperasi
-@@ -276,6 +277,15 @@
-                 return HasilOperasi.Gagal(
-                     "Tidak bisa menyalin/memindah folder ke dalam turunannya sendiri",
-                     PenyebabGalat.VALIDASI
-                 )
-             }
-         }
-+        if (sumberFolder.jenis == JenisLokasi.SFTP && tujuanInduk.jenis == JenisLokasi.SFTP) {
-+            val s = PengenalSftp.urai(sumberFolder.pengenal)
-+            val t = PengenalSftp.urai(tujuanInduk.pengenal)
-+            if (s != null && t != null && s.idProfil == t.idProfil) {
-+                val awalanSumber = if (s.path == "/") "/" else "${s.path}/"
-+                if (t.path == s.path || t.path.startsWith(awalanSumber)) {
-+                    return HasilOperasi.Gagal("Tidak bisa menyalin/memindah folder ke dalam turunannya sendiri", PenyebabGalat.VALIDASI)
-+                }
-+            }
-+        }
-
-9. shared/src/commonMain/kotlin/org/fm/com/data/ImplementasiRepositoriBerkas.kt
-
---- a/shared/src/commonMain/kotlin/org/fm/com/data/ImplementasiRepositoriBerkas.kt
-+++ b/shared/src/commonMain/kotlin/org/fm/com/data/ImplementasiRepositoriBerkas.kt
-@@ -156,6 +156,6 @@
-     private fun jenisKePlatform(jenis: JenisLokasi): PlatformPenyimpanan = when (jenis) {
--        JenisLokasi.POSIX, JenisLokasi.SAF -> PlatformPenyimpanan.ANDROID
-+        JenisLokasi.POSIX, JenisLokasi.SAF, JenisLokasi.SFTP -> PlatformPenyimpanan.ANDROID
-         JenisLokasi.IOS -> PlatformPenyimpanan.IOS
-     }
-
-Bagian 4: Dependency Injection (KontainerAplikasi.kt & KontainerAndroid.kt)
-
-17. shared/src/commonMain/kotlin/org/fm/com/di/KontainerAplikasi.kt
-
---- a/shared/src/commonMain/kotlin/org/fm/com/di/KontainerAplikasi.kt
-+++ b/shared/src/commonMain/kotlin/org/fm/com/di/KontainerAplikasi.kt
-@@ -26,6 +26,7 @@
- import org.fm.com.domain.repository.RepositoriPreferensi
- import org.fm.com.domain.repository.RepositoriRiwayatLokasi
- import org.fm.com.domain.repository.RepositoriRiwayatPencarian
-+import org.fm.com.domain.sftp.LayananKoneksiSftp
- import org.fm.com.domain.usecase.BandingkanBerkasUseCase
- import org.fm.com.domain.usecase.BerandaUseCase
- import org.fm.com.domain.usecase.BookmarkUseCase
-@@ -66,14 +67,16 @@
-     val lokasiAwal: LokasiBerkas,
-     val lokasiPintasan: List<LokasiBerkas> = listOf(lokasiAwal),
-     val aksiPlatform: AksiPlatformBerkas = AksiPlatformBerkasBawaan(),
--    val apakahPreview: Boolean = false
-+    val apakahPreview: Boolean = false,
-+    val layananKoneksiSftp: LayananKoneksiSftp? = null
- )
- 
- fun buatKontainerAplikasi(
-     lokasiAwal: LokasiBerkas,
-     lokasiPintasan: List<LokasiBerkas> = listOf(lokasiAwal),
-     aksiPlatform: AksiPlatformBerkas = AksiPlatformBerkasBawaan(),
-     apakahPreview: Boolean = false,
-+    layananKoneksiSftp: LayananKoneksiSftp? = null,
-     modulPlatform: Module
- ): KontainerAplikasi {
-     val koinApp = koinApplication {
-@@ -127,6 +130,7 @@
-         lokasiAwal = lokasiAwal,
-         lokasiPintasan = lokasiPintasan,
-         aksiPlatform = aksiPlatform,
--        apakahPreview = apakahPreview
-+        apakahPreview = apakahPreview,
-+        layananKoneksiSftp = layananKoneksiSftp
-     )
- }
-
-18. shared/src/androidMain/kotlin/org/fm/com/di/KontainerAndroid.kt
-
-Tambahkan pengelolaKoneksiSftp, daftarkan JenisLokasi.SFTP ke router, masukkan
-profil SFTP tersimpan ke susunPintasan, dan teruskan layananKoneksiSftp =
-pengelolaKoneksiSftp di keKontainerAplikasi(...):
-
---- a/shared/src/androidMain/kotlin/org/fm/com/di/KontainerAndroid.kt
-+++ b/shared/src/androidMain/kotlin/org/fm/com/di/KontainerAndroid.kt
-@@ -16,6 +16,10 @@
- import org.fm.com.data.posix.PosixSumberDataPenyimpanan
- import org.fm.com.data.saf.SafPenyediaLokasi
- import org.fm.com.data.saf.SafSumberDataPenyimpanan
-+import org.fm.com.data.sftp.PengelolaKoneksiSftp
-+import org.fm.com.data.sftp.SftpSumberDataPenyimpanan
-+import org.fm.com.data.sftp.SqlDelightPenyimpananRahasiaSftp
-+import org.fm.com.data.sftp.SqlDelightRepositoriProfilSftp
- import org.fm.com.domain.model.HasilOperasi
- import org.fm.com.domain.model.JenisLokasi
- import org.fm.com.domain.model.LokasiBerkas
-@@ -37,7 +41,8 @@
-     val routerBerkas: RepositoriRouterBerkas,
-     val repositoriRiwayat: RepositoriRiwayatLokasi,
-     val repositoriRiwayatPencarian: RepositoriRiwayatPencarian,
--    val lokasiRuangKerja: LokasiBerkas
-+    val lokasiRuangKerja: LokasiBerkas,
-+    val pengelolaKoneksiSftp: PengelolaKoneksiSftp
- ) {
-     val lokasiMemoriInternalSaatIni: LokasiBerkas?
-         get() = PengelolaIzinPenyimpanan.buatLokasiMemoriInternalJikaDiizinkan(appContext)
-@@ -45,25 +50,29 @@
-     private suspend fun bacaTreeTersimpan(): List<LokasiBerkas> =
-         (safPenyediaLokasi.daftarTreeTersimpan() as? HasilOperasi.Sukses)?.nilai.orEmpty()
- 
--    private fun susunPintasan(treeTersimpan: List<LokasiBerkas>): List<LokasiBerkas> = buildList {
-+    private suspend fun susunPintasan(treeTersimpan: List<LokasiBerkas>): List<LokasiBerkas> = buildList {
-         lokasiMemoriInternalSaatIni?.let { add(it) }
-         add(lokasiRuangKerja)
-         for (tree in treeTersimpan) {
-             if (none { it.pengenal == tree.pengenal && it.jenis == tree.jenis }) {
-                 add(tree)
-             }
-         }
-+        val profilSftp = runCatching { pengelolaKoneksiSftp.daftarProfil() }.getOrDefault(emptyList())
-+        for (p in profilSftp) {
-+            val lok = pengelolaKoneksiSftp.keLokasiBerkas(p)
-+            if (none { it.pengenal == lok.pengenal && it.jenis == lok.jenis }) add(lok)
-+        }
-     }
- 
-     suspend fun muatLokasiAwal(): LokasiBerkas = withContext(Dispatchers.IO) {
-         lokasiMemoriInternalSaatIni ?: bacaTreeTersimpan().firstOrNull() ?: lokasiRuangKerja
-     }
- 
-     suspend fun daftarLokasiPintasan(): List<LokasiBerkas> = withContext(Dispatchers.IO) {
-         susunPintasan(bacaTreeTersimpan())
-     }
- 
-     suspend fun muatLokasiAwalDanPintasan(): Pair<LokasiBerkas, List<LokasiBerkas>> =
-         withContext(Dispatchers.IO) {
-             val treeTersimpan = bacaTreeTersimpan()
-             val lokasiAwal = lokasiMemoriInternalSaatIni ?: treeTersimpan.firstOrNull() ?: lokasiRuangKerja
-             lokasiAwal to susunPintasan(treeTersimpan)
-         }
-...
-     fun keKontainerAplikasi(
-         lokasiAwal: LokasiBerkas,
-         pintasan: List<LokasiBerkas>
-     ): KontainerAplikasi = buatKontainerAplikasi(
-         lokasiAwal = lokasiAwal,
-         lokasiPintasan = pintasan,
-         aksiPlatform = AksiPlatformBerkasAndroid(appContext),
-         apakahPreview = false,
-+        layananKoneksiSftp = pengelolaKoneksiSftp,
-         modulPlatform = module {
-...
-     val repoRiwayatPencarian = SqlDelightRepositoriRiwayatPencarian(database)
-     val safPenyediaLokasi = SafPenyediaLokasi(appContext)
-+    val pengelolaKoneksiSftp = PengelolaKoneksiSftp(
-+        repositoriProfil = SqlDelightRepositoriProfilSftp(database),
-+        penyimpananRahasia = SqlDelightPenyimpananRahasiaSftp(database)
-+    )
-     val router = RepositoriRouterBerkas(
-         mapOf(
-             JenisLokasi.POSIX to PosixSumberDataPenyimpanan(
-                 fileSystem = FileSystem.SYSTEM,
-                 platform = PlatformPenyimpanan.ANDROID
-             ),
--            JenisLokasi.SAF to SafSumberDataPenyimpanan(appContext)
-+            JenisLokasi.SAF to SafSumberDataPenyimpanan(appContext),
-+            JenisLokasi.SFTP to SftpSumberDataPenyimpanan(pengelolaKoneksiSftp)
-         )
-     )
-...
-     return KontainerAndroid(
-         appContext = appContext,
-         database = database,
-         safPenyediaLokasi = safPenyediaLokasi,
-         routerBerkas = router,
-         repositoriRiwayat = repoRiwayat,
-         repositoriRiwayatPencarian = repoRiwayatPencarian,
--        lokasiRuangKerja = lokasiRuangKerja
-+        lokasiRuangKerja = lokasiRuangKerja,
-+        pengelolaKoneksiSftp = pengelolaKoneksiSftp
-     )
-
-Bagian 5: Pemformatan, Aksi Platform, & ViewModel Pendukung (commonMain / androidMain)
-
-19. PemformatLokasiRamah.kt, AksiPlatformBerkas.android.kt, ViewModelFilemanager.kt, ViewModelBookmark.kt, ViewModelArsip.kt
-
---- a/shared/src/commonMain/kotlin/org/fm/com/presentation/komponen/PemformatLokasiRamah.kt
-+++ b/shared/src/commonMain/kotlin/org/fm/com/presentation/komponen/PemformatLokasiRamah.kt
-@@ -7,6 +7,7 @@
- import kotlinx.datetime.toLocalDateTime
- import org.fm.com.domain.model.JenisLokasi
- import org.fm.com.domain.model.LokasiBerkas
-+import org.fm.com.domain.sftp.PengenalSftp
- 
- object PemformatLokasiRamah {
-@@ -20,7 +21,15 @@
-         return when (lokasi.jenis) {
-             JenisLokasi.POSIX -> formatPathPosix(lokasi.pengenal)
-             JenisLokasi.SAF -> formatUriSaf(lokasi.pengenal, lokasi.label)
-             JenisLokasi.IOS -> formatUriIos(lokasi.pengenal, lokasi.label)
-+            JenisLokasi.SFTP -> formatUriSftp(lokasi.pengenal)
-         }
-     }
-+
-+    @Suppress("SdCardPath")
-+    private fun formatUriSftp(pengenal: String): String {
-+        val lok = PengenalSftp.urai(pengenal) ?: return pengenal
-+        val pathSingkat = formatPathPosix(lok.path)
-+        return "sftp:${lok.idProfil}:$pathSingkat"
-+    }
-
---- a/shared/src/androidMain/kotlin/org/fm/com/presentation/filemanager/AksiPlatformBerkas.android.kt
-+++ b/shared/src/androidMain/kotlin/org/fm/com/presentation/filemanager/AksiPlatformBerkas.android.kt
-@@ -56,6 +56,6 @@
-                 File(lokasi.pengenal)
-             )
-         }.getOrNull()
--        JenisLokasi.IOS -> null
-+        JenisLokasi.IOS, JenisLokasi.SFTP -> null
-     }
- }
-
-  - Di ViewModelFilemanager.kt (navigasiMasuk):
-
-if (lokasi.jenis == JenisLokasi.POSIX || lokasi.jenis == JenisLokasi.SFTP) {
-    riwayatHierarki.clear()
-}
-
-  - Di ViewModelBookmark.kt (mulaiPilihUlang & muatFolderPemilih) dan
-    ViewModelArsip.kt (bukaPemilihFolderTujuan & muatPemilihFolder): ubah
-    lokasi.jenis != JenisLokasi.POSIX / lokasi.jenis == JenisLokasi.POSIX agar
-    mencakup JenisLokasi.SFTP (lokasi.jenis == JenisLokasi.POSIX || lokasi.jenis
-    == JenisLokasi.SFTP), sehingga breadcrumb di pemilih folder juga menampilkan
-    path penuh SFTP.
-
-Bagian 6: UI Koneksi SFTP & Verifikasi Host Key (commonMain)
-
-22. Hubungkan ke Aplikasi.kt, DaftarBerkasLayar.kt, LayarPengaturan.kt
-
-  - Di Aplikasi.kt:
-      - Buat vmSftp: ViewModelSftp = viewModel(key = "sftp_$kunciKontainer") {
-        ViewModelSftp(kontainer.layananKoneksiSftp) }
-      - Amati profilSftpList:
-        val daftarProfilSftp by (kontainer.layananKoneksiSftp?.amatiDaftarProfil()
-            ?: flowOf(emptyList())).collectAsStateWithLifecycle(initialValue = emptyList())
-        val lokasiPintasanGabungan = remember(lokasiPintasan, daftarProfilSftp, kontainer.layananKoneksiSftp) {
-            val layanan = kontainer.layananKoneksiSftp ?: return@remember lokasiPintasan
-            buildList {
-                addAll(lokasiPintasan)
-                for (p in daftarProfilSftp) {
-                    val lok = layanan.keLokasiBerkas(p)
-                    if (none { it.pengenal == lok.pengenal && it.jenis == lok.jenis }) add(lok)
+        internal fun petakanPesanRamah(e: GagalSftp, profil: ProfilSftp? = null): Pair<String, PenyebabGalat> = when (e) {
+            is GagalSftp.TidakAda -> (e.message ?: "Tidak ditemukan") to PenyebabGalat.TIDAK_DITEMUKAN
+            is GagalSftp.SudahAda -> (e.message ?: "Target sudah ada") to PenyebabGalat.KONFLIK
+            is GagalSftp.IzinDitolak,
+            is GagalSftp.AutentikasiGagal,
+            is GagalSftp.RahasiaHilang,
+            is GagalSftp.HostBelumDipercaya,
+            is GagalSftp.HostBerubah -> (e.message ?: "Izin ditolak") to PenyebabGalat.IZIN_DITOLAK
+            is GagalSftp.AdalahFolder,
+            is GagalSftp.TautanBerputar -> (e.message ?: "Input tidak valid") to PenyebabGalat.VALIDASI
+            is GagalSftp.Jaringan -> {
+                val sebab = e.cause
+                val host = profil?.host
+                val port = profil?.port
+                val tambahan = if (host != null && port != null && (host == "127.0.0.1" || host == "localhost") &&
+                    (sebab is ConnectException || e.message.orEmpty().contains("refused", ignoreCase = true))
+                ) {
+                    "Koneksi ke $host:$port ditolak. Pastikan `sshd` berjalan di Termux."
+                } else if (host != null && sebab is UnknownHostException) {
+                    "Host '$host' tidak ditemukan."
+                } else {
+                    e.message ?: "Kegagalan jaringan SFTP"
                 }
+                tambahan to PenyebabGalat.TIDAK_DIKETAHUI
+            }
+            is GagalSftp.Terputus,
+            is GagalSftp.Lainnya -> (e.message ?: "Kesalahan SFTP") to PenyebabGalat.TIDAK_DIKETAHUI
+        }
+
+2. SqlDelightRepositoriProfilSftp.kt
+
+File:
+shared/src/androidMain/kotlin/org/fm/com/data/sftp/SqlDelightRepositoriProfilSftp.kt
+
+Ganti deklarasi kelas SqlDelightPenyimpananRahasiaSftp (dan jadikan simpan/hapus
+di SqlDelightRepositoriProfilSftp menggunakan block body { ... }) pada bagian
+bawah file:
+
+    override suspend fun simpan(profil: ProfilSftp) {
+        withContext(ioDispatcher) {
+            require(PengenalSftp.apakahIdValid(profil.id)) { "idProfil tidak valid" }
+            val sekarang = clock.now().toEpochMilliseconds()
+            database.transaction {
+                val idsSaatIni = database.preferensiEntityQueries.ambilNilai(KUNCI_DAFTAR_ID)
+                    .executeAsOneOrNull()
+                    ?.split('\n')
+                    ?.filter { it.isNotBlank() }
+                    ?.toMutableList() ?: mutableListOf()
+                if (profil.id !in idsSaatIni) {
+                    idsSaatIni.add(profil.id)
+                    database.preferensiEntityQueries.simpanNilai(KUNCI_DAFTAR_ID, idsSaatIni.joinToString("\n"), sekarang)
+                }
+                database.preferensiEntityQueries.simpanNilai("$PREFIX_PROFIL${profil.id}", kodekanProfil(profil), sekarang)
             }
         }
-      - Gunakan lokasiPintasanGabungan untuk DaftarBerkasLayar, LayarBookmark,
-        LayarPengaturan, dan
-        vmArsip.prosesIntent(IntentArsip.SetLokasiPintasan(lokasiPintasanGabungan)).
-      - Teruskan onKelolaSftp = if (kontainer.layananKoneksiSftp != null) { {
-        vmSftp.prosesIntent(IntentSftp.BukaDialogDaftar) } } else null ke
-        DaftarBerkasLayar dan LayarPengaturan.
-      - Render DialogKoneksiSftp(viewModel = vmSftp, onBukaLokasiSftp = { lok ->
-        tabTerpilih = TabUtama.FILE;
-        vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lok)) }).
-      - Teruskan pesan vmSftp.state.value.pesanInfo ke
-        vmFilemanager.prosesIntent(IntentFilemanager.SetPesanInfo(...)) via
-        LaunchedEffect.
-  - Di DaftarBerkasLayar.kt (switcher lokasi ModalBottomSheet): tambahkan item
-    "Kelola Koneksi SFTP (Termux)..." bila onKelolaSftp != null.
-  - Di LayarPengaturan.kt: tambahkan kartu "Koneksi SFTP (Termux Full POSIX)"
-    dengan tombol "Kelola Koneksi SFTP" bila onKelolaSftp != null.
-
-Bagian 7: Unit & Integration Tests
-
-24. shared/src/commonTest/kotlin/org/fm/com/domain/model/MatriksKemampuanTest.kt
-
-Tambahkan verifikasi ANDROID to SFTP vs IOS to SFTP:
-
-    @Test
-    fun `sftp android mendukung path posix tanpa share eksternal dan ios null`() {
-        val sftpAndroid = assertNotNull(
-            MatriksKemampuan.untuk(PlatformPenyimpanan.ANDROID, JenisLokasi.SFTP)
-        )
-        assertEquals(true, sftpAndroid.apakahDidukung(OperasiBerkas.MELIHAT_PATH_POSIX))
-        assertEquals(true, sftpAndroid.apakahDidukung(OperasiBerkas.MENGGANTI_NAMA))
-        assertEquals(false, sftpAndroid.apakahDidukung(OperasiBerkas.MEMBAGIKAN))
-        assertNotNull(sftpAndroid.alasan(OperasiBerkas.MEMBAGIKAN))
-        assertNull(MatriksKemampuan.untuk(PlatformPenyimpanan.IOS, JenisLokasi.SFTP))
     }
+
+    override suspend fun hapus(id: String) {
+        withContext(ioDispatcher) {
+            val sekarang = clock.now().toEpochMilliseconds()
+            database.transaction {
+                val idsSaatIni = database.preferensiEntityQueries.ambilNilai(KUNCI_DAFTAR_ID)
+                    .executeAsOneOrNull()
+                    ?.split('\n')
+                    ?.filter { it.isNotBlank() && it != id }
+                    .orEmpty()
+                if (idsSaatIni.isEmpty()) {
+                    database.preferensiEntityQueries.hapusKunci(KUNCI_DAFTAR_ID)
+                } else {
+                    database.preferensiEntityQueries.simpanNilai(KUNCI_DAFTAR_ID, idsSaatIni.joinToString("\n"), sekarang)
+                }
+                database.preferensiEntityQueries.hapusKunci("$PREFIX_PROFIL$id")
+                database.preferensiEntityQueries.hapusKunci("$PREFIX_RAHASIA$id")
+            }
+        }
+    }
+
+Dan untuk SqlDelightPenyimpananRahasiaSftp:
+
+@OptIn(ExperimentalTime::class)
+class SqlDelightPenyimpananRahasiaSftp(
+    private val database: DatabaseAplikasi,
+    private val pengelola: PengelolaRahasiaSftp = PengelolaRahasiaSftp(),
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val clock: Clock = Clock.System
+) : PenyimpananRahasiaSftp {
+
+    override suspend fun simpan(idProfil: String, rahasia: RahasiaSftp) {
+        withContext(ioDispatcher) {
+            val tersegel = pengelola.segel(rahasia, idProfil)
+            database.preferensiEntityQueries.simpanNilai(
+                kunci = "$PREFIX_RAHASIA$idProfil",
+                nilai = tersegel,
+                waktu_diubah = clock.now().toEpochMilliseconds()
+            )
+        }
+    }
+
+    override suspend fun ambil(idProfil: String): RahasiaSftp? = withContext(ioDispatcher) {
+        val mentah = database.preferensiEntityQueries.ambilNilai("$PREFIX_RAHASIA$idProfil").executeAsOneOrNull()
+            ?: return@withContext null
+        pengelola.buka(mentah, idProfil)
+    }
+
+    override suspend fun hapus(idProfil: String) {
+        withContext(ioDispatcher) {
+            database.preferensiEntityQueries.hapusKunci("$PREFIX_RAHASIA$idProfil")
+        }
+    }
+
+    override suspend fun ada(idProfil: String): Boolean = withContext(ioDispatcher) {
+        database.preferensiEntityQueries.ambilNilai("$PREFIX_RAHASIA$idProfil").executeAsOneOrNull() != null
+    }
+}

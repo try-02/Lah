@@ -52,38 +52,42 @@ class SqlDelightRepositoriProfilSftp(
         uraiProfil(id, mentah)
     }
 
-    override suspend fun simpan(profil: ProfilSftp) = withContext(ioDispatcher) {
-        require(PengenalSftp.apakahIdValid(profil.id)) { "idProfil tidak valid" }
-        val sekarang = clock.now().toEpochMilliseconds()
-        database.transaction {
-            val idsSaatIni = database.preferensiEntityQueries.ambilNilai(KUNCI_DAFTAR_ID)
-                .executeAsOneOrNull()
-                ?.split('\n')
-                ?.filter { it.isNotBlank() }
-                ?.toMutableList() ?: mutableListOf()
-            if (profil.id !in idsSaatIni) {
-                idsSaatIni.add(profil.id)
-                database.preferensiEntityQueries.simpanNilai(KUNCI_DAFTAR_ID, idsSaatIni.joinToString("\n"), sekarang)
+    override suspend fun simpan(profil: ProfilSftp) {
+        withContext(ioDispatcher) {
+            require(PengenalSftp.apakahIdValid(profil.id)) { "idProfil tidak valid" }
+            val sekarang = clock.now().toEpochMilliseconds()
+            database.transaction {
+                val idsSaatIni = database.preferensiEntityQueries.ambilNilai(KUNCI_DAFTAR_ID)
+                    .executeAsOneOrNull()
+                    ?.split('\n')
+                    ?.filter { it.isNotBlank() }
+                    ?.toMutableList() ?: mutableListOf()
+                if (profil.id !in idsSaatIni) {
+                    idsSaatIni.add(profil.id)
+                    database.preferensiEntityQueries.simpanNilai(KUNCI_DAFTAR_ID, idsSaatIni.joinToString("\n"), sekarang)
+                }
+                database.preferensiEntityQueries.simpanNilai("$PREFIX_PROFIL${profil.id}", kodekanProfil(profil), sekarang)
             }
-            database.preferensiEntityQueries.simpanNilai("$PREFIX_PROFIL${profil.id}", kodekanProfil(profil), sekarang)
         }
     }
 
-    override suspend fun hapus(id: String) = withContext(ioDispatcher) {
-        val sekarang = clock.now().toEpochMilliseconds()
-        database.transaction {
-            val idsSaatIni = database.preferensiEntityQueries.ambilNilai(KUNCI_DAFTAR_ID)
-                .executeAsOneOrNull()
-                ?.split('\n')
-                ?.filter { it.isNotBlank() && it != id }
-                .orEmpty()
-            if (idsSaatIni.isEmpty()) {
-                database.preferensiEntityQueries.hapusKunci(KUNCI_DAFTAR_ID)
-            } else {
-                database.preferensiEntityQueries.simpanNilai(KUNCI_DAFTAR_ID, idsSaatIni.joinToString("\n"), sekarang)
+    override suspend fun hapus(id: String) {
+        withContext(ioDispatcher) {
+            val sekarang = clock.now().toEpochMilliseconds()
+            database.transaction {
+                val idsSaatIni = database.preferensiEntityQueries.ambilNilai(KUNCI_DAFTAR_ID)
+                    .executeAsOneOrNull()
+                    ?.split('\n')
+                    ?.filter { it.isNotBlank() && it != id }
+                    .orEmpty()
+                if (idsSaatIni.isEmpty()) {
+                    database.preferensiEntityQueries.hapusKunci(KUNCI_DAFTAR_ID)
+                } else {
+                    database.preferensiEntityQueries.simpanNilai(KUNCI_DAFTAR_ID, idsSaatIni.joinToString("\n"), sekarang)
+                }
+                database.preferensiEntityQueries.hapusKunci("$PREFIX_PROFIL$id")
+                database.preferensiEntityQueries.hapusKunci("$PREFIX_RAHASIA$id")
             }
-            database.preferensiEntityQueries.hapusKunci("$PREFIX_PROFIL$id")
-            database.preferensiEntityQueries.hapusKunci("$PREFIX_RAHASIA$id")
         }
     }
 
@@ -165,13 +169,15 @@ class SqlDelightPenyimpananRahasiaSftp(
     private val clock: Clock = Clock.System
 ) : PenyimpananRahasiaSftp {
 
-    override suspend fun simpan(idProfil: String, rahasia: RahasiaSftp) = withContext(ioDispatcher) {
-        val tersegel = pengelola.segel(rahasia, idProfil)
-        database.preferensiEntityQueries.simpanNilai(
-            kunci = "$PREFIX_RAHASIA$idProfil",
-            nilai = tersegel,
-            waktu_diubah = clock.now().toEpochMilliseconds()
-        )
+    override suspend fun simpan(idProfil: String, rahasia: RahasiaSftp) {
+        withContext(ioDispatcher) {
+            val tersegel = pengelola.segel(rahasia, idProfil)
+            database.preferensiEntityQueries.simpanNilai(
+                kunci = "$PREFIX_RAHASIA$idProfil",
+                nilai = tersegel,
+                waktu_diubah = clock.now().toEpochMilliseconds()
+            )
+        }
     }
 
     override suspend fun ambil(idProfil: String): RahasiaSftp? = withContext(ioDispatcher) {
@@ -180,8 +186,10 @@ class SqlDelightPenyimpananRahasiaSftp(
         pengelola.buka(mentah, idProfil)
     }
 
-    override suspend fun hapus(idProfil: String) = withContext(ioDispatcher) {
-        database.preferensiEntityQueries.hapusKunci("$PREFIX_RAHASIA$idProfil")
+    override suspend fun hapus(idProfil: String) {
+        withContext(ioDispatcher) {
+            database.preferensiEntityQueries.hapusKunci("$PREFIX_RAHASIA$idProfil")
+        }
     }
 
     override suspend fun ada(idProfil: String): Boolean = withContext(ioDispatcher) {

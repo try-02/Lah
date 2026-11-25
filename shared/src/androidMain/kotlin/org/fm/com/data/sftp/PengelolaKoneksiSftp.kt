@@ -161,12 +161,14 @@ class PengelolaKoneksiSftp(
             is GagalSftp.TautanBerputar -> (e.message ?: "Input tidak valid") to PenyebabGalat.VALIDASI
             is GagalSftp.Jaringan -> {
                 val sebab = e.cause
-                val tambahan = if (profil != null && (profil.host == "127.0.0.1" || profil.host == "localhost") &&
+                val host = profil?.host
+                val port = profil?.port
+                val tambahan = if (host != null && port != null && (host == "127.0.0.1" || host == "localhost") &&
                     (sebab is ConnectException || e.message.orEmpty().contains("refused", ignoreCase = true))
                 ) {
-                    "Koneksi ke ${profil.host}:${profil.port} ditolak. Pastikan `sshd` berjalan di Termux."
-                } else if (sebab is UnknownHostException) {
-                    "Host '${profil.host}' tidak ditemukan."
+                    "Koneksi ke $host:$port ditolak. Pastikan `sshd` berjalan di Termux."
+                } else if (host != null && sebab is UnknownHostException) {
+                    "Host '$host' tidak ditemukan."
                 } else {
                     e.message ?: "Kegagalan jaringan SFTP"
                 }
