@@ -62,7 +62,8 @@ fun LayarPengaturan(
     lokasiPintasan: List<LokasiBerkas> = emptyList(),
     onPilihFolderSistemUntukBeranda: (() -> Unit)? = null,
     izinMemoriInternalAktif: Boolean? = null,
-    onMintaIzinMemoriInternal: (() -> Unit)? = null
+    onMintaIzinMemoriInternal: (() -> Unit)? = null,
+    onKelolaSftp: (() -> Unit)? = null
 ) {
     val statePengaturan by viewModelPengaturan.state.collectAsStateWithLifecycle()
     val stateBeranda by viewModelBeranda.state.collectAsStateWithLifecycle()
@@ -222,6 +223,29 @@ fun LayarPengaturan(
                         Button(onClick = onMintaIzinMemoriInternal) {
                             Text("Izinkan Memori Internal")
                         }
+                    }
+                }
+            }
+
+            if (onKelolaSftp != null) {
+                HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
+                JudulBagianPengaturan("Koneksi SFTP (Termux Full POSIX)")
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(MaterialTheme.shapes.medium)
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Hubungkan ke server SFTP/SSH di Termux untuk mengelola berkas dengan path POSIX penuh tanpa kredensial di URI.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedButton(onClick = onKelolaSftp) {
+                        Text("Kelola Koneksi SFTP")
                     }
                 }
             }

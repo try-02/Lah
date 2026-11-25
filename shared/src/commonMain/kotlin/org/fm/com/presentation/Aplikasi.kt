@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.fm.com.PermintaanBukaLokasi
@@ -50,6 +51,9 @@ import org.fm.com.presentation.pencarian.ViewModelPencarian
 import org.fm.com.presentation.pengaturan.LayarPengaturan
 import org.fm.com.presentation.pengaturan.ViewModelPengaturan
 import org.fm.com.presentation.rename.ViewModelBulkRename
+import org.fm.com.presentation.sftp.DialogKoneksiSftp
+import org.fm.com.presentation.sftp.IntentSftp
+import org.fm.com.presentation.sftp.ViewModelSftp
 import org.fm.com.presentation.tema.TemaAplikasi
 import org.fm.com.presentation.terbaru.LayarTerbaru
 import org.fm.com.presentation.terbaru.ViewModelTerbaru
@@ -146,6 +150,22 @@ fun Aplikasi(
                 lokasiPintasanAwal = lokasiPintasan
             )
         }
+        val vmSftp: ViewModelSftp = viewModel(key = "sftp_$kunciKontainer") {
+            ViewModelSftp(kontainer.layananKoneksiSftp)
+        }
+
+        val daftarProfilSftp by (kontainer.layananKoneksiSftp?.amatiDaftarProfil()
+            ?: flowOf(emptyList())).collectAsStateWithLifecycle(initialValue = emptyList())
+        val lokasiPintasanGabungan = remember(lokasiPintasan, daftarProfilSftp, kontainer.layananKoneksiSftp) {
+            val layanan = kontainer.layananKoneksiSftp ?: return@remember lokasiPintasan
+            buildList {
+                addAll(lokasiPintasan)
+                for (p in daftarProfilSftp) {
+                    val lok = layanan.keLokasiBerkas(p)
+                    if (none { it.pengenal == lok.pengenal && it.jenis == lok.jenis }) add(lok)
+                }
+            }
+        }
 
         val lokasiAktifFm by remember(vmFilemanager) {
             vmFilemanager.state.map { it.lokasiSaatIni }.distinctUntilChanged()
@@ -175,8 +195,19 @@ fun Aplikasi(
         var ruangArsipTerbuka by remember { mutableStateOf(false) }
         var tujuanPemilihSistem by remember { mutableStateOf(TujuanPemilihFolderSistem.FILE_MANAGER) }
 
-        LaunchedEffect(lokasiPintasan) {
-            vmArsip.prosesIntent(IntentArsip.SetLokasiPintasan(lokasiPintasan))
+        LaunchedEffect(lokasiPintasanGabungan) {
+            vmArsip.prosesIntent(IntentArsip.SetLokasiPintasan(lokasiPintasanGabungan))
+        }
+
+        LaunchedEffect(vmSftp) {
+            vmSftp.state
+                .map { it.pesanInfo }
+                .distinctUntilChanged()
+                .collect { pesan ->
+                    if (pesan != null) {
+                        vmFilemanager.prosesIntent(IntentFilemanager.SetPesanInfo(pesan))
+                    }
+                }
         }
 
         LaunchedEffect(wordWrapUmumAktif) {
@@ -415,7 +446,10 @@ fun Aplikasi(
                                 onPilihFolder()
                             }
                         } else null,
-                        lokasiPintasan = lokasiPintasan,
+                        lokasiPintasan = lokasiPintasanGabungan,
+                        onKelolaSftp = if (kontainer.layananKoneksiSftp != null) {
+                            { vmSftp.prosesIntent(IntentSftp.BukaDialogDaftar) }
+                        } else null,
                         onPilihLokasiPintasan = { lokasi ->
                             scope.launch {
                                 val lokasiSiap = onSiapkanAksesLokasi?.invoke(lokasi) ?: lokasi
@@ -464,7 +498,7 @@ fun Aplikasi(
                                 }
                             }
                         },
-                        lokasiPintasan = lokasiPintasan,
+                        lokasiPintasan = lokasiPintasanGabungan,
                         onPilihFolderSistem = if (onPilihFolder != null) {
                             {
                                 tujuanPemilihSistem = TujuanPemilihFolderSistem.BOOKMARK_PILIH_ULANG
@@ -493,7 +527,10 @@ fun Aplikasi(
                         viewModelBeranda = vmBeranda,
                         viewModelEditor = vmEditor,
                         lokasiAktifFileManager = lokasiAktifFm,
-                        lokasiPintasan = lokasiPintasan,
+                        lokasiPintasan = lokasiPintasanGabungan,
+                        onKelolaSftp = if (kontainer.layananKoneksiSftp != null) {
+                            { vmSftp.prosesIntent(IntentSftp.BukaDialogDaftar) }
+                        } else null,
                         onPilihFolderSistemUntukBeranda = if (onPilihFolder != null) {
                             {
                                 tujuanPemilihSistem = TujuanPemilihFolderSistem.BERANDA
@@ -506,6 +543,14 @@ fun Aplikasi(
                 }
             }
         }
+
+        DialogKoneksiSftp(
+            viewModel = vmSftp,
+            onBukaLokasiSftp = { lok ->
+                tabTerpilih = TabUtama.FILE
+                vmFilemanager.prosesIntent(IntentFilemanager.BukaLokasi(lok))
+            }
+        )
 
         if (tampilkanDialogIzinMemori && izinMemoriInternalAktif == false && onMintaIzinMemoriInternal != null) {
             DialogIzinMemoriSistem(

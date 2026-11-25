@@ -14,6 +14,7 @@ import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.LokasiBerkas
 import org.fm.com.domain.model.PenyebabGalat
 import org.fm.com.domain.model.ValidasiNama
+import org.fm.com.domain.sftp.PengenalSftp
 import org.fm.com.domain.repository.HasilItemGagal
 import org.fm.com.domain.repository.HasilMassal
 import org.fm.com.domain.repository.PermintaanOperasi
@@ -281,6 +282,16 @@ class SalinPindahkanBerkasUseCase(
                     "Tidak bisa menyalin/memindah folder ke dalam turunannya sendiri",
                     PenyebabGalat.VALIDASI
                 )
+            }
+        }
+        if (sumberFolder.jenis == JenisLokasi.SFTP && tujuanInduk.jenis == JenisLokasi.SFTP) {
+            val s = PengenalSftp.urai(sumberFolder.pengenal)
+            val t = PengenalSftp.urai(tujuanInduk.pengenal)
+            if (s != null && t != null && s.idProfil == t.idProfil) {
+                val awalanSumber = if (s.path == "/") "/" else "${s.path}/"
+                if (t.path == s.path || t.path.startsWith(awalanSumber)) {
+                    return HasilOperasi.Gagal("Tidak bisa menyalin/memindah folder ke dalam turunannya sendiri", PenyebabGalat.VALIDASI)
+                }
             }
         }
 

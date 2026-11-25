@@ -156,7 +156,7 @@ class ImplementasiRepositoriBerkas(
     }
 
     private fun jenisKePlatform(jenis: JenisLokasi): PlatformPenyimpanan = when (jenis) {
-        JenisLokasi.POSIX, JenisLokasi.SAF -> PlatformPenyimpanan.ANDROID
+        JenisLokasi.POSIX, JenisLokasi.SAF, JenisLokasi.SFTP -> PlatformPenyimpanan.ANDROID
         JenisLokasi.IOS -> PlatformPenyimpanan.IOS
     }
 

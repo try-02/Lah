@@ -9,6 +9,7 @@ import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
 import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.LokasiBerkas
+import org.fm.com.domain.sftp.PengenalSftp
 
 object PemformatLokasiRamah {
     private val NAMA_BULAN = arrayOf(
@@ -23,7 +24,15 @@ object PemformatLokasiRamah {
             JenisLokasi.POSIX -> formatPathPosix(lokasi.pengenal)
             JenisLokasi.SAF -> formatUriSaf(lokasi.pengenal, lokasi.label)
             JenisLokasi.IOS -> formatUriIos(lokasi.pengenal, lokasi.label)
+            JenisLokasi.SFTP -> formatUriSftp(lokasi.pengenal)
         }
+    }
+
+    @Suppress("SdCardPath")
+    private fun formatUriSftp(pengenal: String): String {
+        val lok = PengenalSftp.urai(pengenal) ?: return pengenal
+        val pathSingkat = formatPathPosix(lok.path)
+        return "sftp:${lok.idProfil}:$pathSingkat"
     }
 
     fun formatPrompt(lokasi: LokasiBerkas): String {

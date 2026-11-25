@@ -25,6 +25,13 @@ object MatriksKemampuan {
                     OperasiBerkas.MEMBUAT_TAUTAN_SIMBOLIK to "SAF tidak mendukung symbolic link"
                 )
             ),
+            (PlatformPenyimpanan.ANDROID to JenisLokasi.SFTP) to kemampuan(
+                PlatformPenyimpanan.ANDROID, JenisLokasi.SFTP,
+                tidakDidukung = mapOf(
+                    OperasiBerkas.MEMBAGIKAN to "Berkas SFTP remote tidak memiliki URI lokal; salin ke penyimpanan lokal dahulu",
+                    OperasiBerkas.MEMBUKA_DENGAN to "Aplikasi sistem tidak dapat membuka path SFTP remote secara langsung"
+                )
+            ),
             (PlatformPenyimpanan.IOS to JenisLokasi.IOS) to kemampuan(
                 PlatformPenyimpanan.IOS, JenisLokasi.IOS,
                 tidakDidukung = mapOf(

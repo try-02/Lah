@@ -64,4 +64,16 @@ class MatriksKemampuanTest {
             StatusDukungan(false)
         }
     }
+
+    @Test
+    fun `sftp android mendukung path posix tanpa share eksternal dan ios null`() {
+        val sftpAndroid = assertNotNull(
+            MatriksKemampuan.untuk(PlatformPenyimpanan.ANDROID, JenisLokasi.SFTP)
+        )
+        assertEquals(true, sftpAndroid.apakahDidukung(OperasiBerkas.MELIHAT_PATH_POSIX))
+        assertEquals(true, sftpAndroid.apakahDidukung(OperasiBerkas.MENGGANTI_NAMA))
+        assertEquals(false, sftpAndroid.apakahDidukung(OperasiBerkas.MEMBAGIKAN))
+        assertNotNull(sftpAndroid.alasan(OperasiBerkas.MEMBAGIKAN))
+        assertNull(MatriksKemampuan.untuk(PlatformPenyimpanan.IOS, JenisLokasi.SFTP))
+    }
 }

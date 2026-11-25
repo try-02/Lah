@@ -212,7 +212,7 @@ class ViewModelBookmark(
     private fun mulaiPilihUlang(bookmark: EntitasBookmark) {
         val lokasiAwal = lokasiPintasanAwal.firstOrNull() ?: bookmark.lokasi
         riwayatHierarki.clear()
-        if (lokasiAwal.jenis != JenisLokasi.POSIX) {
+        if (lokasiAwal.jenis != JenisLokasi.POSIX && lokasiAwal.jenis != JenisLokasi.SFTP) {
             riwayatHierarki.add(lokasiAwal)
         }
         _state.update {
@@ -240,7 +240,7 @@ class ViewModelBookmark(
     private fun muatFolderPemilih(lokasi: LokasiBerkas, dariSegmen: Boolean) {
         pekerjaanPemilih?.cancel()
         if (!dariSegmen) {
-            if (lokasi.jenis == JenisLokasi.POSIX) {
+            if (lokasi.jenis == JenisLokasi.POSIX || lokasi.jenis == JenisLokasi.SFTP) {
                 riwayatHierarki.clear()
             } else {
                 val adaAnak = _state.value.pemilihUlang.daftarEntitas.any { it.lokasi == lokasi }

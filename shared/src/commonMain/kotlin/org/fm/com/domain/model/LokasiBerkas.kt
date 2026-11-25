@@ -23,5 +23,8 @@ enum class JenisLokasi {
     SAF,
 
     /** Pengenal lokasi dalam sandbox iOS (Document Picker / security scope). */
-    IOS
+    IOS,
+
+    /** Pengenal lokasi server SFTP/SSH bebas kredensial (`sftp://<idProfil>/path`). */
+    SFTP
 }

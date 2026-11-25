@@ -29,6 +29,7 @@ import org.fm.com.domain.repository.RepositoriOperasiBerkas
 import org.fm.com.domain.repository.RepositoriPreferensi
 import org.fm.com.domain.repository.RepositoriRiwayatLokasi
 import org.fm.com.domain.repository.RepositoriRiwayatPencarian
+import org.fm.com.domain.sftp.LayananKoneksiSftp
 import org.fm.com.domain.usecase.BandingkanBerkasUseCase
 import org.fm.com.domain.usecase.BerandaUseCase
 import org.fm.com.domain.usecase.BookmarkUseCase
@@ -75,7 +76,8 @@ data class KontainerAplikasi(
     val lokasiAwal: LokasiBerkas,
     val lokasiPintasan: List<LokasiBerkas> = listOf(lokasiAwal),
     val aksiPlatform: AksiPlatformBerkas = AksiPlatformBerkasBawaan(),
-    val apakahPreview: Boolean = false
+    val apakahPreview: Boolean = false,
+    val layananKoneksiSftp: LayananKoneksiSftp? = null
 )
 
 fun buatKontainerAplikasi(
@@ -83,6 +85,7 @@ fun buatKontainerAplikasi(
     lokasiPintasan: List<LokasiBerkas> = listOf(lokasiAwal),
     aksiPlatform: AksiPlatformBerkas = AksiPlatformBerkasBawaan(),
     apakahPreview: Boolean = false,
+    layananKoneksiSftp: LayananKoneksiSftp? = null,
     modulPlatform: Module
 ): KontainerAplikasi {
     val koinApp = koinApplication {
@@ -146,7 +149,8 @@ fun buatKontainerAplikasi(
         lokasiAwal = lokasiAwal,
         lokasiPintasan = lokasiPintasan,
         aksiPlatform = aksiPlatform,
-        apakahPreview = apakahPreview
+        apakahPreview = apakahPreview,
+        layananKoneksiSftp = layananKoneksiSftp
     )
 }
 

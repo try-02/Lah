@@ -512,7 +512,9 @@ class ViewModelArsip(
             ?: _state.value.lokasiPintasan.firstOrNull()
             ?: return
         riwayatHierarkiPemilih.clear()
-        if (tujuanAwal.jenis != org.fm.com.domain.model.JenisLokasi.POSIX) {
+        if (tujuanAwal.jenis != org.fm.com.domain.model.JenisLokasi.POSIX &&
+            tujuanAwal.jenis != org.fm.com.domain.model.JenisLokasi.SFTP
+        ) {
             riwayatHierarkiPemilih.add(tujuanAwal)
         }
         muatPemilihFolder(tujuanAwal, dariSegmen = false)
@@ -533,7 +535,9 @@ class ViewModelArsip(
         pekerjaanMuatFolderTujuan?.cancel()
 
         if (!dariSegmen) {
-            if (lokasi.jenis == org.fm.com.domain.model.JenisLokasi.POSIX) {
+            if (lokasi.jenis == org.fm.com.domain.model.JenisLokasi.POSIX ||
+                lokasi.jenis == org.fm.com.domain.model.JenisLokasi.SFTP
+            ) {
                 riwayatHierarkiPemilih.clear()
             } else {
                 val adalahAnak = _state.value.pemilihFolder.daftarSubfolder.any { it.lokasi == lokasi }

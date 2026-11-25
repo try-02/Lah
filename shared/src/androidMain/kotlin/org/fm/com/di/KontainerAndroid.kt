@@ -18,6 +18,10 @@ import org.fm.com.data.persistensi.buatDatabaseAplikasi
 import org.fm.com.data.posix.PosixSumberDataPenyimpanan
 import org.fm.com.data.saf.SafPenyediaLokasi
 import org.fm.com.data.saf.SafSumberDataPenyimpanan
+import org.fm.com.data.sftp.PengelolaKoneksiSftp
+import org.fm.com.data.sftp.SftpSumberDataPenyimpanan
+import org.fm.com.data.sftp.SqlDelightPenyimpananRahasiaSftp
+import org.fm.com.data.sftp.SqlDelightRepositoriProfilSftp
 import org.fm.com.domain.model.HasilOperasi
 import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.LokasiBerkas
@@ -41,7 +45,8 @@ class KontainerAndroid internal constructor(
     val routerBerkas: RepositoriRouterBerkas,
     val repositoriRiwayat: RepositoriRiwayatLokasi,
     val repositoriRiwayatPencarian: RepositoriRiwayatPencarian,
-    val lokasiRuangKerja: LokasiBerkas
+    val lokasiRuangKerja: LokasiBerkas,
+    val pengelolaKoneksiSftp: PengelolaKoneksiSftp
 ) {
     val lokasiMemoriInternalSaatIni: LokasiBerkas?
         get() = PengelolaIzinPenyimpanan.buatLokasiMemoriInternalJikaDiizinkan(appContext)
@@ -49,13 +54,18 @@ class KontainerAndroid internal constructor(
     private suspend fun bacaTreeTersimpan(): List<LokasiBerkas> =
         (safPenyediaLokasi.daftarTreeTersimpan() as? HasilOperasi.Sukses)?.nilai.orEmpty()
 
-    private fun susunPintasan(treeTersimpan: List<LokasiBerkas>): List<LokasiBerkas> = buildList {
+    private suspend fun susunPintasan(treeTersimpan: List<LokasiBerkas>): List<LokasiBerkas> = buildList {
         lokasiMemoriInternalSaatIni?.let { add(it) }
         add(lokasiRuangKerja)
         for (tree in treeTersimpan) {
             if (none { it.pengenal == tree.pengenal && it.jenis == tree.jenis }) {
                 add(tree)
             }
+        }
+        val profilSftp = runCatching { pengelolaKoneksiSftp.daftarProfil() }.getOrDefault(emptyList())
+        for (p in profilSftp) {
+            val lok = pengelolaKoneksiSftp.keLokasiBerkas(p)
+            if (none { it.pengenal == lok.pengenal && it.jenis == lok.jenis }) add(lok)
         }
     }
 
@@ -101,6 +111,7 @@ class KontainerAndroid internal constructor(
         lokasiPintasan = pintasan,
         aksiPlatform = AksiPlatformBerkasAndroid(appContext),
         apakahPreview = false,
+        layananKoneksiSftp = pengelolaKoneksiSftp,
         modulPlatform = module {
             single<RepositoriBerkas> { routerBerkas }
             single<RepositoriOperasiBerkas> { routerBerkas }
@@ -120,13 +131,18 @@ fun buatKontainerAndroid(context: Context): KontainerAndroid {
     val repoRiwayat = SqlDelightRepositoriRiwayatLokasi(database)
     val repoRiwayatPencarian = SqlDelightRepositoriRiwayatPencarian(database)
     val safPenyediaLokasi = SafPenyediaLokasi(appContext)
+    val pengelolaKoneksiSftp = PengelolaKoneksiSftp(
+        repositoriProfil = SqlDelightRepositoriProfilSftp(database),
+        penyimpananRahasia = SqlDelightPenyimpananRahasiaSftp(database)
+    )
     val router = RepositoriRouterBerkas(
         mapOf(
             JenisLokasi.POSIX to PosixSumberDataPenyimpanan(
                 fileSystem = FileSystem.SYSTEM,
                 platform = PlatformPenyimpanan.ANDROID
             ),
-            JenisLokasi.SAF to SafSumberDataPenyimpanan(appContext)
+            JenisLokasi.SAF to SafSumberDataPenyimpanan(appContext),
+            JenisLokasi.SFTP to SftpSumberDataPenyimpanan(pengelolaKoneksiSftp)
         )
     )
     val dirRuangKerja = (appContext.getExternalFilesDir(null) ?: appContext.filesDir).apply {
@@ -144,6 +160,7 @@ fun buatKontainerAndroid(context: Context): KontainerAndroid {
         routerBerkas = router,
         repositoriRiwayat = repoRiwayat,
         repositoriRiwayatPencarian = repoRiwayatPencarian,
-        lokasiRuangKerja = lokasiRuangKerja
+        lokasiRuangKerja = lokasiRuangKerja,
+        pengelolaKoneksiSftp = pengelolaKoneksiSftp
     )
 }

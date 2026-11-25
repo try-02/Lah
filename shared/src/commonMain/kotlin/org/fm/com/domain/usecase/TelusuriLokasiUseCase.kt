@@ -2,6 +2,7 @@ package org.fm.com.domain.usecase
 
 import org.fm.com.domain.model.JenisLokasi
 import org.fm.com.domain.model.LokasiBerkas
+import org.fm.com.domain.sftp.PengenalSftp
 
 data class SegmenLokasi(
     val namaTampilan: String,
@@ -15,6 +16,7 @@ class TelusuriLokasiUseCase {
     ): List<SegmenLokasi> {
         return when (lokasiSaatIni.jenis) {
             JenisLokasi.POSIX -> uraiPathPosix(lokasiSaatIni.pengenal)
+            JenisLokasi.SFTP -> uraiPathSftp(lokasiSaatIni.pengenal)
             JenisLokasi.SAF, JenisLokasi.IOS -> {
                 if (riwayatHierarki.isNotEmpty() && riwayatHierarki.last() == lokasiSaatIni) {
                     riwayatHierarki.map { lok ->
@@ -43,6 +45,21 @@ class TelusuriLokasiUseCase {
         for (nama in bagian) {
             akumulasiPath += "/$nama"
             segmen.add(SegmenLokasi(nama, LokasiBerkas(akumulasiPath, JenisLokasi.POSIX, nama)))
+        }
+        return segmen
+    }
+
+    private fun uraiPathSftp(pengenal: String): List<SegmenLokasi> {
+        val lok = PengenalSftp.urai(pengenal) ?: return listOf(SegmenLokasi("SFTP", LokasiBerkas(pengenal, JenisLokasi.SFTP, "SFTP")))
+        val segmen = mutableListOf<SegmenLokasi>()
+        segmen.add(
+            SegmenLokasi("Root", LokasiBerkas(PengenalSftp.buat(lok.idProfil, "/"), JenisLokasi.SFTP, "Root"))
+        )
+        val bagian = lok.path.split('/').filter { it.isNotBlank() }
+        var akumulasi = ""
+        for (nama in bagian) {
+            akumulasi += "/$nama"
+            segmen.add(SegmenLokasi(nama, LokasiBerkas(PengenalSftp.buat(lok.idProfil, akumulasi), JenisLokasi.SFTP, nama)))
         }
         return segmen
     }

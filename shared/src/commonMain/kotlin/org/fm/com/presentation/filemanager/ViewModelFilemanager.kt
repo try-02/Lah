@@ -100,7 +100,7 @@ class ViewModelFilemanager(
             riwayatNavigasi.add(lokasi)
         }
         val adalahAnakLangsung = daftarEntitasMentah.any { it.lokasi == lokasi }
-        if (lokasi.jenis == JenisLokasi.POSIX) {
+        if (lokasi.jenis == JenisLokasi.POSIX || lokasi.jenis == JenisLokasi.SFTP) {
             riwayatHierarki.clear()
         } else if (adalahAnakLangsung && riwayatHierarki.isNotEmpty() && riwayatHierarki.last().jenis == lokasi.jenis) {
             if (riwayatHierarki.last() != lokasi) {

@@ -58,7 +58,7 @@ class AksiPlatformBerkasAndroid(
                     File(lokasi.pengenal)
                 )
             }.getOrNull()
-            JenisLokasi.IOS -> null
+            JenisLokasi.IOS, JenisLokasi.SFTP -> null
         }
     }
 
