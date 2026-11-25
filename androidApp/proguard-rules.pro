@@ -25,3 +25,7 @@
 -dontwarn org.apache.logging.log4j.**
 -dontwarn org.newsclub.net.unix.**
 -dontwarn com.sun.jna.**
+
+# Abaikan modul opsional BouncyCastle dan Kerberos GSSAPI (tidak ada di Android)
+-dontwarn org.bouncycastle.**
+-dontwarn org.ietf.jgss.**
