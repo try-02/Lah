@@ -438,13 +438,24 @@ class KoneksiSftp(
         val durasiMs = (System.nanoTime() - mulaiNano) / 1_000_000L
         runCatching {
             val info = if (ekstra.isEmpty()) "" else " $ekstra"
-            Log.d("FmSftpPerf", "[${profil.id}] $aksi=${durasiMs}ms$info")
+            Log.w("FmSftpPerf", "[${profil.id}] $aksi=${durasiMs}ms$info")
         }
     }
 
     private fun sambung(rahasia: RahasiaSftp): Session {
+        val jejakJsch = ArrayDeque<String>(16)
+        val loggerJsch = object : com.jcraft.jsch.Logger {
+            override fun isEnabled(level: Int): Boolean = level >= com.jcraft.jsch.Logger.INFO
+            override fun log(level: Int, message: String?) {
+                if (message.isNullOrBlank()) return
+                synchronized(jejakJsch) {
+                    if (jejakJsch.size >= 16) jejakJsch.removeFirst()
+                    jejakJsch.addLast("L$level: $message")
+                }
+            }
+        }
         val verif = PemverifHostKey(profil.jenisKunciHost, profil.sidikJariHost)
-        val jsch = JSch()
+        val jsch = JSch().apply { setInstanceLogger(loggerJsch) }
         jsch.setHostKeyRepository(verif)
         if (rahasia is RahasiaSftp.KunciPribadi) {
             jsch.addIdentity("kunci-${profil.id}", rahasia.pem, null, rahasia.frasaSandi)
@@ -461,6 +472,13 @@ class KoneksiSftp(
             s.setServerAliveCountMax(3)
             s.connect(10_000)
         } catch (e: JSchException) {
+            val ringkasJejak = synchronized(jejakJsch) { jejakJsch.joinToString(" | ") }
+            runCatching {
+                Log.w(
+                    "FmSftpPerf",
+                    "[${profil.id}] sambung_gagal err=${e.message} cause=${e.cause?.javaClass?.simpleName}:${e.cause?.message} jejak=[$ringkasJejak]"
+                )
+            }
             runCatching { s.disconnect() }
             throw petakanSambung(e, verif)
         }
