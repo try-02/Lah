@@ -1,0 +1,180 @@
+name: Build jcode for Termux (aarch64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Tag versi jcode (misal v1.1.2, kosongkan = rilis terbaru)'
+        required: false
+        default: ''
+      minimal_features:
+        description: 'Matikan AWS Bedrock agar binary jauh lebih kecil'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-termux-aarch64:
+    # Untuk repo PUBLIC gunakan ubuntu-24.04-arm (native ARM64, cepat).
+    # Jika repo PRIVATE, ganti ke ubuntu-latest dan aktifkan step QEMU di bawah.
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Siapkan direktori output
+        run: |
+          mkdir -p out
+          chmod 777 out
+
+      # Aktifkan 4 baris ini HANYA jika Anda mengganti runs-on menjadi ubuntu-latest
+      # - name: Setup QEMU ARM64
+      #   uses: docker/setup-qemu-action@v3
+      #   with:
+      #     platforms: arm64
+
+      - name: Cek versi rilis terbaru jcode
+        id: ver
+        run: |
+          TAG="${{ github.event.inputs.version }}"
+          if [ -z "$TAG" ]; then
+            TAG=$(curl -fsSIL -o /dev/null -w '%{url_effective}' https://github.com/1jehuang/jcode/releases/latest | awk -F/ '{print $NF}')
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Target tag: $TAG"
+
+      - name: Compile & kompres jcode di termux/termux-docker
+        env:
+          TARGET_TAG: ${{ steps.ver.outputs.tag }}
+          MINIMAL_FEATURES: ${{ github.event.inputs.minimal_features }}
+        run: |
+          cat <<EOF > build-env.sh
+          export TARGET_TAG="$TARGET_TAG"
+          export MINIMAL_FEATURES="$MINIMAL_FEATURES"
+          EOF
+
+          cat <<'EOF' > build-in-termux.sh
+          set -euo pipefail
+          source /tmp/build-env.sh
+          export DEBIAN_FRONTEND=noninteractive
+
+          echo "deb https://packages.termux.dev/apt/termux-main stable main" > "$PREFIX/etc/apt/sources.list"
+          apt-get update -y
+          apt-get upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"
+          apt-get install -y --no-install-recommends \
+            git rust clang lld cmake make pkg-config perl binutils xz-utils
+
+          rm -rf "$HOME/jcode-src"
+          git clone --depth 1 --branch "$TARGET_TAG" https://github.com/1jehuang/jcode.git "$HOME/jcode-src"
+          cd "$HOME/jcode-src"
+
+          # 1. Aktifkan fitur bindgen untuk rquickjs-sys pada target Android/Termux
+          RQJS_SYS_VER=$(awk '/^name = "rquickjs-sys"/{getline; if ($1 == "version") { gsub(/"/, "", $3); print $3; exit }}' Cargo.lock)
+          if [ -n "$RQJS_SYS_VER" ] && ! grep -q 'rquickjs-sys' Cargo.toml; then
+            ANDROID_DEP_HDR='[target.'\''cfg(target_os = "android")'\''.dependencies]'
+            if grep -Fq "$ANDROID_DEP_HDR" Cargo.toml; then
+              awk -v hdr="$ANDROID_DEP_HDR" -v v="$RQJS_SYS_VER" '{ print } $0 == hdr { print "rquickjs-sys = { version = \"=" v "\", default-features = false, features = [\"bindgen\"] }" }' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
+            else
+              cat <<TOML >> Cargo.toml
+
+          [target.'cfg(target_os = "android")'.dependencies]
+          rquickjs-sys = { version = "=$RQJS_SYS_VER", default-features = false, features = ["bindgen"] }
+          TOML
+            fi
+          fi
+
+          # 2. Unduh crate ke cache lalu patch arboard agar mendukung target Android/Termux
+          cargo fetch
+          ARBOARD_VER=$(awk '/^name = "arboard"/{getline; if ($1 == "version") { gsub(/"/, "", $3); print $3; exit }}' Cargo.lock)
+          if [ -n "$ARBOARD_VER" ]; then
+            ARBOARD_CRATE=$(find "$HOME/.cargo/registry/cache" -name "arboard-${ARBOARD_VER}.crate" | head -n 1)
+            if [ -n "$ARBOARD_CRATE" ]; then
+              rm -rf /tmp/arboard-patch
+              mkdir -p /tmp/arboard-patch
+              tar -xzf "$ARBOARD_CRATE" -C /tmp/arboard-patch --strip-components=1
+              find /tmp/arboard-patch -type f -exec sed -i 's/"android"/"disabled_android"/g' {} +
+              if grep -Fq '[patch.crates-io]' Cargo.toml; then
+                awk '{ print } $0 == "[patch.crates-io]" { print "arboard = { path = \"/tmp/arboard-patch\" }" }' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
+              else
+                printf '\n[patch.crates-io]\narboard = { path = "/tmp/arboard-patch" }\n' >> Cargo.toml
+              fi
+            fi
+          fi
+
+          # 3. Konfigurasi libclang & header Android API 24 untuk bindgen dan cc-rs
+          CLANG_RES_DIR=$(clang -print-resource-dir)
+          export LIBCLANG_PATH="$PREFIX/lib"
+          export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-linux-android24 -isystem $CLANG_RES_DIR/include -isystem $PREFIX/include/aarch64-linux-android -isystem $PREFIX/include"
+          export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="$BINDGEN_EXTRA_CLANG_ARGS"
+          export CC=clang
+          export CXX=clang++
+          export CFLAGS_aarch64_linux_android="--target=aarch64-linux-android24"
+          export CXXFLAGS_aarch64_linux_android="--target=aarch64-linux-android24"
+
+          # 4. Optimasi ukuran binary sekecil mungkin (aman tanpa UPX)
+          export CARGO_PROFILE_RELEASE_OPT_LEVEL=z
+          export CARGO_PROFILE_RELEASE_LTO=thin
+          export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
+          export CARGO_PROFILE_RELEASE_STRIP=symbols
+          export CARGO_PROFILE_RELEASE_INCREMENTAL=false
+
+          CARGO_ARGS="--release --bin jcode"
+          if [ "$MINIMAL_FEATURES" = "true" ]; then
+            CARGO_ARGS="$CARGO_ARGS --no-default-features --features pdf"
+          fi
+
+          cargo build $CARGO_ARGS
+
+          BIN_PATH="$HOME/jcode-src/target/release/jcode"
+          strip --strip-all "$BIN_PATH" 2>/dev/null || llvm-strip --strip-all "$BIN_PATH" 2>/dev/null || true
+
+          mkdir -p /tmp/pkg
+          cp "$BIN_PATH" /tmp/pkg/jcode.bin
+          chmod 755 /tmp/pkg/jcode.bin
+
+          cat <<'INST' > /tmp/pkg/install-termux.sh
+          #!/data/data/com.termux/files/usr/bin/bash
+          set -euo pipefail
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          mkdir -p "$PREFIX/libexec" "$PREFIX/bin"
+          install -m 755 "$DIR/jcode.bin" "$PREFIX/libexec/jcode.bin"
+
+          cat <<'WRAP' > "$PREFIX/bin/jcode"
+          #!/data/data/com.termux/files/usr/bin/bash
+          if [ -z "${SSL_CERT_FILE:-}" ] && [ -f "$PREFIX/etc/tls/cert.pem" ]; then
+            export SSL_CERT_FILE="$PREFIX/etc/tls/cert.pem"
+          fi
+          exec "$PREFIX/libexec/jcode.bin" "$@"
+          WRAP
+          chmod 755 "$PREFIX/bin/jcode"
+
+          echo "✅ Terpasang di $PREFIX/bin/jcode"
+          jcode --version
+          INST
+          chmod 755 /tmp/pkg/install-termux.sh
+
+          tar -C /tmp/pkg -cf - jcode.bin install-termux.sh | xz -9e -T0 > "/out/jcode-${TARGET_TAG}-termux-aarch64.tar.xz"
+          ls -lh "/out/jcode-${TARGET_TAG}-termux-aarch64.tar.xz"
+          EOF
+          chmod 644 build-env.sh build-in-termux.sh
+
+          docker run --rm --privileged \
+            -v "$PWD/build-env.sh:/tmp/build-env.sh:ro" \
+            -v "$PWD/build-in-termux.sh:/tmp/build-in-termux.sh:ro" \
+            -v "$PWD/out:/out" \
+            termux/termux-docker:aarch64 \
+            login -c "bash /tmp/build-in-termux.sh"
+
+      - name: Upload ke Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jcode-${{ steps.ver.outputs.tag }}-termux-aarch64
+          path: out/*.tar.xz
+          compression-level: 0
+
+      - name: Publish ke GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: termux-${{ steps.ver.outputs.tag }}
+          name: jcode ${{ steps.ver.outputs.tag }} (Termux Native aarch64)
+          files: out/*.tar.xz

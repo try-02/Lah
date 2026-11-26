@@ -58,6 +58,12 @@ jobs:
           source /tmp/build-env.sh
           export DEBIAN_FRONTEND=noninteractive
 
+          # Pastikan TMPDIR berada di direktori yang bisa ditulisi user Termux
+          if [ ! -d "${TMPDIR:-}" ] || [ ! -w "${TMPDIR:-}" ]; then
+            mkdir -p "$HOME/tmp"
+            export TMPDIR="$HOME/tmp"
+          fi
+
           echo "deb https://packages.termux.dev/apt/termux-main stable main" > "$PREFIX/etc/apt/sources.list"
           apt-get update -y
           apt-get upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"
@@ -83,20 +89,21 @@ jobs:
             fi
           fi
 
-          # 2. Unduh crate ke cache lalu patch arboard agar mendukung target Android/Termux
+          # 2. Unduh crate ke cache lalu patch arboard di $HOME agar mendukung Android/Termux
           cargo fetch
           ARBOARD_VER=$(awk '/^name = "arboard"/{getline; if ($1 == "version") { gsub(/"/, "", $3); print $3; exit }}' Cargo.lock)
           if [ -n "$ARBOARD_VER" ]; then
             ARBOARD_CRATE=$(find "$HOME/.cargo/registry/cache" -name "arboard-${ARBOARD_VER}.crate" | head -n 1)
             if [ -n "$ARBOARD_CRATE" ]; then
-              rm -rf /tmp/arboard-patch
-              mkdir -p /tmp/arboard-patch
-              tar -xzf "$ARBOARD_CRATE" -C /tmp/arboard-patch --strip-components=1
-              find /tmp/arboard-patch -type f -exec sed -i 's/"android"/"disabled_android"/g' {} +
+              ARBOARD_PATCH_DIR="$HOME/arboard-patch"
+              rm -rf "$ARBOARD_PATCH_DIR"
+              mkdir -p "$ARBOARD_PATCH_DIR"
+              tar -xzf "$ARBOARD_CRATE" -C "$ARBOARD_PATCH_DIR" --strip-components=1
+              find "$ARBOARD_PATCH_DIR" -type f -exec sed -i 's/"android"/"disabled_android"/g' {} +
               if grep -Fq '[patch.crates-io]' Cargo.toml; then
-                awk '{ print } $0 == "[patch.crates-io]" { print "arboard = { path = \"/tmp/arboard-patch\" }" }' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
+                awk -v p="$ARBOARD_PATCH_DIR" '{ print } $0 == "[patch.crates-io]" { print "arboard = { path = \"" p "\" }" }' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
               else
-                printf '\n[patch.crates-io]\narboard = { path = "/tmp/arboard-patch" }\n' >> Cargo.toml
+                printf '\n[patch.crates-io]\narboard = { path = "%s" }\n' "$ARBOARD_PATCH_DIR" >> Cargo.toml
               fi
             fi
           fi
@@ -128,11 +135,13 @@ jobs:
           BIN_PATH="$HOME/jcode-src/target/release/jcode"
           strip --strip-all "$BIN_PATH" 2>/dev/null || llvm-strip --strip-all "$BIN_PATH" 2>/dev/null || true
 
-          mkdir -p /tmp/pkg
-          cp "$BIN_PATH" /tmp/pkg/jcode.bin
-          chmod 755 /tmp/pkg/jcode.bin
+          PKG_DIR="$HOME/pkg"
+          rm -rf "$PKG_DIR"
+          mkdir -p "$PKG_DIR"
+          cp "$BIN_PATH" "$PKG_DIR/jcode.bin"
+          chmod 755 "$PKG_DIR/jcode.bin"
 
-          cat <<'INST' > /tmp/pkg/install-termux.sh
+          cat <<'INST' > "$PKG_DIR/install-termux.sh"
           #!/data/data/com.termux/files/usr/bin/bash
           set -euo pipefail
           DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -151,9 +160,9 @@ jobs:
           echo "✅ Terpasang di $PREFIX/bin/jcode"
           jcode --version
           INST
-          chmod 755 /tmp/pkg/install-termux.sh
+          chmod 755 "$PKG_DIR/install-termux.sh"
 
-          tar -C /tmp/pkg -cf - jcode.bin install-termux.sh | xz -9e -T0 > "/out/jcode-${TARGET_TAG}-termux-aarch64.tar.xz"
+          tar -C "$PKG_DIR" -cf - jcode.bin install-termux.sh | xz -9e -T0 > "/out/jcode-${TARGET_TAG}-termux-aarch64.tar.xz"
           ls -lh "/out/jcode-${TARGET_TAG}-termux-aarch64.tar.xz"
           EOF
           chmod 644 build-env.sh build-in-termux.sh
