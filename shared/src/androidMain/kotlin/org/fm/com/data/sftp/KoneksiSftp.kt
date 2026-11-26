@@ -183,7 +183,7 @@ class KoneksiSftp(
         val verif = PemverifHostKey(profil.jenisKunciHost, profil.sidikJariHost)
         val jsch = JSch()
         jsch.setHostKeyRepository(verif)
-        jsch.setLogger(LoggerJschSementara())
+        jsch.setInstanceLogger(LoggerJschSementara())
         if (rahasia is RahasiaSftp.KunciPribadi) {
             jsch.addIdentity("kunci-${profil.id}", rahasia.pem, null, rahasia.frasaSandi)
         }
