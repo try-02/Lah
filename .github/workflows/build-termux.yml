@@ -68,12 +68,12 @@ jobs:
           git clone --depth 1 --branch "$TARGET_TAG" https://github.com/1jehuang/jcode.git "$HOME/jcode-src"
           cd "$HOME/jcode-src"
 
-          # Aktifkan fitur bindgen untuk rquickjs-sys pada target Android/Termux
+          # 1. Aktifkan fitur bindgen untuk rquickjs-sys pada target Android/Termux
           RQJS_SYS_VER=$(awk '/^name = "rquickjs-sys"/{getline; if ($1 == "version") { gsub(/"/, "", $3); print $3; exit }}' Cargo.lock)
-          CARGO_LOCK_FLAG="--locked"
           if [ -n "$RQJS_SYS_VER" ] && ! grep -q 'rquickjs-sys' Cargo.toml; then
-            if grep -q "^\[target\.'cfg(target_os = \"android\")'\.dependencies\]" Cargo.toml; then
-              sed -i "/^\[target\.'cfg(target_os = \"android\")'\.dependencies\]/a rquickjs-sys = { version = \"=$RQJS_SYS_VER\", default-features = false, features = [\"bindgen\"] }" Cargo.toml
+            ANDROID_DEP_HDR='[target.'\''cfg(target_os = "android")'\''.dependencies]'
+            if grep -Fq "$ANDROID_DEP_HDR" Cargo.toml; then
+              awk -v hdr="$ANDROID_DEP_HDR" -v v="$RQJS_SYS_VER" '{ print } $0 == hdr { print "rquickjs-sys = { version = \"=" v "\", default-features = false, features = [\"bindgen\"] }" }' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
             else
               cat <<TOML >> Cargo.toml
 
@@ -81,11 +81,27 @@ jobs:
           rquickjs-sys = { version = "=$RQJS_SYS_VER", default-features = false, features = ["bindgen"] }
           TOML
             fi
-            # Hapus --locked agar Cargo.lock boleh menambahkan dependency bindgen/clang-sys
-            CARGO_LOCK_FLAG=""
           fi
 
-          # Konfigurasi libclang & header Android API 24 untuk bindgen dan cc-rs
+          # 2. Unduh crate ke cache lalu patch arboard agar mendukung target Android/Termux
+          cargo fetch
+          ARBOARD_VER=$(awk '/^name = "arboard"/{getline; if ($1 == "version") { gsub(/"/, "", $3); print $3; exit }}' Cargo.lock)
+          if [ -n "$ARBOARD_VER" ]; then
+            ARBOARD_CRATE=$(find "$HOME/.cargo/registry/cache" -name "arboard-${ARBOARD_VER}.crate" | head -n 1)
+            if [ -n "$ARBOARD_CRATE" ]; then
+              rm -rf /tmp/arboard-patch
+              mkdir -p /tmp/arboard-patch
+              tar -xzf "$ARBOARD_CRATE" -C /tmp/arboard-patch --strip-components=1
+              find /tmp/arboard-patch -type f -exec sed -i 's/"android"/"disabled_android"/g' {} +
+              if grep -Fq '[patch.crates-io]' Cargo.toml; then
+                awk '{ print } $0 == "[patch.crates-io]" { print "arboard = { path = \"/tmp/arboard-patch\" }" }' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
+              else
+                printf '\n[patch.crates-io]\narboard = { path = "/tmp/arboard-patch" }\n' >> Cargo.toml
+              fi
+            fi
+          fi
+
+          # 3. Konfigurasi libclang & header Android API 24 untuk bindgen dan cc-rs
           CLANG_RES_DIR=$(clang -print-resource-dir)
           export LIBCLANG_PATH="$PREFIX/lib"
           export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-linux-android24 -isystem $CLANG_RES_DIR/include -isystem $PREFIX/include/aarch64-linux-android -isystem $PREFIX/include"
@@ -95,14 +111,14 @@ jobs:
           export CFLAGS_aarch64_linux_android="--target=aarch64-linux-android24"
           export CXXFLAGS_aarch64_linux_android="--target=aarch64-linux-android24"
 
-          # Optimasi ukuran binary sekecil mungkin (aman tanpa UPX)
+          # 4. Optimasi ukuran binary sekecil mungkin (aman tanpa UPX)
           export CARGO_PROFILE_RELEASE_OPT_LEVEL=z
           export CARGO_PROFILE_RELEASE_LTO=thin
           export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
           export CARGO_PROFILE_RELEASE_STRIP=symbols
           export CARGO_PROFILE_RELEASE_INCREMENTAL=false
 
-          CARGO_ARGS="--release $CARGO_LOCK_FLAG --bin jcode"
+          CARGO_ARGS="--release --bin jcode"
           if [ "$MINIMAL_FEATURES" = "true" ]; then
             CARGO_ARGS="$CARGO_ARGS --no-default-features --features pdf"
           fi
