@@ -217,6 +217,7 @@ class StreamTulisAtomik internal constructor(
         val ch = pinjaman.channel
         try {
             if (gagal) {
+                pinjaman.tandaiRusak()
                 runCatching { keluar.close() }
                 hapusSementara(ch)
                 return
@@ -234,6 +235,12 @@ class StreamTulisAtomik internal constructor(
                     OperasiSftp.gantiNama(ch, sementara, tujuan)
                 }
             } catch (e: Throwable) {
+                val sehat = e is GagalSftp &&
+                    e !is GagalSftp.Terputus &&
+                    e !is GagalSftp.Jaringan
+                if (!sehat) {
+                    pinjaman.tandaiRusak()
+                }
                 hapusSementara(ch)
                 throw when (e) {
                     is GagalSftp -> e
@@ -256,6 +263,7 @@ class StreamTulisAtomik internal constructor(
             blok()
         } catch (e: IOException) {
             gagal = true
+            pinjaman.tandaiRusak()
             throw e
         }
     }
