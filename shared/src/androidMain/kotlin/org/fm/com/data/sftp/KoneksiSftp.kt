@@ -1,10 +1,12 @@
 package org.fm.com.data.sftp
 
+import android.util.Log
 import com.jcraft.jsch.ChannelSftp
 import com.jcraft.jsch.HostKeyRepository
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.KeyPair
+import com.jcraft.jsch.Logger as JSchLogger
 import com.jcraft.jsch.Session
 import com.jcraft.jsch.SftpException
 import java.io.ByteArrayOutputStream
@@ -181,13 +183,20 @@ class KoneksiSftp(
         val verif = PemverifHostKey(profil.jenisKunciHost, profil.sidikJariHost)
         val jsch = JSch()
         jsch.setHostKeyRepository(verif)
+        jsch.setLogger(LoggerJschSementara())
         if (rahasia is RahasiaSftp.KunciPribadi) {
             jsch.addIdentity("kunci-${profil.id}", rahasia.pem, null, rahasia.frasaSandi)
         }
         val s = jsch.getSession(profil.namaPengguna, profil.host, profil.port)
         if (rahasia is RahasiaSftp.Sandi) s.setPassword(rahasia.bytes)
         s.setConfig("StrictHostKeyChecking", "yes")
-        profil.jenisKunciHost?.let { s.setConfig("server_host_key", AlgoritmaHostKey.untuk(it)) }
+        profil.jenisKunciHost?.let { jenis ->
+            // Hanya pasang saat nama kunci dikenal; nilai tak dikenal bisa membuat
+            // klien nganggur di awal kex sehingga terjadi read timeout saat konek.
+            if (AlgoritmaHostKey.dikenal(jenis)) {
+                s.setConfig("server_host_key", AlgoritmaHostKey.untuk(jenis))
+            }
+        }
         s.setConfig(
             "PreferredAuthentications",
             if (rahasia is RahasiaSftp.Sandi) "password,keyboard-interactive" else "publickey"
@@ -273,5 +282,21 @@ object PembuatKunciSftp {
         } finally {
             kp.dispose()
         }
+    }
+}
+
+/** Instrumentasi sementara: kirim log JSch ke Logcat. Hapus saat sudah diperiksa. */
+private class LoggerJschSementara : JSchLogger {
+    override fun isEnabled(level: Int): Boolean = true
+
+    override fun log(level: Int, message: String) {
+        val tingkat = when (level) {
+            JSchLogger.DEBUG -> Log.DEBUG
+            JSchLogger.INFO -> Log.INFO
+            JSchLogger.WARN -> Log.WARN
+            JSchLogger.FATAL -> Log.ERROR
+            else -> Log.ERROR
+        }
+        Log.println(tingkat, "Sftp", "JSch: $message")
     }
 }
