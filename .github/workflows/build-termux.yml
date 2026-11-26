@@ -48,7 +48,6 @@ jobs:
           TARGET_TAG: ${{ steps.ver.outputs.tag }}
           MINIMAL_FEATURES: ${{ github.event.inputs.minimal_features }}
         run: |
-          # Tulis env ke file karena `login -c` dapat mereset environment container
           cat <<EOF > build-env.sh
           export TARGET_TAG="$TARGET_TAG"
           export MINIMAL_FEATURES="$MINIMAL_FEATURES"
@@ -59,7 +58,6 @@ jobs:
           source /tmp/build-env.sh
           export DEBIAN_FRONTEND=noninteractive
 
-          # Pin mirror resmi Termux agar tidak terkena mirror usang/404
           echo "deb https://packages.termux.dev/apt/termux-main stable main" > "$PREFIX/etc/apt/sources.list"
           apt-get update -y
           apt-get upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"
@@ -70,6 +68,33 @@ jobs:
           git clone --depth 1 --branch "$TARGET_TAG" https://github.com/1jehuang/jcode.git "$HOME/jcode-src"
           cd "$HOME/jcode-src"
 
+          # Aktifkan fitur bindgen untuk rquickjs-sys pada target Android/Termux
+          RQJS_SYS_VER=$(awk '/^name = "rquickjs-sys"/{getline; if ($1 == "version") { gsub(/"/, "", $3); print $3; exit }}' Cargo.lock)
+          CARGO_LOCK_FLAG="--locked"
+          if [ -n "$RQJS_SYS_VER" ] && ! grep -q 'rquickjs-sys' Cargo.toml; then
+            if grep -q "^\[target\.'cfg(target_os = \"android\")'\.dependencies\]" Cargo.toml; then
+              sed -i "/^\[target\.'cfg(target_os = \"android\")'\.dependencies\]/a rquickjs-sys = { version = \"=$RQJS_SYS_VER\", default-features = false, features = [\"bindgen\"] }" Cargo.toml
+            else
+              cat <<TOML >> Cargo.toml
+
+          [target.'cfg(target_os = "android")'.dependencies]
+          rquickjs-sys = { version = "=$RQJS_SYS_VER", default-features = false, features = ["bindgen"] }
+          TOML
+            fi
+            # Hapus --locked agar Cargo.lock boleh menambahkan dependency bindgen/clang-sys
+            CARGO_LOCK_FLAG=""
+          fi
+
+          # Konfigurasi libclang & header Android API 24 untuk bindgen dan cc-rs
+          CLANG_RES_DIR=$(clang -print-resource-dir)
+          export LIBCLANG_PATH="$PREFIX/lib"
+          export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-linux-android24 -isystem $CLANG_RES_DIR/include -isystem $PREFIX/include/aarch64-linux-android -isystem $PREFIX/include"
+          export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="$BINDGEN_EXTRA_CLANG_ARGS"
+          export CC=clang
+          export CXX=clang++
+          export CFLAGS_aarch64_linux_android="--target=aarch64-linux-android24"
+          export CXXFLAGS_aarch64_linux_android="--target=aarch64-linux-android24"
+
           # Optimasi ukuran binary sekecil mungkin (aman tanpa UPX)
           export CARGO_PROFILE_RELEASE_OPT_LEVEL=z
           export CARGO_PROFILE_RELEASE_LTO=thin
@@ -77,9 +102,8 @@ jobs:
           export CARGO_PROFILE_RELEASE_STRIP=symbols
           export CARGO_PROFILE_RELEASE_INCREMENTAL=false
 
-          CARGO_ARGS="--release --locked --bin jcode"
+          CARGO_ARGS="--release $CARGO_LOCK_FLAG --bin jcode"
           if [ "$MINIMAL_FEATURES" = "true" ]; then
-            # Menghilangkan AWS Bedrock SDK agar ukuran jauh lebih kecil & compile cepat
             CARGO_ARGS="$CARGO_ARGS --no-default-features --features pdf"
           fi
 
@@ -92,7 +116,6 @@ jobs:
           cp "$BIN_PATH" /tmp/pkg/jcode.bin
           chmod 755 /tmp/pkg/jcode.bin
 
-          # Skrip installer mini khusus Termux native
           cat <<'INST' > /tmp/pkg/install-termux.sh
           #!/data/data/com.termux/files/usr/bin/bash
           set -euo pipefail
@@ -100,7 +123,6 @@ jobs:
           mkdir -p "$PREFIX/libexec" "$PREFIX/bin"
           install -m 755 "$DIR/jcode.bin" "$PREFIX/libexec/jcode.bin"
 
-          # Wrapper memastikan sertifikat TLS Termux terbaca oleh rustls-native-certs
           cat <<'WRAP' > "$PREFIX/bin/jcode"
           #!/data/data/com.termux/files/usr/bin/bash
           if [ -z "${SSL_CERT_FILE:-}" ] && [ -f "$PREFIX/etc/tls/cert.pem" ]; then
