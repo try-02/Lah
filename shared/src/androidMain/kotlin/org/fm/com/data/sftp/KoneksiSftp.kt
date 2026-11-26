@@ -187,13 +187,10 @@ class KoneksiSftp(
         val s = jsch.getSession(profil.namaPengguna, profil.host, profil.port)
         if (rahasia is RahasiaSftp.Sandi) s.setPassword(rahasia.bytes)
         s.setConfig("StrictHostKeyChecking", "yes")
-        profil.jenisKunciHost?.let { jenis ->
-            // Hanya pasang saat nama kunci dikenal; nilai tak dikenal bisa membuat
-            // klien nganggur di awal kex sehingga terjadi read timeout saat konek.
-            if (AlgoritmaHostKey.dikenal(jenis)) {
-                s.setConfig("server_host_key", AlgoritmaHostKey.untuk(jenis))
-            }
-        }
+        // Jangan membatasi `server_host_key` ke jenis kunci yang tersimpan. Bila
+        // algoritma yang dipilih tidak ditawarkan server, JSch bisa menggantung di
+        // KEX dan koneksi gagal sebagai "Read timed out". Verifikasi sidik jari
+        // tetap dilakukan PemverifHostKey melalui HostKeyRepository.
         s.setConfig(
             "PreferredAuthentications",
             if (rahasia is RahasiaSftp.Sandi) "password,keyboard-interactive" else "publickey"

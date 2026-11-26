@@ -1,6 +1,7 @@
 package org.fm.com.data.sftp
 
 import java.net.ConnectException
+import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -163,14 +164,18 @@ class PengelolaKoneksiSftp(
                 val sebab = e.cause
                 val host = profil?.host
                 val port = profil?.port
-                val tambahan = if (host != null && port != null && (host == "127.0.0.1" || host == "localhost") &&
-                    (sebab is ConnectException || e.message.orEmpty().contains("refused", ignoreCase = true))
-                ) {
-                    "Koneksi ke $host:$port ditolak. Pastikan `sshd` berjalan di Termux."
-                } else if (host != null && sebab is UnknownHostException) {
-                    "Host '$host' tidak ditemukan."
-                } else {
-                    e.message ?: "Kegagalan jaringan SFTP"
+                val pesan = e.message.orEmpty()
+                val tambahan = when {
+                    host != null && port != null && (host == "127.0.0.1" || host == "localhost") &&
+                        (sebab is ConnectException || pesan.contains("refused", ignoreCase = true)) ->
+                        "Koneksi ke $host:$port ditolak. Pastikan `sshd` berjalan di Termux."
+                    host != null && sebab is UnknownHostException ->
+                        "Host '$host' tidak ditemukan."
+                    sebab is SocketTimeoutException || sebab?.cause is SocketTimeoutException ||
+                        pesan.contains("timed out", ignoreCase = true) ->
+                        "Server SSH di ${host ?: "host tujuan"}:${port ?: "?"} tidak merespons. " +
+                            "Periksa `sshd` di Termux, nomor port, dan firewall/jaringan."
+                    else -> e.message ?: "Kegagalan jaringan SFTP"
                 }
                 tambahan to PenyebabGalat.TIDAK_DIKETAHUI
             }
