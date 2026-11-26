@@ -9,13 +9,6 @@ import java.util.Base64
 internal class KunciHostDisajikan(val jenis: String, val sidikJari: String)
 
 internal object AlgoritmaHostKey {
-    private val NAMA_DIKENAL = setOf(
-        "ssh-ed25519", "ecdsa-sha2-nistp256", "rsa-sha2-512", "rsa-sha2-256", "ssh-rsa"
-    )
-
-    /** Benar jika [jenisKunci] masuk ke daftar algoritma host key yang dikenal. */
-    fun dikenal(jenisKunci: String?): Boolean = jenisKunci != null && jenisKunci in NAMA_DIKENAL
-
     fun untuk(jenisKunci: String): String =
         if (jenisKunci == "ssh-rsa") "rsa-sha2-512,rsa-sha2-256" else jenisKunci
 

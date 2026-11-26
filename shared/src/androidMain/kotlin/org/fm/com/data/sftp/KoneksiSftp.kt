@@ -1,12 +1,10 @@
 package org.fm.com.data.sftp
 
-import android.util.Log
 import com.jcraft.jsch.ChannelSftp
 import com.jcraft.jsch.HostKeyRepository
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.KeyPair
-import com.jcraft.jsch.Logger as JSchLogger
 import com.jcraft.jsch.Session
 import com.jcraft.jsch.SftpException
 import java.io.ByteArrayOutputStream
@@ -183,20 +181,13 @@ class KoneksiSftp(
         val verif = PemverifHostKey(profil.jenisKunciHost, profil.sidikJariHost)
         val jsch = JSch()
         jsch.setHostKeyRepository(verif)
-        jsch.setInstanceLogger(LoggerJschSementara())
         if (rahasia is RahasiaSftp.KunciPribadi) {
             jsch.addIdentity("kunci-${profil.id}", rahasia.pem, null, rahasia.frasaSandi)
         }
         val s = jsch.getSession(profil.namaPengguna, profil.host, profil.port)
         if (rahasia is RahasiaSftp.Sandi) s.setPassword(rahasia.bytes)
         s.setConfig("StrictHostKeyChecking", "yes")
-        profil.jenisKunciHost?.let { jenis ->
-            // Hanya pasang saat nama kunci dikenal; nilai tak dikenal bisa membuat
-            // klien nganggur di awal kex sehingga terjadi read timeout saat konek.
-            if (AlgoritmaHostKey.dikenal(jenis)) {
-                s.setConfig("server_host_key", AlgoritmaHostKey.untuk(jenis))
-            }
-        }
+        profil.jenisKunciHost?.let { s.setConfig("server_host_key", AlgoritmaHostKey.untuk(it)) }
         s.setConfig(
             "PreferredAuthentications",
             if (rahasia is RahasiaSftp.Sandi) "password,keyboard-interactive" else "publickey"
@@ -214,44 +205,12 @@ class KoneksiSftp(
 
     private fun petakanSambung(e: JSchException, v: PemverifHostKey): GagalSftp {
         val d = v.disajikan
-        val msg = e.message.orEmpty()
-        val namaKelas = e::class.simpleName.orEmpty()
-
-        // Deteksi kunci host belum dipercaya (TOFU)
-        if (d != null && v.hasil == HostKeyRepository.NOT_INCLUDED) {
-            return GagalSftp.HostBelumDipercaya(d.jenis, d.sidikJari)
-        }
-        if (d != null && v.hasil == HostKeyRepository.CHANGED) {
-            return GagalSftp.HostBerubah(d.jenis, d.sidikJari, profil.sidikJariHost.orEmpty())
-        }
-
-        // mwiede:jsch melempar JSchUnknownHostKeyException saat kunci baru disajikan
-        if (namaKelas.contains("UnknownHostKey", ignoreCase = true) ||
-            msg.contains("reject HostKey", ignoreCase = true) ||
-            msg.contains("UnknownHostKey", ignoreCase = true)
-        ) {
-            // Ambil host key yang disajikan jika verifier sempat merekamnya
-            if (d != null) {
-                return GagalSftp.HostBelumDipercaya(d.jenis, d.sidikJari)
-            }
-            // Fallback: coba ekstrak byte kunci dari properti JSchUnknownHostKeyException via reflection
-            val keyBytes = runCatching {
-                val prop = e::class.java.methods.firstOrNull { it.name == "getHostKey" || it.name == "getKey" }
-                prop?.invoke(e) as? ByteArray
-            }.getOrNull()
-            if (keyBytes != null) {
-                val jenis = AlgoritmaHostKey.jenisDari(keyBytes)
-                val sidik = AlgoritmaHostKey.sidikJari(keyBytes)
-                return GagalSftp.HostBelumDipercaya(jenis, sidik)
-            }
-            return GagalSftp.HostBelumDipercaya(
-                profil.jenisKunciHost ?: "ecdsa-sha2-nistp256",
-                "SHA256:HeA4F+/YRUmL5mdJvRQyyY8/40zNUnzuMKzwq2qpmrw"
-            )
-        }
-
         return when {
-            msg.contains("auth", ignoreCase = true) -> GagalSftp.AutentikasiGagal()
+            d != null && v.hasil == HostKeyRepository.NOT_INCLUDED ->
+                GagalSftp.HostBelumDipercaya(d.jenis, d.sidikJari)
+            d != null && v.hasil == HostKeyRepository.CHANGED ->
+                GagalSftp.HostBerubah(d.jenis, d.sidikJari, profil.sidikJariHost.orEmpty())
+            e.message.orEmpty().contains("auth", ignoreCase = true) -> GagalSftp.AutentikasiGagal()
             else -> GagalSftp.Jaringan(e.message ?: "Gagal terhubung ke ${profil.host}:${profil.port}", e)
         }
     }
@@ -282,21 +241,5 @@ object PembuatKunciSftp {
         } finally {
             kp.dispose()
         }
-    }
-}
-
-/** Instrumentasi sementara: kirim log JSch ke Logcat. Hapus saat sudah diperiksa. */
-private class LoggerJschSementara : JSchLogger {
-    override fun isEnabled(level: Int): Boolean = true
-
-    override fun log(level: Int, message: String) {
-        val tingkat = when (level) {
-            JSchLogger.DEBUG -> Log.DEBUG
-            JSchLogger.INFO -> Log.INFO
-            JSchLogger.WARN -> Log.WARN
-            JSchLogger.FATAL -> Log.ERROR
-            else -> Log.ERROR
-        }
-        Log.println(tingkat, "Sftp", "JSch: $message")
     }
 }
