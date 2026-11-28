@@ -101,6 +101,20 @@ jobs:
           [ "$PY_ADA" = "$PY_BUTUH" ] ||
             fail "Wheel dibuat untuk Python $PY_BUTUH, tetapi Termux memakai $PY_ADA."
 
+          PYTHON_LIB="$PREFIX/lib/libpython${PY_ADA}.so"
+          [ -r "$PYTHON_LIB" ] ||
+            fail "Library Python tidak ditemukan: $PYTHON_LIB"
+
+          run_py() {
+            if [ -n "${LD_PRELOAD:-}" ]; then
+              LD_PRELOAD="$PYTHON_LIB:$LD_PRELOAD" "$@"
+            else
+              LD_PRELOAD="$PYTHON_LIB" "$@"
+            fi
+          }
+          
+          echo "Python shared library: $PYTHON_LIB"
+
           # venv lama disimpan, dan dikembalikan jika pemasangan gagal
           LAMA=""
           SUKSES=0
@@ -119,12 +133,12 @@ jobs:
           }
           trap pulihkan EXIT
 
-          python -m venv "$VENV"
-          "$VENV/bin/python" -m pip install --no-index --only-binary=:all: \
+          run_py python -m venv "$VENV"
+          run_py "$VENV/bin/python" -m pip install --no-index --only-binary=:all: \
             --find-links "$DIR/wheels" "nanobot-ai==$VERSI"
 
           # Muat semua modul native supaya library yang kurang langsung ketahuan
-          "$VENV/bin/python" - <<'PY'
+          run_py "$VENV/bin/python" - <<'PY'
           import ctypes, importlib, importlib.util, pathlib, sys, sysconfig
 
           root = pathlib.Path(sysconfig.get_paths()["platlib"])
@@ -150,8 +164,8 @@ jobs:
           print(f"OK: {len(modul)} file .so bisa dimuat")
           PY
 
-          NANOBOT_TUI_NO_DOWNLOAD=1 "$VENV/bin/nanobot" --version
-          SUKSES=1
+          export NANOBOT_TUI_NO_DOWNLOAD=1
+          run_py "$VENV/bin/python" "$VENV/bin/nanobot" --version
 
           # Perintah 'nanobot', dengan unduhan binary TUI dimatikan
           WRAPPER="$PREFIX/bin/nanobot"
@@ -159,6 +173,7 @@ jobs:
             cat > "$WRAPPER" <<EOF
           #!$PREFIX/bin/sh
           # wrapper-nanobot-termux
+          export LD_PRELOAD="$PYTHON_LIB\${LD_PRELOAD:+:\$LD_PRELOAD}"
           export NANOBOT_TUI_NO_DOWNLOAD=1
           exec "$VENV/bin/nanobot" "\$@"
           EOF
@@ -166,6 +181,7 @@ jobs:
           else
             echo "$WRAPPER sudah ada dan bukan buatan skrip ini, tidak diubah."
           fi
+          SUKSES=1
 
           if [ -n "$LAMA" ]; then
             echo "venv lama ada di $LAMA (boleh dihapus jika sudah tidak diperlukan)."
