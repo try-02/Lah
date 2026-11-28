@@ -1,0 +1,207 @@
+name: nanobot-termux-wheels
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versi nanobot-ai di PyPI"
+        default: "0.4.2"
+
+permissions:
+  contents: write
+
+jobs:
+  wheelhouse:
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 180
+    env:
+      NANOBOT_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Siapkan skrip build dan installer
+        run: |
+          pola='^[0-9]+(\.[0-9]+)*((a|b|rc)[0-9]+)?(\.post[0-9]+)?(\.dev[0-9]+)?$'
+          [[ "$NANOBOT_VERSION" =~ $pola ]] || { echo "Versi tidak valid: $NANOBOT_VERSION"; exit 1; }
+          mkdir -p out && chmod 777 out
+          echo "$NANOBOT_VERSION" > out/NANOBOT_VERSION
+
+          # ---------------- dijalankan di CI ----------------
+          cat > build.sh <<'EOF'
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+
+          apt-get update
+          apt-get -y -o Dpkg::Options::=--force-confnew upgrade
+          apt-get -y install python git clang make cmake ninja pkg-config rust \
+            libffi openssl libxml2 libxslt libyaml zlib libjpeg-turbo libpng freetype libwebp \
+            littlecms libtiff openjpeg
+
+          python - <<'PY'
+          import sys, sysconfig
+          print(sys.version, sys.platform, sysconfig.get_platform())
+          assert sys.version_info[:2] == (3, 14), "Python bukan 3.14"
+          PY
+
+          export ANDROID_API_LEVEL=24
+          # Untuk crate Rust yang mengompilasi C: Termux menolak target tanpa versi API
+          export CFLAGS_aarch64_linux_android="--target=aarch64-linux-android24"
+          export CXXFLAGS_aarch64_linux_android="--target=aarch64-linux-android24"
+          # sdist PyPI sudah membawa WebUI, jadi tidak perlu Bun/Node
+          export NANOBOT_SKIP_WEBUI_BUILD=1
+
+          python -m venv "$HOME/b"
+          . "$HOME/b/bin/activate"
+          pip install -U pip wheel
+
+          # nanobot + seluruh dependensinya
+          pip wheel --no-binary nanobot-ai "nanobot-ai==$NANOBOT_VERSION" -w /out/wheels
+
+          # Gagalkan build jika WebUI tidak ikut terkemas
+          python - <<'PY'
+          import glob, zipfile
+          [whl] = glob.glob("/out/wheels/nanobot_ai-*.whl")
+          assert "nanobot/web/dist/index.html" in zipfile.ZipFile(whl).namelist(), "WebUI tidak ada di wheel"
+          print("OK, WebUI ada di", whl)
+          PY
+
+          python -c 'import sys; print("%d.%d" % sys.version_info[:2])' > /out/PYTHON_VERSION
+          chmod -R a+rX /out/wheels /out/PYTHON_VERSION
+          ls -lh /out/wheels
+          EOF
+
+          # ---------------- dijalankan di HP ----------------
+          cat > out/install.sh <<'INSTALLER'
+          #!/data/data/com.termux/files/usr/bin/sh
+          # Pasang nanobot dari wheelhouse lokal. pip tidak boleh membangun dari source.
+          set -eu
+
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          VERSI="$(cat "$DIR/NANOBOT_VERSION")"
+          PY_BUTUH="$(cat "$DIR/PYTHON_VERSION")"
+          VENV="${NANOBOT_VENV:-$HOME/.nanobot/venv}"
+
+          fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+
+          case "${PREFIX:-}" in
+            *com.termux*) ;;
+            *) fail "Jalankan di Termux, bukan di proot." ;;
+          esac
+          [ "$(uname -m)" = "aarch64" ] || fail "Wheelhouse ini hanya untuk aarch64."
+
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get -y -o Dpkg::Options::=--force-confold upgrade
+          # Hanya Python dan library runtime
+          apt-get -y -o Dpkg::Options::=--force-confold install python \
+            libc++ libffi openssl libxml2 libxslt libyaml zlib libjpeg-turbo libpng freetype \
+            libwebp littlecms libtiff openjpeg
+
+          PY_ADA="$(python -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+          [ "$PY_ADA" = "$PY_BUTUH" ] ||
+            fail "Wheel dibuat untuk Python $PY_BUTUH, tetapi Termux memakai $PY_ADA."
+
+          # venv lama disimpan, dan dikembalikan jika pemasangan gagal
+          LAMA=""
+          SUKSES=0
+          if [ -e "$VENV" ]; then
+            [ -f "$VENV/pyvenv.cfg" ] || fail "$VENV ada tetapi bukan venv. Tidak diubah."
+            LAMA="$VENV.lama.$(date +%Y%m%d-%H%M%S)"
+            mv "$VENV" "$LAMA"
+          fi
+          pulihkan() {
+            [ "$SUKSES" = "1" ] && return 0
+            rm -rf "$VENV"
+            if [ -n "$LAMA" ]; then
+              mv "$LAMA" "$VENV"
+              echo "Pemasangan gagal, venv lama dikembalikan." >&2
+            fi
+          }
+          trap pulihkan EXIT
+
+          python -m venv "$VENV"
+          "$VENV/bin/python" -m pip install --no-index --only-binary=:all: \
+            --find-links "$DIR/wheels" "nanobot-ai==$VERSI"
+
+          # Muat semua modul native supaya library yang kurang langsung ketahuan
+          "$VENV/bin/python" - <<'PY'
+          import ctypes, importlib, importlib.util, pathlib, sys, sysconfig
+
+          root = pathlib.Path(sysconfig.get_paths()["platlib"])
+          modul = sorted(root.rglob("*.so"))
+          gagal = []
+          for so in modul:
+              try:
+                  ctypes.CDLL(str(so))
+              except OSError as e:
+                  gagal.append(f"{so.relative_to(root)}: {e}")
+
+          wajib = ["pydantic_core", "cryptography.hazmat.bindings._rust", "PIL._imaging", "lxml.etree"]
+          jika_ada = [n for n in ("jiter", "rpds", "rfc3161_client", "primp") if importlib.util.find_spec(n)]
+          for nama in wajib + jika_ada:
+              try:
+                  importlib.import_module(nama)
+              except Exception as e:
+                  gagal.append(f"{nama}: {e!r}")
+
+          if gagal:
+              print("Modul native bermasalah:", *gagal, sep="\n  ")
+              sys.exit(1)
+          print(f"OK: {len(modul)} file .so bisa dimuat")
+          PY
+
+          NANOBOT_TUI_NO_DOWNLOAD=1 "$VENV/bin/nanobot" --version
+          SUKSES=1
+
+          # Perintah 'nanobot', dengan unduhan binary TUI dimatikan
+          WRAPPER="$PREFIX/bin/nanobot"
+          if [ ! -e "$WRAPPER" ] || grep -q "wrapper-nanobot-termux" "$WRAPPER"; then
+            cat > "$WRAPPER" <<EOF
+          #!$PREFIX/bin/sh
+          # wrapper-nanobot-termux
+          export NANOBOT_TUI_NO_DOWNLOAD=1
+          exec "$VENV/bin/nanobot" "\$@"
+          EOF
+            chmod +x "$WRAPPER"
+          else
+            echo "$WRAPPER sudah ada dan bukan buatan skrip ini, tidak diubah."
+          fi
+
+          if [ -n "$LAMA" ]; then
+            echo "venv lama ada di $LAMA (boleh dihapus jika sudah tidak diperlukan)."
+          fi
+          echo
+          echo "Selesai. Lanjutkan:"
+          echo "  nanobot onboard --wizard"
+          echo "  nanobot agent --classic"
+          echo "  nanobot webui --no-open"
+          INSTALLER
+
+      - name: Build wheelhouse di Termux-Docker
+        run: |
+          docker run --rm \
+            -e NANOBOT_VERSION \
+            -v "$PWD/out:/out" \
+            -v "$PWD/build.sh:/build.sh:ro" \
+            termux/termux-docker:aarch64 bash /build.sh
+
+      - name: Uji pemasangan di Termux-Docker bersih
+        run: |
+          docker run --rm \
+            -v "$PWD/out:/wh:ro" \
+            termux/termux-docker:aarch64 \
+            bash -c 'set -e; sh /wh/install.sh; nanobot --version; nanobot agent --help >/dev/null'
+
+      - name: Kemas dan publikasikan ke Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tar -C out -czf nanobot-wheelhouse.tar.gz install.sh NANOBOT_VERSION PYTHON_VERSION wheels
+          sha256sum nanobot-wheelhouse.tar.gz > nanobot-wheelhouse.tar.gz.sha256
+          ls -lh nanobot-wheelhouse.tar.gz
+
+          # Tag dibuat khusus agar tidak menimpa release proyek lain di repo yang sama
+          TAG=nanobot-wheelhouse-latest
+          gh release delete "$TAG" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" || true
+          gh release create "$TAG" nanobot-wheelhouse.tar.gz nanobot-wheelhouse.tar.gz.sha256 \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "nanobot $NANOBOT_VERSION untuk Termux (cp314, aarch64)" \
+            --notes "nanobot-ai==$NANOBOT_VERSION"
