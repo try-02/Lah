@@ -29,8 +29,11 @@ jobs:
           set -euo pipefail
           export DEBIAN_FRONTEND=noninteractive
 
+          NANOBOT_VERSION="$(cat /out/NANOBOT_VERSION)"
+          : "${NANOBOT_VERSION:?NANOBOT_VERSION kosong}"
+          echo "Building nanobot-ai==$NANOBOT_VERSION"
+
           apt-get update
-          apt-get -y -o Dpkg::Options::=--force-confnew upgrade
           apt-get -y install python git clang make cmake ninja pkg-config rust \
             libffi openssl libxml2 libxslt libyaml zlib libjpeg-turbo libpng freetype libwebp \
             littlecms libtiff openjpeg
@@ -89,7 +92,6 @@ jobs:
 
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
-          apt-get -y -o Dpkg::Options::=--force-confold upgrade
           # Hanya Python dan library runtime
           apt-get -y -o Dpkg::Options::=--force-confold install python \
             libc++ libffi openssl libxml2 libxslt libyaml zlib libjpeg-turbo libpng freetype \
@@ -171,6 +173,7 @@ jobs:
           echo
           echo "Selesai. Lanjutkan:"
           echo "  nanobot onboard --wizard"
+          echo "  nanobot status"
           echo "  nanobot agent --classic"
           echo "  nanobot webui --no-open"
           INSTALLER
@@ -178,7 +181,6 @@ jobs:
       - name: Build wheelhouse di Termux-Docker
         run: |
           docker run --rm \
-            -e NANOBOT_VERSION \
             -v "$PWD/out:/out" \
             -v "$PWD/build.sh:/build.sh:ro" \
             termux/termux-docker:aarch64 bash /build.sh
